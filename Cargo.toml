@@ -2,7 +2,7 @@
 name = "hotstuff_rs"
 version = "0.0.0"
 description = "An implementation of the HotStuff consensus algorithm."
-homepage = "parallelchain.io"
+homepage = "https://parallelchain.io"
 repository = "https://github.com/parallelchain-io/hotstuff_rs"
 readme = "README.md"
 edition = "2021"
