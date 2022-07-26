@@ -1,8 +1,10 @@
 [package]
-name = "hotstuff-rs"
+name = "hotstuff_rs"
+version = "0.0.0"
 description = "An implementation of the HotStuff consensus algorithm."
 homepage = "parallelchain.io"
-version = "0.0.0"
+repository = "https://github.com/parallelchain-io/hotstuff_rs"
+readme = "README.md"
 edition = "2021"
 license = "GPL-2.0-or-later"
 
