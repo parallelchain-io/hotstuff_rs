@@ -1,0 +1,11 @@
+[package]
+name = "hotstuff-rs"
+description = "An implementation of the HotStuff consensus algorithm."
+homepage = "parallelchain.io"
+version = "0.0.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
