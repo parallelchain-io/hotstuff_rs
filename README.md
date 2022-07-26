@@ -4,7 +4,7 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 2. A small API (`Executor`) for plugging in state machine-based applications like blockchains, and
 3. Well-documented, 'obviously correct' source code.
 
-## Protocol Specification 
+## Protocol Description 
 
 ### Components
 
