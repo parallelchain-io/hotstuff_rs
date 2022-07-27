@@ -1,13 +1,13 @@
 struct BlockTree;
 
 impl BlockTree {
-    fn insert_block(block: Block, qc: QuorumCertificate) { todo!() }
-    fn insert_qc(qc: QuorumCertificate) { todo!() }
-    fn insert_vote(&mut self, vote: Vote) { todo!() }
+    fn insert_block(&self, block: Block, qc: QuorumCertificate) { todo!() }
+    fn insert_qc(&self, qc: QuorumCertificate) { todo!() }
+    fn insert_vote(&self, vote: Vote) { todo!() }
 }
 
 impl BlockTree {
-    fn get_locked_qc() -> QuorumCertificate { todo!() }
+    fn get_locked_qc(&self) -> QuorumCertificate { todo!() }
 }
 
 enum Item {
