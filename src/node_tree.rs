@@ -1,21 +1,18 @@
-struct BlockTree;
+struct NodeTree;
 
-impl BlockTree {
+impl NodeTree {
     fn insert_block(&self, block: Block, qc: QuorumCertificate) { todo!() }
     fn insert_qc(&self, qc: QuorumCertificate) { todo!() }
     fn insert_vote(&self, vote: Vote) { todo!() }
 }
 
-impl BlockTree {
+impl NodeTree {
     fn get_locked_qc(&self) -> QuorumCertificate { todo!() }
 }
 
-enum Item {
-    Node(Block, QuorumCertificate),
-    FullQC(QuorumCertificate),
-    PartialQC(QuorumCertificate),
-}
 
-struct Block;
+struct Item(Node, Writes);
+
+struct Node(QuorumCertificate);
 struct QuorumCertificate;
 struct Vote;
