@@ -1,18 +1,14 @@
-struct NodeTree;
+use crate::types;
+use crate::Database;
 
-impl NodeTree {
-    fn insert_block(&self, block: Block, qc: QuorumCertificate) { todo!() }
-    fn insert_qc(&self, qc: QuorumCertificate) { todo!() }
-    fn insert_vote(&self, vote: Vote) { todo!() }
+pub struct NodeTree {
+    // Stores /only/ committed things.
+    database: Database,
 }
 
 impl NodeTree {
-    fn get_locked_qc(&self) -> QuorumCertificate { todo!() }
+    fn open() -> NodeTree { todo!() } 
+    fn insert_nodes(&mut self, nodes: &[types::ExecutedNode]) { todo!() }
+    fn get_locked_qc(&self) -> types::QuorumCertificate { todo!() }
+    fn get_prepare_qc(&self) -> types::QuorumCertificate { todo!() }
 }
-
-
-struct Item(Node, Writes);
-
-struct Node(QuorumCertificate);
-struct QuorumCertificate;
-struct Vote;
