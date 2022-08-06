@@ -1,13 +1,12 @@
 pub mod application;
 
+
+
 mod database;
 use database::Database;
 
+pub mod hotstuff;
+
 mod types;
 
-mod networking;
-
-mod msg_queue;
-
 pub mod node_tree;
-use node_tree::NodeTree;
