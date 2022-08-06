@@ -1,12 +1,7 @@
 pub mod application;
 
-
-
-mod database;
-use database::Database;
-
 pub mod hotstuff;
 
-mod types;
+pub(crate) mod basic_types;
 
-pub mod node_tree;
+pub(crate) mod node_tree;

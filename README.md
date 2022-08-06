@@ -5,9 +5,9 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 3. Well-documented, 'obviously correct' source code.
 
 ## 1. Reading this document
-1. If you just want to *use* HotStuff-rs in your application:
-2. If you want to *understand* how HotStuff-rs works:
-3. If you want to *contribute* to HotStuff-rs' development:
+1. If you just want to *use* HotStuff-rs in your application: read Section 2.
+2. If you want to *understand* how HotStuff works: read the HotStuff [paper](./readme_assets/HotStuff%20paper.pdf).
+3. If you want to *contribute* to HotStuff-rs' development: read Sections 2 and 3, then read the (specification)[./SPECIFICATION.md]. 
 
 ## 2. The HotStuff Consensus Protocol
 

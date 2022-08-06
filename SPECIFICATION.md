@@ -56,6 +56,13 @@ SHA256Hash over `parent ++ command ++ justify`.
 ### 4.3. Progress
 
 ### 4.3.1. View Timeouts
-View timeouts determine how long the Actor thread remains on a View before deciding that further progress at the current View is unlikely and moving onto the next View.
+
+View timeouts determine how long the Engine Thread remains on a View before deciding that further progress at the current View is unlikely and moving onto the next View.
+
 If View timeout is a constant and Participants' View Numbers become unsynchronized at any point in the protocol's lifetime, then Participants will never become synchronized at the same View ever again, preventing further progress.
-In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout increases exponentially every time a timeout is triggered until some high, configurable limit.
+
+In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout increases exponentially every time a timeout is triggered until some high, configurable limit $L$: 
+
+$Timeout(N, L) = min(2^{{4N/3}}, L)$ 
+
+Where $L$ is the number of consecutive views that ended with a NEW-VIEW (without progress being made).
