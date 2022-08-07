@@ -2,7 +2,7 @@
 HotStuff-rs is a Rust Programming Language implementation of the HotStuff consensus protocol. It offers:
 1. Guaranteed Safety and Liveness in the face of up to 1/3rd of Voting Power being Byzantine at any given moment,
 2. A small API (`Executor`) for plugging in state machine-based applications like blockchains, and
-3. Well-documented, 'obviously correct' source code.
+3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
 
 ## 1. Reading this document
 1. If you just want to *use* HotStuff-rs in your application: read Sections 2 and 3.5.
@@ -107,51 +107,71 @@ SHA256Hash over `parent ++ command ++ justify`.
 
 Before Consensus can make Progress, a quorum of Participants have to be synchronized on: 1. The same View Number, and 2. The same `generic_qc`*. 
 
-The *Sync Mode*'s role in HotStuff-rs is exactly to synchronize the Participant Set on the two counts. Engine switches into Sync Mode when it fails to make progress (i.e., insert a new Node) in consecutive `CATCHUP_FLOW_TRIGGER` View Numbers (configurable).  
-
 The flow proceeds in the following sequence of steps:
 1. Query all Participants for a chain of length max `CATCHUP_API_WINDOW_SIZE` extending from the latest committed Node of local NodeTree. 
 2. Wait `CATCHUP_API_TIMEOUT` milliseconds.
 3. Select the longest `chain` from all responses.
-4. If `len(chain) == CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree. 
-4. Jump to 1.
-
-**(Alt 3a).** If `len(chain) < CATCHUP_API_WINDOW_SIZE`, return after executing and inserting the chain into the local Node Tree (do not jump back to 1).
-
-**(Alt 3b).** If a Node fails validation in the 'execute and insert' step, panic (this indicates that more than $f$ Participants are faulty at this moment).
+4. If `len(chain) == CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree, then jump back to 1.
+    1. Else if `len(chain) < CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree, then return with a success status.
+    2. If a Node fails validation in the 'execute and insert' step, panic (this indicates that more than $f$ Participants are faulty at this moment).
 
 ### 4.4.3. Progress Mode
 
-The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the flow proceeds through the following states:
+![A graphic with 2 rows of 4 rectangles each. The first row depicts the phases of Leader execution, the second depicts the phases of Replica execution.](./readme_assets/Phases%20of%20Progress%20Mode%20execution.png)
+
+The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the flow proceeds through 4 states: *BeginView*, *Leader*, *Replica*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases', as illustrated in the time-sequence diagram above.
 
 ### BeginView
 
 1. `generic_qc = get_generic_qc()`. 
-2. Set `view_number = max(view_number, get_generic_qc() + 1)`
-3. If `leader(view_number) == this Participant`, jump to *Leader*, else, jump to *Replica*.
+2. `view_number = max(view_number, generic_qc.view_number + 1)`
+3. If `leader(view_number) == this Participant`: jump to *Leader*, else, jump to *Replica*.
 
 ### Leader 
 
-1. Read a message from `ipc_manager` until all streams are empty:
-    - If message is a `VOTE` and `vote.view_number == view_number`: attempt to collect it into a QC (if a QC is collected, continue to step 2).
-    - If message is a `NEW-VIEW` and `new_view.qc.view_number > view_number`: switch into *Sync Mode*. 
-    - Else, discard the message.
-2. Set `qc` to either:
-    - The `qc` collected in Step 1, or
-    - (if Step 1 terminated without a QC being collected), `generic_qc`. 
-3. Call `create_leaf` on Application with `parent = qc.node`.
-4. Send out a new `PROPOSAL` containing the leaf.
-5. Set `view_number += 1` and return to *BeginView*.
+#### Phase 1: Select the QC to justify the proposal. 
+1. Read a message from `ipc_manager` **until** all streams are empty **or** until a new QC is collected, in which case set `generic_qc` to the new QC:
+    - If message is a `VOTE`:
+        1. If `vote.view_number < cur_view`: discard it.
+        2. If `vote.node_hash` is not in the local NodeTree, switch to *Sync Mode*.
+        3. If `vote.view_number > cur_view`: discard it.
+        4. Else (if `vote.view_number == cur_view`): attempt to collect it into a QC.
+    - If message is a `NEW-VIEW`:
+        1. If `new_view.view_number < cur_view - 1`: discard it.
+        2. If `new_view.qc.view_number > generic_qc.view_number`:
+           - ...and `new_view.qc` is not in the local NodeTree, switch to *Sync Mode*.
+           - else: `generic_qc` = `new_view.qc`.
+        3. Else: discard it.
+    - Else (if message is a `PROPOSE`): discard it. 
 
+#### Phase 2: Produce a new Node.
+2. Call `create_leaf` on Application with `parent = qc.node`.
+
+#### Phase 3: Broadcast a Proposal.
+3. Broadcast a new `PROPOSE` message containing the leaf to every participant.
+4. Send a `VOTE` for our own proposal to the next leader.
+
+#### Phase 4: Wait for Replicas to finish sending out votes. 
+5. Sleep for the remaining duration of the View Timeout.
+6. Set `cur_view += 1` and return to *BeginView*.
 
 ### Replica 
 
-1. Read a `PROPOSAL` message with `proposal.view_number == view_number` from `ipc_manager` from the current leader:
-    - If `proposal.node.justify.node_hash` is *not* in the local NodeTree: switch into *Sync Mode*.
+#### Phase 1: Wait for a Proposal.
+1. Read a `PROPOSAL` message with `proposal.view_number == cur_view` from `ipc_manager` from the current leader:
+    - If `proposal.node.justify.node_hash` is *not* in the local NodeTree: switch to *Sync Mode*.
     - If `proposal` does not satisfy the `SafeNode` predicate, jump to `NewView`.
-2. Call `validate` on Application with `node = node` and `parent = proposal.node.justify.node_hash`:
+    - If message is not a `PROPOSAL`, discard the message.
+
+#### Phase 2: Validate the proposed Node.
+2. Call `validate` on Application with `node = proposal.node` and `parent = proposal.node.justify.node_hash`:
     - If Application rejects the node, jump to `NewView`.
+
+#### Phase 3: Send a vote.
 3. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
+
+#### Phase 4: Wait for other Replicas to finish sending votes.
+5. Sleep for the remaining duration of the View Timeout.
 4. Set `view_number += 1` and return to *BeginView*.
 
 ### NewView
@@ -168,8 +188,9 @@ View timeouts determine how long the Engine Thread remains on a View before deci
 
 If View timeout is a constant and Participants' View Numbers become unsynchronized at any point in the protocol's lifetime, then Participants will never become synchronized at the same View ever again, preventing further progress.
 
-In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout increases exponentially every time a timeout is triggered until some high, configurable limit defined by `MAX_TIMEOUT_EXPONENT`: 
+In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout grows exponentially in terms of the number of consecutive views the Participant fails to insert a new node until some high, configurable limit defined by `MAX_TIMEOUT`: 
 
-$Timeout(n, M) = 2^{min(n, M)}$
-
-Where $n$ is the number of consecutive views that ended with a NEW-VIEW (without progress being made), and $m$ is `MAX_TIMEOUT_EXPONENT`.
+```rust
+failures = cur_view - generic_qc.view_number
+Timeout(failures) = max(TARGET_NODE_TIME + 2 ** failures, MAX_TIMEOUT)
+```
