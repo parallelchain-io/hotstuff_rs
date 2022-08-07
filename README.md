@@ -130,10 +130,10 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 ### Leader 
 
 #### Phase 1: Select the QC to justify the proposal. 
-1. Read a message from `ipc_manager` **until** all streams are empty **or** until a new QC is collected, in which case set `generic_qc` to the new QC:
+1. Read messages from *every* participant **until** all streams are empty **or** until a new QC is collected, in which case set `generic_qc` to the new QC:
     - If message is a `VOTE`:
         1. If `vote.view_number < cur_view`: discard it.
-        2. If `vote.node_hash` is not in the local NodeTree, switch to *Sync Mode*.
+        2. If `vote.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
         3. If `vote.view_number > cur_view`: discard it.
         4. Else (if `vote.view_number == cur_view`): attempt to collect it into a QC.
     - If message is a `NEW-VIEW`:
@@ -158,10 +158,17 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 ### Replica 
 
 #### Phase 1: Wait for a Proposal.
-1. Read a `PROPOSAL` message with `proposal.view_number == cur_view` from `ipc_manager` from the current leader:
-    - If `proposal.node.justify.node_hash` is *not* in the local NodeTree: switch to *Sync Mode*.
-    - If `proposal` does not satisfy the `SafeNode` predicate, jump to `NewView`.
-    - If message is not a `PROPOSAL`, discard the message.
+1. Read messages from the current leader **until** a matching proposal is received:
+    - If message is a `PROPOSE`:
+        1. If `propose.view_number < cur_view`: discard it.
+        2. If `propose.node.justify.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
+        3. If `propose.view_number > cur_view`: discard it.
+        4. Else (if `propose.view_number == cur_view`): continue.
+    - If message is a `VOTE`: discard it.
+    - Else (if message is a `NEW-VIEW`):
+        1. If `new_view.view_number < cur_view - 1`: discard it.
+        2. If `new_view.qc.view_number > get_generic_qc().view_number` and `new_view.qc` is not in the local NodeTree, switch to *Sync Mode*.
+        3. Else: discard it.
 
 #### Phase 2: Validate the proposed Node.
 2. Call `validate` on Application with `node = proposal.node` and `parent = proposal.node.justify.node_hash`:
@@ -178,9 +185,8 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 
 This state is entered when a *View Timeout* is triggered at any point in the Engine's lifetime.
 
-1. Send out a `NEW-VIEW` containing `view_number` and `generic_qc`.
+1. Send out a `NEW-VIEW` containing `view_number` and `get_generic_qc()`.
 2. Set `view_number += 1` and return to *BeginView*.
-
 
 ### 4.4.4. View Timeouts
 
