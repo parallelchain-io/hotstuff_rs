@@ -148,6 +148,7 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 
 1. Read a `PROPOSAL` message with `proposal.view_number == view_number` from `ipc_manager` from the current leader:
     - If `proposal.node.justify.node_hash` is *not* in the local NodeTree: switch into *Sync Mode*.
+    - If `proposal` does not satisfy the `SafeNode` predicate, jump to `NewView`.
 2. Call `validate` on Application with `node = node` and `parent = proposal.node.justify.node_hash`:
     - If Application rejects the node, jump to `NewView`.
 3. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
