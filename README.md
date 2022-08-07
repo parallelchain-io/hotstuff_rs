@@ -32,9 +32,9 @@ HotStuff is the first consensus algorithm with a simple leader-replacement algor
 
 ### 3.1. Engine Thread
 
-#### 3.1.1. CatchUp Flow
+#### 3.1.1. Sync Mode
 
-#### 3.1.2. Progress Flow
+#### 3.1.2. Progress Mode 
 
 ### 3.2. Consensus TCP API
 
