@@ -188,9 +188,8 @@ View timeouts determine how long the Engine Thread remains on a View before deci
 
 If View timeout is a constant and Participants' View Numbers become unsynchronized at any point in the protocol's lifetime, then Participants will never become synchronized at the same View ever again, preventing further progress.
 
-In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout grows exponentially in terms of the number of consecutive views the Participant fails to insert a new node until some high, configurable limit defined by `MAX_TIMEOUT`: 
+In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout grows exponentially in terms of the number of consecutive views the Participant fails to insert a new node:
 
 ```rust
-failures = cur_view - generic_qc.view_number
-Timeout(failures) = max(TARGET_NODE_TIME + 2 ** failures, MAX_TIMEOUT)
+Timeout(cur_view, generic_qc) = 2 ** (cur_view - generic_qc.view_number)
 ```
