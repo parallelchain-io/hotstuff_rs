@@ -119,7 +119,7 @@ The flow proceeds in the following sequence of steps:
 
 ![A graphic with 2 rows of 4 rectangles each. The first row depicts the phases of Leader execution, the second depicts the phases of Replica execution.](./readme_assets/Phases%20of%20Progress%20Mode%20execution.png)
 
-The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the flow proceeds through 4 states: *BeginView*, *Leader*, *Replica*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases', as illustrated in the time-sequence diagram above.
+The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the flow cycles between 5 states: *BeginView*, *Leader*, *Replica*, *NextLeader*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases', as illustrated in the time-sequence diagram above.
 
 ### BeginView
 
@@ -180,6 +180,8 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 #### Phase 4: Wait for other Replicas to finish sending votes.
 5. Sleep for the remaining duration of the View Timeout.
 4. Set `view_number += 1` and return to *BeginView*.
+
+### NextLeader
 
 ### NewView
 
