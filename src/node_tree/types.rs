@@ -1,10 +1,29 @@
+use std::ops::Deref;
 use crate::basic_types::*;
 
 pub struct StoredNode {
-    pub node: ExecutedNode,
+    pub executed_node: ExecutedNode,
 
     // Used to delete 'abandoned' siblings when a Node gets committed.
     pub children: Vec<NodeHash>,
+}
+
+impl Deref for StoredNode {
+    type Target = ExecutedNode;
+
+    fn deref(&self) -> &Self::Target {
+        &self.executed_node
+    }
+}
+
+impl SerDe for StoredNode {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+        todo!()
+    }
 }
 
 pub struct ExecutedNode {
@@ -23,6 +42,14 @@ impl SerDe for ExecutedNode {
     fn deserialize(bs: Vec<u8>) -> Result<ExecutedNode, DeserializationError> {
         todo!()
     } 
+}
+
+impl Deref for ExecutedNode {
+    type Target = Node;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
 }
 
 pub type WriteSet = Vec<(Key, Value)>;

@@ -29,36 +29,40 @@ impl NodeTree {
 
     pub(crate) fn insert_node(&mut self, node: ExecutedNode) { 
         // 1. Open WriteBatch.
-        let wb = rocksdb::WriteBatch::default();
+        let mut wb = rocksdb::WriteBatch::default();
 
         // 2. Read and deserialize parent at `node.justify.node_hash` from DB.
         let parent_hash = node.node.justify.node_hash;
-        let parent = self.get_stored_node(&parent_hash).unwrap();
+        let mut parent = self.get_stored_node(&parent_hash).unwrap();
 
         // 3. Add node.hash to parent.children.
-        parent.children.push(node.node.hash());
+        parent.children.push(node.hash());
 
         // 4. (using WriteBatch) Serialize and insert updated node.parent.
         wb.put(parent_hash, parent.serialize());
 
         // 5. Transform node into a StoredNode with no `children`.
         let stored_node = StoredNode {
-            node,
+            executed_node: node,
             children: Vec::new()
         };
 
         // 6. (using WriteBatch) Insert node into DB.
-        wb.put(&stored_node.node.node.hash(), stored_node.serialize());
+        wb.put(&stored_node.hash(), stored_node.serialize());
 
         // 7. (using WriteBatch) Set NODE_CONTAINING_GENERIC_QC to node.hash.
-        wb.put(special_keys::STORED_NODE_WITH_GENERIC_QC, stored_node.node.node.hash());
+        wb.put(special_keys::STORED_NODE_WITH_GENERIC_QC, stored_node.executed_node.node.hash());
 
         // 8. Read and deserialize grandparent = node.parent.parent from DB, this can now be committed.
-        let grandparent_hash = parent.node.node.justify.node_hash;
+        let grandparent_hash = parent.executed_node.node.justify.node_hash;
         let grandparent = self.get_stored_node(&grandparent_hash).unwrap();
         
         // 9. (Using WriteBatch) Apply grandparent's writes into State.
-        for (key, value) in grandparent.node.write_set {
+        for (mut key, value) in grandparent.executed_node.write_set {
+            let mut prefixed_key = Vec::with_capacity(1 + key.len()); 
+            prefixed_key.extend_from_slice(&special_keys::STATE_KEYSPACE_PREFIX);
+            prefixed_key.append(&mut key);
+
             wb.put(key, value);
         }
 
@@ -85,7 +89,7 @@ impl NodeTree {
     pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<Node> {
         let stored_node = self.get_stored_node(hash)?;
 
-        Some(stored_node.node.node)
+        Some(stored_node.executed_node.node)
     }
 
     fn get_stored_node(&self, hash: &NodeHash) -> Option<StoredNode> {
