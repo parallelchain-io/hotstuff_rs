@@ -136,7 +136,8 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 ### Leader 
 
 #### Phase 1: Produce a new Node.
-2. Call `create_leaf` on Application with `parent = generic_qc.node`.
+1. Call `node = create_leaf()` on Application with `parent = generic_qc.node`.
+2. Insert `node` into local NodeTree.
 
 #### Phase 2: Broadcast a Proposal.
 3. Broadcast a new `PROPOSE` message containing the leaf to every participant.
@@ -166,14 +167,15 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 #### Phase 2: Validate the proposed Node.
 2. Call `validate` on Application with `node = proposal.node` and `parent = proposal.node.justify.node_hash`:
     - If Application rejects the node, jump to `NewView`.
+3. Insert `node` into the local NodeTree.
 
 #### Phase 3: Send a vote.
-3. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
-4. If `leader(cur_view + 1) == me`: jump to `NextLeader` with `timeout` = `TNT - time since Phase 1 began`, else continue.
+4. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
+5. If `leader(cur_view + 1) == me`: jump to `NextLeader` with `timeout` = `TNT - time since Phase 1 began`, else continue.
 
 #### Phase 4: Wait for the next leader to finish collecting votes.
-5. Sleep for `NET_LATENCY`.
-6. `view_number += 1` and return to *BeginView*.
+6. Sleep for `NET_LATENCY`.
+7. `view_number += 1` and return to *BeginView*.
 
 ### NextLeader(parameter: `timeout`)
 
@@ -185,9 +187,7 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
         4. Else (if `vote.view_number == cur_view`): `if Ok(qc) = qc_collector.collect { generic_qc = qc }`.
     - If message is a `NEW-VIEW`:
         1. If `new_view.view_number < cur_view - 1`: discard it.
-        2. If `new_view.qc.view_number > generic_qc.view_number`:
-           - ...and `new_view.qc` is not in the local NodeTree, switch to *Sync Mode*.
-           - else: `generic_qc` = `new_view.qc`.
+        2. If `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
         3. Else: discard it.
     - Else (if message is a `PROPOSE`): discard it. 
 2. `cur_view += 1`.

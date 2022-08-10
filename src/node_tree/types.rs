@@ -15,7 +15,7 @@ impl SerDe for ExecutedNode {
         // write_set.serialize()
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<Vec<u8>, DeserializationError> {
+    fn deserialize(bs: Vec<u8>) -> Result<ExecutedNode, DeserializationError> {
         todo!()
     } 
 }
@@ -33,7 +33,7 @@ impl SerDe for WriteSet {
         // value 
     }
     
-    fn deserialize(bs: Vec<u8>) -> Result<Vec<u8>, DeserializationError> {
+    fn deserialize(bs: Vec<u8>) -> Result<WriteSet, DeserializationError> {
         todo!()
     }
 }
