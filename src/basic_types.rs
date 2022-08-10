@@ -11,6 +11,12 @@ pub struct Node {
     pub justify: QuorumCertificate,
 }
 
+impl Node {
+    pub fn hash(&self) -> NodeHash {
+        todo!()
+    }
+}
+
 impl SerDe for Node {
     fn serialize(&self) -> Vec<u8> {
         todo!()

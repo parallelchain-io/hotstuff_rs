@@ -1,11 +1,16 @@
 use crate::basic_types::*;
 
 pub struct StoredNode {
-    node: ExecutedNode,
-    children: Vec<NodeHash>,
+    pub node: ExecutedNode,
+
+    // Used to delete 'abandoned' siblings when a Node gets committed.
+    pub children: Vec<NodeHash>,
 }
 
-pub struct ExecutedNode(Node, WriteSet);
+pub struct ExecutedNode {
+    pub node: Node,
+    pub write_set: WriteSet,
+}
 
 impl SerDe for ExecutedNode {
     fn serialize(&self) -> Vec<u8> {
@@ -20,7 +25,7 @@ impl SerDe for ExecutedNode {
     } 
 }
 
-pub struct WriteSet(Vec<(Key, Value)>);
+pub type WriteSet = Vec<(Key, Value)>;
 
 impl SerDe for WriteSet {
     fn serialize(&self) -> Vec<u8> {
