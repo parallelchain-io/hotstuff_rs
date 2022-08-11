@@ -1,5 +1,5 @@
-use crate::msg_types::{self, *};
-use crate::node_tree::NodeTree;
+use std::collections::HashSet;
+use crate::msg_types::*;
 
 pub type WriteSet = Vec<(Key, Value)>;
 
@@ -20,4 +20,27 @@ impl SerDe for WriteSet {
 }
 
 pub type Key = Vec<u8>;
+
 pub type Value = Vec<u8>;
+
+impl SerDe for Value {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+        todo!()
+    }
+}
+
+pub type Children = HashSet<NodeHash>;
+
+impl SerDe for Children {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+        todo!()    
+    }
+}
