@@ -1,20 +1,47 @@
 use crate::node_tree::{self, NodeTree};
-use crate::basic_types;
+use crate::msg_types;
 
 pub trait Application {
     fn create_leaf(
         &mut self,
-        // node_tree and parent_hash can be combined into a struct that implements a more convenient API.
-        node_tree: &NodeTree, 
-        parent_hash: &basic_types::NodeHash, 
-        state: &mut node_tree::State
-    ) -> (basic_types::Command, node_tree::State);
+        parent_node: Node,
+        state: State,
+    ) -> (msg_types::Command, State);
 
     fn validate(
         &mut self, 
-        node: basic_types::Node, 
-        node_tree: &NodeTree, 
-        parent_hash: &basic_types::NodeHash,
-        state: &mut node_tree::State
+        node: Node, 
+        state: State
     ) -> bool;
+}
+
+/// A wrapper around msg_types::Node that implements convenience methods for accessing the persisted copy of the Node, its derived
+/// attributes (`write_set` and `State`), and the branch it heads in the NodeTree.
+pub struct Node {
+    node: msg_types::Node,
+    node_tree: NodeTree,
+}
+
+impl Node {
+    pub fn get_parent(&self) -> Node { todo!() }
+    pub fn get_write_set(&self) -> Result<node_tree::WriteSet, AlreadyCommittedError> { todo!() } 
+    pub fn get_speculative_state(&self) -> Result<State, AlreadyCommittedError> { todo!() }
+} 
+
+pub struct AlreadyCommittedError;
+
+pub struct State;
+
+impl State {
+    pub(crate) fn new(parent_writes: node_tree::WriteSet, grandparent_writes: node_tree::WriteSet) -> State {
+        todo!()
+    }
+
+    pub fn set(&mut self, key: node_tree::Key, value: node_tree::Value) {
+        todo!()
+    }
+
+    pub fn get(&self, key: node_tree::Key) -> node_tree::Value {
+        todo!()
+    }
 }

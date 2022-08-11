@@ -38,7 +38,6 @@ pub struct QuorumCertificate {
 
 
 // Encoding
-// 
 impl SerDe for QuorumCertificate {
     fn serialize(&self) -> Vec<u8> {
         let mut bs = Vec::new();

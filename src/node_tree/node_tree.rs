@@ -1,5 +1,6 @@
-use crate::basic_types::*;
-use crate::node_tree::types::*;
+use std::sync::Arc;
+use crate::msg_types::{self, NodeHash, QuorumCertificate, SerDe};
+use crate::node_tree::WriteSet;
 
 /// NodeTree maintains a directed acyclic graph of 'Nodes', the object of consensus. From the point of view of
 /// an Application, a NodeTree is a sequence of commands that may mutate State. In this view, a Node is a single
@@ -12,67 +13,52 @@ use crate::node_tree::types::*;
 /// NodeTree transparently detects the formation of 2-Chains and 3-Chains in NodeTree caused by `insert_node`
 /// and automatically applies writes that can be safely written into State. It also automatically removes Nodes
 /// that can no longer become committed, because one of its siblings became committed first. For brevity, we refer
-/// to these Nodes as 'abandoned Nodes' in our documentation. 
+/// to these Nodes as 'abandoned Nodes' in our documentation.
+/// 
+/// Internally, NodeTree is a wrapper around an `Arc<rocksdb::DB>`, and therefore is costless to clone and share
+/// between threads.
+#[derive(Clone)]
 pub struct NodeTree {
-    db: rocksdb::DB,
+    db: Arc<rocksdb::DB>,
 }
 
 impl NodeTree {
     pub(crate) fn open() -> Result<NodeTree, rocksdb::Error> { 
         const DB_PATH: &str = "./database"; 
-        let db = rocksdb::DB::open_default(DB_PATH)?;
+        let db = Arc::new(rocksdb::DB::open_default(DB_PATH)?);
 
         Ok(NodeTree {
             db
         })
     } 
 
-    pub(crate) fn insert_node(&mut self, node: ExecutedNode) { 
+    pub(crate) fn insert_node(&mut self, node: msg_types::Node, writes: WriteSet) { 
         // 1. Open WriteBatch.
         let mut wb = rocksdb::WriteBatch::default();
 
         // 2. Read and deserialize parent at `node.justify.node_hash` from DB.
-        let parent_hash = node.node.justify.node_hash;
-        let mut parent = self.get_stored_node(&parent_hash).unwrap();
+        let parent_hash = node.justify.node_hash;
+        let mut parent = self.get_node(&parent_hash).unwrap();
 
-        // 3. Add node.hash to parent.children.
-        parent.children.push(node.hash());
+        // 3. (Using WriteBatch) 'register' node as a child of parent.
+
+
 
         // 4. (using WriteBatch) Serialize and insert updated node.parent.
         wb.put(parent_hash, parent.serialize());
+    }
 
-        // 5. Transform node into a StoredNode with no `children`.
-        let stored_node = StoredNode {
-            executed_node: node,
-            children: Vec::new()
-        };
+    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<msg_types::Node> {
+        use special_keys::{prefix, NODES_PREFIX};
+        let bs = self.db.get(prefix(NODES_PREFIX, hash)).unwrap()?;
+        let node = msg_types::Node::deserialize(bs).unwrap();
 
-        // 6. (using WriteBatch) Insert node into DB.
-        wb.put(&stored_node.hash(), stored_node.serialize());
-
-        // 7. (using WriteBatch) Set NODE_CONTAINING_GENERIC_QC to node.hash.
-        wb.put(special_keys::STORED_NODE_WITH_GENERIC_QC, stored_node.executed_node.node.hash());
-
-        // 8. Read and deserialize grandparent = node.parent.parent from DB, this can now be committed.
-        let grandparent_hash = parent.executed_node.node.justify.node_hash;
-        let grandparent = self.get_stored_node(&grandparent_hash).unwrap();
-        
-        // 9. (Using WriteBatch) Apply grandparent's writes into State.
-        for (mut key, value) in grandparent.executed_node.write_set {
-            let mut prefixed_key = Vec::with_capacity(1 + key.len()); 
-            prefixed_key.extend_from_slice(&special_keys::STATE_KEYSPACE_PREFIX);
-            prefixed_key.append(&mut key);
-
-            wb.put(key, value);
-        }
-
-        // 10. Commit WriteBatch.
-        self.db.write(wb).unwrap()
+        Some(node)
     }
 
     pub(crate) fn get_generic_qc(&self) -> QuorumCertificate { 
         let node_with_generic_qc = { 
-            let hash = self.db.get(special_keys::STORED_NODE_WITH_GENERIC_QC).unwrap().unwrap();
+            let hash = self.db.get(special_keys::NODE_CONTAINING_GENERIC_QC).unwrap().unwrap();
             self.get_node(&hash.try_into().unwrap()).unwrap()
         };
 
@@ -85,26 +71,23 @@ impl NodeTree {
 
         node_with_locked_qc.justify
     }
-
-    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<Node> {
-        let stored_node = self.get_stored_node(hash)?;
-
-        Some(stored_node.executed_node.node)
-    }
-
-    fn get_stored_node(&self, hash: &NodeHash) -> Option<StoredNode> {
-        let bs = self.db.get(hash).unwrap()?;
-        let stored_node = StoredNode::deserialize(bs).unwrap();
-
-        Some(stored_node)
-    }
 }
 
 mod special_keys {
-    // Invariants that are maintained by NodeTree:
-    // 1. get_generic_qc().node.justify == LockedQC.
-    // 2. get_locked_qc().node == HighestCommittedNode.
+    type Prefix = [u8; 1];
 
-    pub const STORED_NODE_WITH_GENERIC_QC: [u8; 1] = [0];
-    pub const STATE_KEYSPACE_PREFIX: [u8; 1] = [1];
+    pub const NODES_PREFIX: Prefix               = [00];
+    pub const WRITE_SETS_PREFIX: Prefix          = [01];
+    pub const CHILDREN_PREFIX: Prefix            = [02];
+    pub const STATE_PREFIX: Prefix               = [03];
+
+    pub const NODE_CONTAINING_GENERIC_QC: Prefix = [10];
+
+    pub fn prefix(prefix: Prefix, key: &[u8]) -> Vec<u8> {
+        let mut prefixed_key = Vec::with_capacity(1 + key.len());
+        prefixed_key.extend_from_slice(&prefix);
+        prefixed_key.extend_from_slice(key);
+
+        prefixed_key
+    }
 }
