@@ -1,4 +1,5 @@
 use crate::node_tree::{self, NodeTree};
+use crate::node_tree::{Key, Value, WriteSet};
 use crate::msg_types;
 
 pub trait Application {
@@ -33,15 +34,15 @@ pub struct AlreadyCommittedError;
 pub struct State;
 
 impl State {
-    pub(crate) fn new(parent_writes: node_tree::WriteSet, grandparent_writes: node_tree::WriteSet) -> State {
+    pub(crate) fn new(parent_writes: WriteSet, grandparent_writes: WriteSet) -> State {
         todo!()
     }
 
-    pub fn set(&mut self, key: node_tree::Key, value: node_tree::Value) {
+    pub fn set(&mut self, key: Key, value: Value) {
         todo!()
     }
 
-    pub fn get(&self, key: node_tree::Key) -> node_tree::Value {
+    pub fn get(&self, key: Key) -> Value {
         todo!()
     }
 }
