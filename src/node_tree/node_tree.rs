@@ -59,7 +59,6 @@ impl NodeTree {
         wb.set_write_set(&node.hash(), &writes);
 
         Ok(())
-
     }
 
     pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<msg_types::Node> {
