@@ -6,16 +6,12 @@ use crate::node_tree::WriteSet;
 /// an Application, a NodeTree is a sequence of commands that may mutate State. In this view, a Node is a single
 /// command in the sequence. 
 /// 
-/// An 'N-Chain' is a sequence of Nodes, linked together via QuorumCertificates. A Node becomes 'locked' when it
-/// becomes the tail of a 2-Chain, and becomes 'committed' when it becomes the tail of a 3-Chain. When a Node becomes
-/// committed, its writes can be safely written into persistent State.
-/// 
 /// NodeTree transparently detects the formation of 2-Chains and 3-Chains in NodeTree caused by `insert_node`
 /// and automatically applies writes that can be safely written into State. It also automatically removes Nodes
 /// that can no longer become committed, because one of its siblings became committed first. For brevity, we refer
 /// to these Nodes as 'abandoned Nodes' in our documentation.
 /// 
-/// Internally, NodeTree is a wrapper around an `Arc<rocksdb::DB>`, and therefore is costless to clone and share
+/// Internally, NodeTree is a wrapper around an `Arc<rocksdb::DB>`, and is therefore cheap to Clone and share
 /// between threads.
 #[derive(Clone)]
 pub struct NodeTree {
