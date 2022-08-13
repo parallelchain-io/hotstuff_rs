@@ -161,7 +161,7 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
     - If message is a `VOTE`: discard it.
     - Else (if message is a `NEW-VIEW`):
         1. If `new_view.view_number < cur_view - 1`: discard it.
-        2. If `new_view.qc.view_number > get_generic_qc().view_number` and `new_view.qc` is not in the local NodeTree, switch to *Sync Mode*.
+        2. If `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
         3. Else: discard it.
 
 #### Phase 2: Validate the proposed Node.
