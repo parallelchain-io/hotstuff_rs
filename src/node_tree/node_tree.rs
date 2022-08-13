@@ -27,6 +27,9 @@ impl NodeTree {
         }
     } 
 
+    /// Inserts a Node into the NodeTree and atomically executes the 2 kinds of persistent storage operations that
+    /// may need to occur as a result of the Node being inserted: 1. Applying the writes of (a) Node that may become
+    /// committed as a result of this insertion, and 2. Deleting abandoned branches.
     pub(crate) fn insert_node(&mut self, node: msg_types::Node, writes: WriteSet) -> Result<(), InsertError> { 
         // 1. Open WriteBatch.
         let mut wb = WriteBatch::new();
