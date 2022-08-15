@@ -3,8 +3,25 @@ use std::array;
 pub type ViewNumber = u64;
 pub type Command = Vec<u8>; 
 pub type NodeHash = [u8; 32];
+pub type PublicAddress = [u8; 32];
 pub type Signature = [u8; 64];
 pub type Signatures = Vec<Option<Signature>>; 
+
+pub enum ConsensusMsg {
+    Propose(ViewNumber, Node),
+    Vote(ViewNumber, NodeHash),
+    NewView(ViewNumber, QuorumCertificate),
+}
+
+impl SerDe for ConsensusMsg {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+        todo!()
+    }
+}
 
 pub struct Node {
     pub command: Command,
