@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::collections::HashSet;
 use rocksdb;
 use crate::node_tree::stored_types::{Key, Value, WriteSet, Children};
 use crate::msg_types::{self, NodeHash, SerDe};
@@ -73,19 +72,29 @@ impl WriteBatch {
     }
 
     pub fn set_node(&mut self, hash: &NodeHash, node: Option<&msg_types::Node>) {
-        todo!()
+        self.set_with_prefix(&keyspaces::NODES_PREFIX, hash, node);
     }
 
     pub fn set_write_set(&mut self, of_node: &NodeHash, write_set: Option<&WriteSet>) {
-        todo!()
+        self.set_with_prefix(&keyspaces::WRITE_SETS_PREFIX, of_node, write_set);
     }
 
     pub fn set_children(&mut self, of_node: &NodeHash, children: Option<&Children>) {
-        todo!()
+        self.set_with_prefix(&keyspaces::CHILDREN_PREFIX, of_node, children);
     }
 
     pub fn apply_writes_to_state(&mut self, writes: &WriteSet) {
-        todo!()
+        for (key, value) in writes {
+            self.set_with_prefix(&keyspaces::STATE_PREFIX, key, Some(value));
+        }
+    }
+
+    pub fn set_with_prefix<T: SerDe>(&mut self, prefix: &keyspaces::Prefix, key: &[u8], value: Option<&T>) {
+        let keyspaced_key = keyspaces::prefix(prefix, key);
+        match value {
+            Some(value) => self.0.put(&keyspaced_key, value.serialize()),
+            None => self.0.delete(&keyspaced_key),
+        } 
     }
 }
 
