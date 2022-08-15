@@ -42,7 +42,7 @@ impl NodeTree {
         // 3. 'Register' node as a child of parent.
         let mut parent_children = self.db.get_children(&node.justify.node_hash).unwrap();
         parent_children.insert(node.hash());
-        wb.set_children(&node.justify.node_hash, &parent_children);
+        wb.set_children(&node.justify.node_hash, Some(&parent_children));
 
         // 4. Apply the writes of node's grandparent into State, since it's now the tail of a 3-Chain.
         let grandparent_hash = {
@@ -53,13 +53,13 @@ impl NodeTree {
         wb.apply_writes_to_state(&grandparent_writes);
 
         // 5. Abandon grandparent's sibling nodes.
-        self.abandon_siblings(&grandparent_hash);
+        self.abandon_siblings(&grandparent_hash, &mut wb);
 
         // 6. Write node.
-        wb.set_node(&node.hash(), &node);
+        wb.set_node(&node.hash(), Some(&node));
 
         // 7. Write node's writes.
-        wb.set_write_set(&node.hash(), &writes);
+        wb.set_write_set(&node.hash(), Some(&writes));
 
         Ok(())
     }
@@ -79,8 +79,25 @@ impl NodeTree {
         node_with_locked_qc.justify
     }
 
-    fn abandon_siblings(&self, of_node: &NodeHash) {
-        todo!()
+    fn abandon_siblings(&self, of_node: &NodeHash, wb: &mut WriteBatch) {
+        let parent_hash = self.get_node(of_node).unwrap().justify.node_hash;
+        let siblings = self.db.get_children(&parent_hash).unwrap();
+        for sibling in siblings {
+            self.delete_branch(&sibling, wb);
+        }
+    }
+
+    fn delete_branch(&self, tail_node: &NodeHash, wb: &mut WriteBatch) {
+        // 1. Delete children.
+        let children = self.db.get_children(tail_node).unwrap();
+        for child in children {
+            self.delete_branch(&child, wb);
+        }
+
+        // 2. Delete tail.
+        wb.set_node(tail_node, None);
+        wb.set_write_set(tail_node, None);
+        wb.set_children(tail_node, None);
     }
 }
 

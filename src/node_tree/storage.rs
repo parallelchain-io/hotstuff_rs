@@ -72,15 +72,15 @@ impl WriteBatch {
         WriteBatch(rocksdb::WriteBatch::default())
     }
 
-    pub fn set_node(&mut self, hash: &NodeHash, node: &msg_types::Node) {
+    pub fn set_node(&mut self, hash: &NodeHash, node: Option<&msg_types::Node>) {
         todo!()
     }
 
-    pub fn set_write_set(&mut self, of_node: &NodeHash, write_set: &WriteSet) {
+    pub fn set_write_set(&mut self, of_node: &NodeHash, write_set: Option<&WriteSet>) {
         todo!()
     }
 
-    pub fn set_children(&mut self, of_node: &NodeHash, children: &Children) {
+    pub fn set_children(&mut self, of_node: &NodeHash, children: Option<&Children>) {
         todo!()
     }
 
