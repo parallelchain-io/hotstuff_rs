@@ -1,4 +1,5 @@
 use std::array;
+use std::mem;
 
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
@@ -9,17 +10,89 @@ pub type Signatures = Vec<Option<Signature>>;
 
 pub enum ConsensusMsg {
     Propose(ViewNumber, Node),
-    Vote(ViewNumber, NodeHash),
+    Vote(ViewNumber, NodeHash, Signature),
     NewView(ViewNumber, QuorumCertificate),
 }
 
+type KindPrefix = [u8; 1];
+
+impl ConsensusMsg {
+    const PREFIX_PROPOSE: KindPrefix = [0u8];
+    const PREFIX_VOTE: KindPrefix = [1u8];
+    const PREFIX_NEW_VIEW: KindPrefix = [2u8]; 
+}
+
 impl SerDe for ConsensusMsg {
+    // # Encodings
+    //
+    // ## Propose
+    // PREFIX_PROPOSE 
+    // ++ vn.to_le_bytes()
+    // ++ node.serialize()
+    // 
+    // ## Vote
+    // PREFIX_VOTE
+    // ++ vn.to_le_bytes()
+    // ++ node_hash
+    // ++ signature
+    //
+    // ## NewView
+    // PREFIX_NEW_VIEW
+    // ++ vn.to_le_bytes()
+    // ++ qc.serialize()
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        let mut buf = Vec::new();
+        match self {
+            Self::Propose(vn, node) => {
+                buf.extend_from_slice(&Self::PREFIX_PROPOSE);
+                buf.extend_from_slice(&vn.to_le_bytes());
+                buf.extend_from_slice(&node.serialize());
+            },
+            Self::Vote(vn, node_hash, signature) => {
+                buf.extend_from_slice(&Self::PREFIX_VOTE);
+                buf.extend_from_slice(&vn.to_le_bytes());
+                buf.extend_from_slice(node_hash);
+                buf.extend_from_slice(signature);
+            },
+            Self::NewView(vn, qc) => {
+                buf.extend_from_slice(&Self::PREFIX_NEW_VIEW);
+                buf.extend_from_slice(&vn.to_le_bytes());
+                buf.extend_from_slice(&qc.serialize());
+            }
+        }
+
+        return buf
     }
 
     fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
-        todo!()
+        let mut cursor = 0usize;
+
+        let kind_prefix = bs[cursor..mem::size_of::<KindPrefix>()].try_into()?;
+        cursor += mem::size_of::<KindPrefix>();
+
+        let vn = u64::from_le_bytes(bs[cursor..mem::size_of::<ViewNumber>()].try_into()?); 
+        cursor += mem::size_of::<ViewNumber>();
+        match kind_prefix {
+            Self::PREFIX_PROPOSE => {
+                let node = Node::deserialize(bs[cursor..].to_vec())?;
+                Ok(Self::Propose(vn, node))
+            },
+            Self::PREFIX_VOTE => {
+                let node_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
+                cursor += mem::size_of::<NodeHash>();
+
+                let signature = bs[cursor..mem::size_of::<Signature>()].try_into()?;
+                cursor += mem::size_of::<Signature>();
+                Ok(Self::Vote(vn, node_hash, signature))
+            },
+            Self::PREFIX_NEW_VIEW => {
+                let qc = QuorumCertificate::deserialize(bs[cursor..].to_vec())?;
+                Ok(Self::NewView(vn, qc))
+            },
+            _ => Err(DeserializationError) 
+        }
+
+
     }
 }
 
