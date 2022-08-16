@@ -44,7 +44,7 @@ impl NodeTree {
         parent_children.insert(node.hash());
         wb.set_children(&node.justify.node_hash, Some(&parent_children));
 
-        // 4. Apply the writes of node's grandparent into State, since it's now the tail of a 3-Chain.
+        // 4. Apply the WriteSet of node's grandparent into State, since it's now the tail of a 3-Chain.
         let grandparent_hash = {
             let parent = self.db.get_node(&node.justify.node_hash).unwrap().unwrap();
             parent.justify.node_hash
@@ -52,13 +52,16 @@ impl NodeTree {
         let grandparent_writes = self.db.get_write_set(&grandparent_hash).unwrap();
         wb.apply_writes_to_state(&grandparent_writes);
 
-        // 5. Abandon grandparent's sibling nodes.
+        // 5. Delete grandparent's WriteSet.
+        wb.set_write_set(&grandparent_hash, None);
+
+        // 6. Abandon grandparent's sibling nodes.
         self.abandon_siblings(&grandparent_hash, &mut wb);
 
-        // 6. Write node.
+        // 7. Write node.
         wb.set_node(&node.hash(), Some(&node));
 
-        // 7. Write node's writes.
+        // 8. Write node's writes.
         wb.set_write_set(&node.hash(), Some(&writes));
 
         Ok(())

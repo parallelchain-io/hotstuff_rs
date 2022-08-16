@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use crate::msg_types::*;
 
-pub type WriteSet = Vec<(Key, Value)>;
+pub type WriteSet = HashMap<Key, Option<Value>>;
 
 impl SerDe for WriteSet {
     fn serialize(&self) -> Vec<u8> {

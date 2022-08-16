@@ -24,25 +24,49 @@ pub struct Node {
 }
 
 impl Node {
+    pub fn get_command(&self) -> msg_types::Command { todo!() }
+    pub fn get_qc(&self) -> msg_types::QuorumCertificate { todo!() }
     pub fn get_parent(&self) -> Node { todo!() }
     pub fn get_write_set(&self) -> Result<node_tree::WriteSet, AlreadyCommittedError> { todo!() } 
     pub fn get_speculative_state(&self) -> Result<State, AlreadyCommittedError> { todo!() }
 } 
 
+/// To minimize storage use, `NodeTree::insert_node` deletes the `WriteSet`s of Nodes after they become committed. This error is
+/// returned if `get_write_set` a Node that is already committed, or if `get_speculative_state` is called 
 pub struct AlreadyCommittedError;
 
-pub struct State;
+pub struct State {
+    writes: WriteSet, 
+    parent_writes: WriteSet,
+    grandparent_writes: WriteSet,
+}
 
 impl State {
     pub(crate) fn new(parent_writes: WriteSet, grandparent_writes: WriteSet) -> State {
-        todo!()
+        State {
+            writes: WriteSet::new(),
+            parent_writes,
+            grandparent_writes,
+        }
     }
 
     pub fn set(&mut self, key: Key, value: Value) {
-        todo!()
+        self.writes.insert(key, Some(value));
     }
 
-    pub fn get(&self, key: Key) -> Value {
-        todo!()
+    pub fn get(&self, key: &Key) -> Option<Value> {
+        if let Some(value) = self.writes.get(key) {
+            value.clone()
+        } else if let Some(value) = self.parent_writes.get(key) {
+            value.clone()
+        } else if let Some(value) = self.grandparent_writes.get(key) {
+            value.clone()
+        } else {
+            None
+        }
     }
+
+    pub fn delete(&self, key: Key) {
+        self.writes.insert(key, None);
+    } 
 }
