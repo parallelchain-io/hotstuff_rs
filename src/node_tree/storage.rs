@@ -14,7 +14,7 @@ use crate::msg_types::{self, NodeHash, SerDe};
 ///    this struct, `Node` would need to own a reference to `NodeTree`, a weird inversion of the intuitive hierarchy between the
 ///    two types. 
 #[derive(Clone)]
-pub(in crate::node_tree) struct Database(Arc<rocksdb::DB>);
+pub(crate) struct Database(Arc<rocksdb::DB>);
 
 impl Database {
     pub fn open() -> Result<Database, rocksdb::Error> {
@@ -64,7 +64,7 @@ impl Database {
 }
 
 #[derive(Default)]
-pub(in crate::node_tree) struct WriteBatch(rocksdb::WriteBatch);
+pub(crate) struct WriteBatch(rocksdb::WriteBatch);
 
 impl WriteBatch {
     pub fn new() -> WriteBatch {

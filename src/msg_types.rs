@@ -47,6 +47,7 @@ impl SerDe for Node {
     }
 }
 
+#[derive(Clone)]
 pub struct QuorumCertificate {
     pub vn: ViewNumber,
     pub node_hash: NodeHash,
@@ -54,7 +55,6 @@ pub struct QuorumCertificate {
 }
 
 
-// Encoding
 impl SerDe for QuorumCertificate {
     fn serialize(&self) -> Vec<u8> {
         let mut bs = Vec::new();

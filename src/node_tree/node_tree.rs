@@ -1,6 +1,7 @@
 use crate::msg_types::{self, NodeHash, QuorumCertificate};
 use crate::node_tree::storage::{Database, WriteBatch};
 use crate::node_tree::stored_types::WriteSet;
+use crate::node_tree;
 
 /// NodeTree maintains a directed acyclic graph of 'Nodes', the object of consensus. From the point of view of
 /// an Application, a NodeTree is a sequence of commands that may mutate State. In this view, a Node is a single
@@ -67,8 +68,14 @@ impl NodeTree {
         Ok(())
     }
 
-    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<msg_types::Node> {
-        self.db.get_node(hash).unwrap()
+    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<node_tree::Node> {
+        let inner = self.db.get_node(hash).unwrap()?;
+        let node = node_tree::Node {
+            inner,
+            db: self.db.clone()
+        };
+
+        Some(node)
     }
 
     pub(crate) fn get_generic_qc(&self) -> QuorumCertificate { 
@@ -79,7 +86,7 @@ impl NodeTree {
         let generic_qc = self.get_generic_qc();
         let node_with_locked_qc = self.get_node(&generic_qc.node_hash).unwrap();
 
-        node_with_locked_qc.justify
+        node_with_locked_qc.justify.clone()
     }
 
     fn abandon_siblings(&self, of_node: &NodeHash, wb: &mut WriteBatch) {
