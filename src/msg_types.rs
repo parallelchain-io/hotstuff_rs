@@ -6,7 +6,6 @@ pub type NodeHash = [u8; 32];
 pub type Command = Vec<u8>;
 pub type PublicAddress = [u8; 32];
 pub type Signature = [u8; 64];
-pub type Signatures = Vec<Option<Signature>>; 
 
 pub enum ConsensusMsg {
     Propose(ViewNumber, Node),
@@ -151,11 +150,7 @@ impl SerDe for QuorumCertificate {
     }
 }
 
-impl From<array::TryFromSliceError> for DeserializationError {
-    fn from(_: array::TryFromSliceError) -> Self {
-        DeserializationError
-    }
-}
+pub type Signatures = Vec<Option<Signature>>; 
 
 impl SerDe for Signatures {
     // Encoding:
@@ -180,3 +175,9 @@ pub trait SerDe: Sized {
 
 #[derive(Debug)]
 pub struct DeserializationError;
+
+impl From<array::TryFromSliceError> for DeserializationError {
+    fn from(_: array::TryFromSliceError) -> Self {
+        DeserializationError
+    }
+}
