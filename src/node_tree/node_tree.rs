@@ -28,16 +28,19 @@ impl NodeTree {
         }
     } 
 
-    /// Inserts a Node into the NodeTree and atomically executes the 2 kinds of persistent storage operations that
-    /// may need to occur as a result of the Node being inserted: 1. Applying the writes of (a) Node that may become
-    /// committed as a result of this insertion, and 2. Deleting abandoned branches.
-    pub(crate) fn insert_node(&mut self, node: msg_types::Node, writes: WriteSet) -> Result<(), InsertError> { 
+    /// Inserts a Node into the NodeTree as a child of node.justify.node_hash and atomically executes the 2 kinds of
+    /// persistent storage operations that may need to occur as a result of the Node being inserted:
+    /// 1. Applying the writes of (a) Node that may become committed as a result of this insertion, and
+    /// 2. Deleting abandoned branches.
+    /// 
+    /// If node.justify.node_hash is not in the NodeTree, returns a ParentNotInDBError.
+    pub(crate) fn try_insert_node(&mut self, node: msg_types::Node, writes: WriteSet) -> Result<(), ParentNotInDBError> { 
         // 1. Open WriteBatch.
         let mut wb = WriteBatch::new();
 
         // 2. Check if `node.justify.node_hash` exists in Database.
         if self.db.get_node(&node.justify.node_hash).unwrap().is_none() {
-            return Err(InsertError::ParentNotInDB)
+            return Err(ParentNotInDBError)
         }
 
         // 3. 'Register' node as a child of parent.
@@ -111,6 +114,4 @@ impl NodeTree {
     }
 }
 
-pub(crate) enum InsertError {
-    ParentNotInDB,
-}
+pub struct ParentNotInDBError;

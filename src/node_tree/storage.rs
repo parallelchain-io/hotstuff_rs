@@ -25,41 +25,46 @@ impl Database {
     } 
 
     pub fn get_node(&self, hash: &NodeHash) -> Result<Option<msg_types::Node>, rocksdb::Error> {
-        self.get_with_prefix(&keyspaces::NODES_PREFIX, hash)
+        let keyspaced_key = keyspaces::prefix(&keyspaces::NODES_PREFIX, hash);
+        match self.0.get(&keyspaced_key)? {
+            Some(bs) => Ok(Some(msg_types::Node::deserialize(bs).unwrap())),
+            None => Ok(None)
+        }
     }
 
     pub fn get_write_set(&self, of_node: &NodeHash) -> Result<WriteSet, rocksdb::Error> {
-        match self.get_with_prefix(&keyspaces::WRITE_SETS_PREFIX, of_node)? {
-            Some(write_set) => Ok(write_set),
+        let keyspaced_key = keyspaces::prefix(&keyspaces::WRITE_SETS_PREFIX, of_node);
+        match self.0.get(&keyspaced_key)? {
+            Some(bs) => Ok(WriteSet::deserialize(bs).unwrap()),
             None => Ok(WriteSet::new())
         }
     }
 
     pub fn get_children(&self, of_node: &NodeHash) -> Result<Children, rocksdb::Error> {
-        match self.get_with_prefix(&keyspaces::CHILDREN_PREFIX, of_node)? {
-            Some(children) => Ok(children),
+        let keyspaced_key = keyspaces::prefix(&keyspaces::CHILDREN_PREFIX, of_node);
+        match self.0.get(&keyspaced_key)? {
+            Some(bs) => Ok(Children::deserialize(bs).unwrap()),
             None => Ok(Children::new())
         }
     }
 
     pub fn get_node_with_generic_qc(&self) -> Result<msg_types::Node, rocksdb::Error> {
-        Ok(self.get_with_prefix(&keyspaces::NODE_CONTAINING_GENERIC_QC, &[])?.unwrap())
+        // SAFETY: NODE_CONTAINING_GENERIC_QC is initialized to the Genesis Node during Participant initialization,
+        // so this can never be None.
+        let bs = self.0.get(&keyspaces::NODE_CONTAINING_GENERIC_QC)?.unwrap();
+        Ok(msg_types::Node::deserialize(bs).unwrap())
     }
 
-    pub fn get_from_state(&self, key: &Key) -> Result<Option<Value>, rocksdb::Error> {
-        self.get_with_prefix(&keyspaces::STATE_PREFIX, key)
+    pub fn get_from_state(&self, key: &Key) -> Result<Value, rocksdb::Error> {
+        let keyspaced_key = keyspaces::prefix(&keyspaces::STATE_PREFIX, key);
+        match self.0.get(&keyspaced_key)? {
+            Some(value) => Ok(value),
+            None => Ok(Value::new()), 
+        }
     }
 
     pub fn write(&self, write_batch: WriteBatch) -> Result<(), rocksdb::Error> {
         self.0.write(write_batch.0)
-    }
-
-    fn get_with_prefix<T: SerDe>(&self, prefix: &keyspaces::Prefix, key: &[u8]) -> Result<Option<T>, rocksdb::Error> {
-        let bs = self.0.get(keyspaces::prefix(prefix, key))?;
-        match bs {
-            None => Ok(None),
-            Some(bs) => Ok(Some(T::deserialize(bs).unwrap()))
-        }
     }
 }
 
@@ -72,29 +77,38 @@ impl WriteBatch {
     }
 
     pub fn set_node(&mut self, hash: &NodeHash, node: Option<&msg_types::Node>) {
-        self.set_with_prefix(&keyspaces::NODES_PREFIX, hash, node);
+        let keyspaced_key = keyspaces::prefix(&keyspaces::NODES_PREFIX, hash);
+        match node {
+            Some(node) => self.0.put(keyspaced_key, node.serialize()),
+            None => self.0.delete(keyspaced_key)
+        } 
     }
 
     pub fn set_write_set(&mut self, of_node: &NodeHash, write_set: Option<&WriteSet>) {
-        self.set_with_prefix(&keyspaces::WRITE_SETS_PREFIX, of_node, write_set);
+        let keyspaced_key = keyspaces::prefix(&keyspaces::WRITE_SETS_PREFIX, of_node);
+        match write_set {
+            Some(write_set) => self.0.put(keyspaced_key, write_set.serialize()),
+            None => self.0.delete(keyspaced_key),
+        }
     }
 
     pub fn set_children(&mut self, of_node: &NodeHash, children: Option<&Children>) {
-        self.set_with_prefix(&keyspaces::CHILDREN_PREFIX, of_node, children);
+        let keyspaced_key = keyspaces::prefix(&keyspaces::CHILDREN_PREFIX, of_node);
+        match children {
+            Some(children) => self.0.put(keyspaced_key, children.serialize()),
+            None => self.0.delete(keyspaced_key),
+        }
     }
 
     pub fn apply_writes_to_state(&mut self, writes: &WriteSet) {
         for (key, value) in writes {
-            self.set_with_prefix(&keyspaces::STATE_PREFIX, key, value.as_ref());
+            let keyspaced_key = keyspaces::prefix(&keyspaces::STATE_PREFIX, key);
+            if value.len() > 0 {
+                self.0.put(keyspaced_key, value)
+            } else {
+                self.0.delete(keyspaced_key)
+            }
         }
-    }
-
-    pub fn set_with_prefix<T: SerDe>(&mut self, prefix: &keyspaces::Prefix, key: &[u8], value: Option<&T>) {
-        let keyspaced_key = keyspaces::prefix(prefix, key);
-        match value {
-            Some(value) => self.0.put(&keyspaced_key, value.serialize()),
-            None => self.0.delete(&keyspaced_key),
-        } 
     }
 }
 

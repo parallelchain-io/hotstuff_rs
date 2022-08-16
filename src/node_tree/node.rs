@@ -31,7 +31,8 @@ impl Node {
             let parent = self.db.get_node(&self.justify.node_hash).unwrap().unwrap();
             self.db.get_write_set(&parent.justify.node_hash).unwrap()
         };
-        State::new(parent_writes, grandparent_writes)
+
+        State::new(parent_writes, grandparent_writes, self.db.clone())
     }
 }
 

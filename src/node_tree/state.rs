@@ -1,25 +1,30 @@
-use crate::node_tree::stored_types;
+use crate::node_tree::storage;
+use crate::node_tree::stored_types::{Key, Value, WriteSet};
 
 pub struct State {
-    writes: stored_types::WriteSet, 
-    parent_writes: stored_types::WriteSet,
-    grandparent_writes: stored_types::WriteSet,
+    pub(in crate::node_tree) writes: WriteSet, 
+    pub(in crate::node_tree) parent_writes: WriteSet,
+    pub(in crate::node_tree) grandparent_writes: WriteSet,
+    pub(in crate::node_tree) db: storage::Database,
 }
 
 impl State {
-    pub(crate) fn new(parent_writes: stored_types::WriteSet, grandparent_writes: stored_types::WriteSet) -> State {
+    pub(in crate::node_tree) fn new(parent_writes: WriteSet, grandparent_writes: WriteSet, db: storage::Database) -> State {
         State {
-            writes: stored_types::WriteSet::new(),
+            writes: WriteSet::new(),
             parent_writes,
             grandparent_writes,
+            db
         }
     }
 
-    pub fn set(&mut self, key: stored_types::Key, value: stored_types::Value) {
-        self.writes.insert(key, Some(value));
+    /// To delete a Key-Value pair, set the key to Value::new().
+    pub(in crate::node_tree) fn set(&mut self, key: Key, value: Value) {
+        self.writes.insert(key, value);
     }
 
-    pub fn get(&self, key: &stored_types::Key) -> Option<stored_types::Value> {
+    /// 
+    pub(in crate::node_tree) fn get(&self, key: &Key) -> Value {
         if let Some(value) = self.writes.get(key) {
             value.clone()
         } else if let Some(value) = self.parent_writes.get(key) {
@@ -27,11 +32,7 @@ impl State {
         } else if let Some(value) = self.grandparent_writes.get(key) {
             value.clone()
         } else {
-            None
+            self.db.get_from_state(key).unwrap()
         }
     }
-
-    pub fn delete(&mut self, key: stored_types::Key) {
-        self.writes.insert(key, None);
-    } 
 }
