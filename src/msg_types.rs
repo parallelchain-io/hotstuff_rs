@@ -1,8 +1,8 @@
 use std::array;
 
 pub type ViewNumber = u64;
-pub type Command = Vec<u8>; 
 pub type NodeHash = [u8; 32];
+pub type Command = Vec<u8>;
 pub type PublicAddress = [u8; 32];
 pub type Signature = [u8; 64];
 pub type Signatures = Vec<Option<Signature>>; 

@@ -1,8 +1,8 @@
 use crate::node_tree::{self, NodeTree};
 use crate::node_tree::{Key, Value, WriteSet};
-use crate::msg_types;
+use crate::msg_types::{self, SerDe};
 
-pub trait Application {
+pub trait App {
     fn create_leaf(
         &mut self,
         parent_node: Node,
@@ -66,7 +66,7 @@ impl State {
         }
     }
 
-    pub fn delete(&self, key: Key) {
+    pub fn delete(&mut self, key: Key) {
         self.writes.insert(key, None);
     } 
 }

@@ -85,7 +85,7 @@ impl WriteBatch {
 
     pub fn apply_writes_to_state(&mut self, writes: &WriteSet) {
         for (key, value) in writes {
-            self.set_with_prefix(&keyspaces::STATE_PREFIX, key, Some(value));
+            self.set_with_prefix(&keyspaces::STATE_PREFIX, key, value.as_ref());
         }
     }
 
