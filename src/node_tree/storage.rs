@@ -1,3 +1,9 @@
+//! ## "None values are treated as equivalent to Empty values."
+//! Definitions in node_tree::Storage follow this rule to simplify the implementation of callers. This feels somewhat
+//! unidiomatic, but frees callers from having to match on whether the return value they receive from a getter is a `Some`
+//! variant or a `None`. The only exception to this rule is Node, since Node does not have an obvious or cheap-to-create 
+//! Empty value.
+
 use std::sync::Arc;
 use rocksdb;
 use crate::node_tree::stored_types::{Key, Value, WriteSet, Children};

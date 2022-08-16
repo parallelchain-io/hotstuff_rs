@@ -41,11 +41,11 @@ impl SerDe for WriteSet {
             res.insert(key, value);
         }
 
-        if cursor == bs.len() {
-            Ok(res)
-        } else {
-            Err(DeserializationError)
+        if cursor != bs.len() {
+            // Safety: the condition implies that we previously wrote a wrongly-serialized WriteSet into our Database. 
+            unreachable!()
         }
+        Ok(res)
     }
 }
 
@@ -56,11 +56,34 @@ pub type Value = Vec<u8>;
 pub type Children = HashSet<NodeHash>;
 
 impl SerDe for Children {
+    // # Encoding
+    // Obvious concatenation. No order.
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        let mut buf = Vec::new();
+        for child_hash in self {
+            buf.extend_from_slice(child_hash);
+        }
+
+        return buf
     }
 
     fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
-        todo!()    
+        let mut res = Children::new();
+        let mut cursor = 0usize;
+        while cursor < bs.len() {
+            let child_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into().unwrap();
+            cursor += mem::size_of::<NodeHash>();
+            if res.insert(child_hash) {
+                // Safety: entering this block implies that we registered the same Node twice as a child. 
+                unreachable!()
+            }
+        }
+
+        if cursor != bs.len() {
+            // Safety: the condition implies that we previously wrote a wrongly-serialized Children into our Database.
+            unreachable!()
+        }
+
+        Ok(res)
     }
 }
