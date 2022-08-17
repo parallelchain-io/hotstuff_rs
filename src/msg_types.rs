@@ -7,6 +7,7 @@ pub type Command = Vec<u8>;
 pub type PublicAddress = [u8; 32];
 pub type Signature = [u8; 64];
 
+#[derive(Clone)]
 pub enum ConsensusMsg {
     Propose(ViewNumber, Node),
     Vote(ViewNumber, NodeHash, Signature),
@@ -95,6 +96,7 @@ impl SerDe for ConsensusMsg {
     }
 }
 
+#[derive(Clone)]
 pub struct Node {
     pub command: Command,
     pub justify: QuorumCertificate,

@@ -12,3 +12,4 @@ license = "GPL-2.0-or-later"
 
 [dependencies]
 rocksdb = "0.19.0"
+threadpool = "1.8.1"

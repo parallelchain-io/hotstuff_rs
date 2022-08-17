@@ -1,17 +1,17 @@
-use std::sync::mpsc;
+use std::sync::{Arc, RwLock, mpsc};
 use crate::msg_types::{ConsensusMsg, PublicAddress};
 use crate::ipc::{ConnectionSet, manager};
 
 #[derive(Clone)]
 pub struct Handle {
-    connections: ConnectionSet,
+    connections: Arc<ConnectionSet>,
     to_establisher: mpsc::Sender<manager::EstablishRequest>,
     to_sender: mpsc::Sender<manager::SendRequest>,
 }
 
 impl Handle {
     pub fn new(
-        connections: ConnectionSet,
+        connections: Arc<RwLock<ConnectionSet>>,
         to_establisher: mpsc::Sender<manager::EstablishRequest>,
         to_sender: mpsc::Sender<manager::SendRequest>
     ) -> Handle {
