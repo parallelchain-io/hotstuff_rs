@@ -33,12 +33,16 @@ impl Manager {
             establisher: Self::establisher(connections.clone(), establisher_from_handles),
             sender: Self::sender(connections.clone(), sender_from_handles, to_establisher.clone()),
         };
-        let handle = ipc::Handle::new(connections, to_establisher, to_sender.clone());
+        let handle = ipc::Handle {
+            connections,
+            to_establisher,
+            to_sender: to_sender.clone()
+        };
 
         (manager, handle)
     }
 
-    // Spawns the establisher thread(s). These are responsible for establishing new connections upon ipc::Handle::update_connections being
+    // Spawns the establisher threads. These are responsible for establishing new connections upon ipc::Handle::update_connections being
     // called.
     fn establisher(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
@@ -64,8 +68,7 @@ impl Manager {
                         let peer_addr = stream.peer_addr().unwrap();
                         let mut pending_connections = pending_connections.write().unwrap();
 
-                        // Register the new stream in ConnectionSet to all of the PublicAddresses it is associated with (the protocol does not
-                        // disallow a single peer address to be 'controlled' by multiple PublicAddresses).
+                        // Register the new stream in ConnectionSet to all of the PublicAddresses it is associated with.
                         let public_addrs: Vec<([u8; 32], SocketAddr)> = pending_connections
                             .iter()
                             .filter(|(_, _peer_addr)| **_peer_addr == peer_addr) 
@@ -105,17 +108,27 @@ impl Manager {
                 let mut connections = connections.write().unwrap();
 
                 match request {
-                    EstablisherRequest::Establish(addrs) => {
-                        for (public_addr, peer_addr) in addrs {
+                    EstablisherRequest::ReplaceConnectionSet(new_addrs) => {
+                        // Remove actual connections that should not be part of the new ConnectionSet.
+                        connections.retain(|public_addr, socket_addr| {
+                            new_addrs.contains(&(*public_addr, socket_addr.peer_addr().unwrap()))
+                        });
+
+                        // Re-populate pending connections with connections that should be part of the new
+                        // ConnectionSet but isn't there yet.
+                        pending_connections.clear();
+                        for (public_addr, peer_addr) in new_addrs {
                             if connections.get(&public_addr).is_none() {
                                 pending_connections.insert(public_addr, peer_addr);
                             }
                         }
                     },
-                    EstablisherRequest::Drop(public_addrs) => {
-                        for public_addr in public_addrs {
-                            let _ = connections.remove(&public_addr);
-                            let _ = pending_connections.remove(&public_addr);
+                    EstablisherRequest::Reconnect(addrs) => {
+                        for (public_addr, peer_addr) in addrs {
+                            // TODO: describe scenarios in which this would be None instead. 
+                            if connections.get(&public_addr).is_some() {
+                                pending_connections.insert(public_addr, peer_addr);
+                            }
                         }
                     },
                 }
@@ -123,7 +136,7 @@ impl Manager {
         })
     } 
 
-    // Spawns the sender thread(s). These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
+    // Spawns the sender threads. These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
     // the corresponding methods in ipc::Handle to return quickly.
     fn sender(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<SendRequest>, to_establisher: mpsc::Sender<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
@@ -135,6 +148,7 @@ impl Manager {
 
                 match request {
                         SendRequest::SendTo(public_addr, msg) => {
+                            // TODO: describe scenarios in which this would be None instead.
                             if let Some(mut stream) = connections.read().unwrap().get(&public_addr) {
                                 if stream.write_all(&msg.serialize()).is_err() {
                                     errored_connections.lock().unwrap().push((public_addr.clone(), stream.peer_addr().unwrap()));
@@ -160,14 +174,10 @@ impl Manager {
 
                     let errored_connections = errored_connections.lock().unwrap();
                     if errored_connections.len() > 0 {
-                        // Drop errored connections.
-                        let mut connections = connections.write().unwrap();
-                        for (public_addr, _) in &*errored_connections {
-                            connections.remove(public_addr);
-                        }
+                        // TODO: distinguish between dropped and slow connections.
 
                         // Try to re-establish errored connections.
-                        to_establisher.send(EstablisherRequest::Establish(errored_connections.to_vec())).unwrap();
+                        to_establisher.send(EstablisherRequest::Reconnect(errored_connections.to_vec())).unwrap();
                     }
                 }
         })
@@ -175,11 +185,10 @@ impl Manager {
 }
 
 pub enum EstablisherRequest {
-    Establish(Vec<(PublicAddress, SocketAddr)>),
-    Drop(Vec<(PublicAddress)>),
+    ReplaceConnectionSet(Vec<(PublicAddress, SocketAddr)>),
+    Reconnect(Vec<(PublicAddress, SocketAddr)>),
 }
 
-//
 pub enum SendRequest {
     SendTo(PublicAddress, ConsensusMsg),
     Broadcast(ConsensusMsg),

@@ -1,36 +1,30 @@
+use std::net::SocketAddr;
 use std::sync::{Arc, RwLock, mpsc};
 use crate::msg_types::{ConsensusMsg, PublicAddress};
-use crate::ipc::{ConnectionSet, manager};
+use crate::ipc::ConnectionSet;
+use crate::ipc::manager::{EstablisherRequest, SendRequest};
 
 #[derive(Clone)]
 pub struct Handle {
-    connections: Arc<ConnectionSet>,
-    to_establisher: mpsc::Sender<manager::EstablisherRequest>,
-    to_sender: mpsc::Sender<manager::SendRequest>,
+    pub(in crate::ipc) connections: Arc<RwLock<ConnectionSet>>,
+    pub(in crate::ipc) to_establisher: mpsc::Sender<EstablisherRequest>,
+    pub(in crate::ipc) to_sender: mpsc::Sender<SendRequest>,
 }
 
 impl Handle {
-    pub fn new(
-        connections: Arc<RwLock<ConnectionSet>>,
-        to_establisher: mpsc::Sender<manager::EstablisherRequest>,
-        to_sender: mpsc::Sender<manager::SendRequest>
-    ) -> Handle {
-        todo!()
+    pub fn update_connections(&self, new_addrs: Vec<(PublicAddress, SocketAddr)>) {
+        self.to_establisher.send(EstablisherRequest::ReplaceConnectionSet(new_addrs)).unwrap()
     }
 
-    pub fn update_connections(&mut self, new_connection_set: ConnectionSet) {
-        todo!()
+    pub fn send_to(&self, participant: PublicAddress, msg: ConsensusMsg) {
+        self.to_sender.send(SendRequest::SendTo(participant, msg)).unwrap();
     }
 
-    pub fn send_to(msg: ConsensusMsg, participant: PublicAddress) {
-        todo!()
+    pub fn broadcast(&self, msg: ConsensusMsg) {
+        self.to_sender.send(SendRequest::Broadcast(msg)).unwrap();
     }
 
-    pub fn broadcast(msg: ConsensusMsg) {
-        todo!()
-    }
-
-    pub fn recv_from(participant: PublicAddress) -> ConsensusMsg {
+    pub fn recv_from(&self, participant: PublicAddress) -> ConsensusMsg {
         todo!()
     }
 

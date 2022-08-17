@@ -1,3 +1,3 @@
 struct Server;
 
-struct Client;
+struct SyncModeClient;
