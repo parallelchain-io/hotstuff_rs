@@ -18,10 +18,12 @@ pub struct Manager {
 
 impl Manager {
     const N_SENDERS: usize = 4;
+
     const ESTABLISH_TIMEOUT: time::Duration = time::Duration::new(15, 0);
     const WRITE_TIMEOUT: time::Duration = Self::ESTABLISH_TIMEOUT;
     const READ_TIMEOUT: time::Duration = Self::WRITE_TIMEOUT; 
-    const LISTENER_ADDR: &'static str = "127.0.0.1:8080";
+
+    const LISTENER_IP_ADDR: &'static str = "127.0.0.1:53410";
 
     fn new() -> (Manager, ipc::Handle) {
         let connections = Arc::new(RwLock::new(ConnectionSet::new()));
@@ -53,7 +55,7 @@ impl Manager {
                 let pending_connections = pending_connections_for_listener;
                 let connections = connections_for_listener;
 
-                let listener = TcpListener::bind(Self::LISTENER_ADDR).expect("Irrecoverable: failed to bind IPC Manager Establisher listener");
+                let listener = TcpListener::bind(Self::LISTENER_IP_ADDR).expect("Irrecoverable: failed to bind IPC Manager Establisher listener");
                 for stream in listener.incoming() {
                     if let Ok(stream) = stream {
                         stream.set_read_timeout(Some(Self::READ_TIMEOUT)).unwrap();

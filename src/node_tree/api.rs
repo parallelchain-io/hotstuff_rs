@@ -1,0 +1,3 @@
+struct Server;
+
+struct Client;
