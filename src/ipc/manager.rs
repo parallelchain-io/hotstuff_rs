@@ -8,11 +8,11 @@ use threadpool::ThreadPool;
 use crate::msg_types::{PublicAddress, ConsensusMsg, SerDe};
 use crate::ipc::{self, ConnectionSet};
 
+/// ipc::Manager works in the background to implement the non-blocking sends, broadcasts, and establishment of new TCP connections
+/// offered by ipc::Handle.
 pub struct Manager {
     establisher: thread::JoinHandle<()>,
     sender: thread::JoinHandle<()>,
-    to_establisher: mpsc::Sender<EstablishRequest>,
-    to_sender: mpsc::Sender<SendRequest>,
     // The listening side of sender is blocking, and is implemented directly on ipc::Handle. 
 }
 
@@ -30,19 +30,22 @@ impl Manager {
         let manager = Manager {
             establisher: Self::establisher(connections.clone(), establisher_from_handles),
             sender: Self::sender(connections.clone(), sender_from_handles, to_establisher.clone()),
-            to_establisher: to_establisher.clone(),
-            to_sender: to_sender.clone(),
         };
         let handle = ipc::Handle::new(connections, to_establisher, to_sender.clone());
 
         (manager, handle)
     }
 
-    fn establisher(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<EstablishRequest>) -> thread::JoinHandle<()> {
+    // Spawns the establisher thread(s). These are responsible for establishing new connections upon ipc::Handle::update_connections being
+    // called.
+    fn establisher(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let pending_connections = Arc::new(RwLock::new(HashMap::new())); 
+            let pending_connections = Arc::new(RwLock::new(HashMap::<PublicAddress, SocketAddr>::new())); 
 
             // Spawn the Listener thread.
+            // The Listener thread listens on a TcpListener for incoming connections. If an incoming connection matches one in pending_
+            // it places it in the ConnectionSet shared between the components of the IPC module.
+
             // TODO: when scoped threads become stable, these clones can be removed.
             let pending_connections_for_listener = pending_connections.clone();
             let connections_for_listener = connections.clone();
@@ -55,40 +58,72 @@ impl Manager {
                     if let Ok(stream) = stream {
                         stream.set_read_timeout(Some(Self::READ_TIMEOUT)).unwrap();
                         stream.set_write_timeout(Some(Self::WRITE_TIMEOUT)).unwrap();
+
                         let peer_addr = stream.peer_addr().unwrap();
-                        if let Some(public_addr) = pending_connections.read().unwrap().get(&peer_addr) {
-                            connections.write().unwrap().insert(*public_addr, stream);
-                            pending_connections.write().unwrap().remove(&peer_addr);
-                        }
+                        let mut pending_connections = pending_connections.write().unwrap();
+
+                        // Register the new stream in ConnectionSet to all of the PublicAddresses it is associated with (the protocol does not
+                        // disallow a single peer address to be 'controlled' by multiple PublicAddresses).
+                        let public_addrs: Vec<([u8; 32], SocketAddr)> = pending_connections
+                            .iter()
+                            .filter(|(_, _peer_addr)| **_peer_addr == peer_addr) 
+                            .map(|(public_addr, peer_addr)| (public_addr.to_owned(), peer_addr.to_owned()))
+                            .collect();
+                        for (public_addr, _) in public_addrs {
+                            connections.write().unwrap().insert(public_addr, stream.try_clone().unwrap());
+                            pending_connections.remove(&public_addr);
+                        }                        
                     } 
                 }
             });
 
             // Spawn the Initiator thread.
+            // The Initiator thread continually attempts to turn pending connections into actual TCP connections. If successful, it places
+            // actual connections to the shared ConnectionSet.
+
             // TODO: when scoped threads become stable, this clone can be removed.
             let pending_connections_for_initiator = pending_connections.clone();
+            let connections_for_initiator = connections.clone();
             let _ = thread::spawn(move || {
                 let pending_connections = pending_connections_for_initiator;
+                let connections = connections_for_initiator;
+
                 loop {
-                    for (socket_addr, public_addr) in &*pending_connections.read().unwrap() {
-                        if let Ok(stream) = TcpStream::connect_timeout(socket_addr, Self::ESTABLISH_TIMEOUT) {
+                    for (public_addr, peer_addr) in &*pending_connections.read().unwrap() {
+                        if let Ok(stream) = TcpStream::connect_timeout(peer_addr, Self::ESTABLISH_TIMEOUT) {
                             connections.write().unwrap().insert(*public_addr, stream);
                         }
                     } 
                 }
             });
 
-            // Place connection establishment requests into pending_connections.
-            for EstablishRequest(addrs) in requests {
+            // Update `pending_connections` and `connections` in response to EstablisherRequests.
+            for request in requests {
                 let mut pending_connections = pending_connections.write().unwrap();
-                for (public_addr, peer_addr) in addrs {
-                    pending_connections.insert(peer_addr, public_addr);
+                let mut connections = connections.write().unwrap();
+
+                match request {
+                    EstablisherRequest::Establish(addrs) => {
+                        for (public_addr, peer_addr) in addrs {
+                            if connections.get(&public_addr).is_none() {
+                                pending_connections.insert(public_addr, peer_addr);
+                            }
+                        }
+                    },
+                    EstablisherRequest::Drop(public_addrs) => {
+                        for public_addr in public_addrs {
+                            let _ = connections.remove(&public_addr);
+                            let _ = pending_connections.remove(&public_addr);
+                        }
+                    },
                 }
             }
         })
     } 
 
-    fn sender(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<SendRequest>, to_establisher: mpsc::Sender<EstablishRequest>) -> thread::JoinHandle<()> {
+    // Spawns the sender thread(s). These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
+    // the corresponding methods in ipc::Handle to return quickly.
+    fn sender(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<SendRequest>, to_establisher: mpsc::Sender<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             let workers = ThreadPool::new(Self::N_SENDERS);
     
@@ -130,21 +165,19 @@ impl Manager {
                         }
 
                         // Try to re-establish errored connections.
-                        to_establisher.send(EstablishRequest(errored_connections.to_vec())).unwrap();
+                        to_establisher.send(EstablisherRequest::Establish(errored_connections.to_vec())).unwrap();
                     }
                 }
         })
     }
 }
 
-impl Drop for Manager {
-    fn drop(&mut self) {
-        todo!()
-    }
+pub enum EstablisherRequest {
+    Establish(Vec<(PublicAddress, SocketAddr)>),
+    Drop(Vec<(PublicAddress)>),
 }
 
-pub struct EstablishRequest(Vec<(PublicAddress, SocketAddr)>);
-
+//
 pub enum SendRequest {
     SendTo(PublicAddress, ConsensusMsg),
     Broadcast(ConsensusMsg),
