@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::thread;
 use std::sync::{Arc, RwLock, Mutex, mpsc};
@@ -42,8 +42,8 @@ impl Manager {
         (manager, handle)
     }
 
-    // Spawns the establisher threads. These are responsible for establishing new connections upon ipc::Handle::update_connections being
-    // called.
+    // Spawn the Establisher threads. These are responsible for establishing new connections upon ipc::Handle::update_connections being
+    // called. The Establisher thread has *exclusive* write access to the ConnectionSet.
     fn establisher(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             let pending_connections = Arc::new(RwLock::new(HashMap::<PublicAddress, SocketAddr>::new())); 
@@ -125,7 +125,15 @@ impl Manager {
                     },
                     EstablisherRequest::Reconnect(addrs) => {
                         for (public_addr, peer_addr) in addrs {
-                            // TODO: describe scenarios in which this would be None instead. 
+                            // Safety:
+                            // This would be None in this timing scenario (assume that `Sender::send` are received in the order of sending):
+                            // | (Thread that owns) Handle    | Sender  thread             |
+                            // |                              | 1. Encounter errored conn. |
+                            // | 2. Send ReplaceConnectionSet |                            |
+                            // |                              | 3. Send Reconnect          |
+                            //
+                            // In this case, if we remove this condition and insert without a check, ConnectionSet will contain a connection
+                            // to a Participant that is no longer in the ParticipantSet.
                             if connections.get(&public_addr).is_some() {
                                 pending_connections.insert(public_addr, peer_addr);
                             }
@@ -136,7 +144,7 @@ impl Manager {
         })
     } 
 
-    // Spawns the sender threads. These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
+    // Spawn the Sender threads. These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
     // the corresponding methods in ipc::Handle to return quickly.
     fn sender(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<SendRequest>, to_establisher: mpsc::Sender<EstablisherRequest>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
@@ -144,14 +152,16 @@ impl Manager {
     
             for request in requests {
                 // When scoped threads become stable, this Arc can be removed.
-                let errored_connections = Arc::new(Mutex::new(Vec::new()));
+                let likely_dropped_conns = Arc::new(Mutex::new(Vec::new()));
 
                 match request {
                         SendRequest::SendTo(public_addr, msg) => {
-                            // TODO: describe scenarios in which this would be None instead.
                             if let Some(mut stream) = connections.read().unwrap().get(&public_addr) {
-                                if stream.write_all(&msg.serialize()).is_err() {
-                                    errored_connections.lock().unwrap().push((public_addr.clone(), stream.peer_addr().unwrap()));
+                                if let Err(e) = stream.write_all(&msg.serialize()) {
+                                    // For any other error other than TimedOut, we assume that the other side of the connection has dropped.
+                                    if e.kind() != io::ErrorKind::TimedOut {
+                                        likely_dropped_conns.lock().unwrap().push((public_addr.clone(), stream.peer_addr().unwrap()));
+                                    }
                                 }
                             }
                         },
@@ -159,25 +169,25 @@ impl Manager {
                             let connections = connections.read().unwrap();
                             for (public_addr, stream) in &*connections {
                                 // TODO: when scoped threads become stable, these clones can be removed.
-                                let errored_connections = errored_connections.clone();
+                                let likely_dropped_conns = likely_dropped_conns.clone();
                                 let msg = msg.clone();
                                 let public_addr = public_addr.clone();
                                 let mut stream = stream.try_clone().unwrap();
                                 workers.execute(move || {
-                                    if stream.write_all(&msg.serialize()).is_err() {
-                                        errored_connections.lock().unwrap().push((public_addr, stream.peer_addr().unwrap()));
+                                    if let Err(e) = stream.write_all(&msg.serialize()) {
+                                    if e.kind() != io::ErrorKind::TimedOut {
+                                        likely_dropped_conns.lock().unwrap().push((public_addr.clone(), stream.peer_addr().unwrap()));
                                     }
+                                }
                                 })
                             }  
                         },
                     }
 
-                    let errored_connections = errored_connections.lock().unwrap();
-                    if errored_connections.len() > 0 {
-                        // TODO: distinguish between dropped and slow connections.
-
+                    let likely_dropped_conns = likely_dropped_conns.lock().unwrap();
+                    if likely_dropped_conns.len() > 0 {
                         // Try to re-establish errored connections.
-                        to_establisher.send(EstablisherRequest::Reconnect(errored_connections.to_vec())).unwrap();
+                        to_establisher.send(EstablisherRequest::Reconnect(likely_dropped_conns.to_vec())).unwrap();
                     }
                 }
         })
@@ -185,7 +195,11 @@ impl Manager {
 }
 
 pub enum EstablisherRequest {
+    /// Instructs the Establisher the establisher thread to replace the current ConnectionSet with a new set of connections.
+    /// This request is handled asynchronously and on a best-effort basis.
     ReplaceConnectionSet(Vec<(PublicAddress, SocketAddr)>),
+
+    /// Instructs the Establisher to re-connect to the identified dropped connections.
     Reconnect(Vec<(PublicAddress, SocketAddr)>),
 }
 
