@@ -11,10 +11,11 @@ pub(crate) use handle::Handle;
 pub(crate) mod manager;
 pub(crate) use manager::Manager;
 
-/// Defines ConnectionSet, a type alias of HashSet<PublicAddress, TcpStream> that is frequently referenced
+/// Defines RwTcpStream, a synchronization wrapper around net::TcpStream with desirable thread-safety properties. 
+pub(crate) mod rw_tcpstream;
+pub(crate) use rw_tcpstream::RwTcpStream;
+
+/// Defines ConnectionSet, a type alias of HashSet<PublicAddress, Arc<RwTcpStream>> that is frequently referenced
 /// throughout the IPC module. 
 pub(crate) mod connection_set;
 pub(crate) use connection_set::ConnectionSet;
-
-pub(crate) mod rw_tcpstream;
-pub(crate) use rw_tcpstream::RwTcpStream;
