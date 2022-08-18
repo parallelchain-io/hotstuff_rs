@@ -21,7 +21,7 @@ impl Manager {
 
     const ESTABLISH_TIMEOUT: time::Duration = time::Duration::new(15, 0);
     const WRITE_TIMEOUT: time::Duration = Self::ESTABLISH_TIMEOUT;
-    const READ_TIMEOUT: time::Duration = Self::WRITE_TIMEOUT; 
+    pub const READ_TIMEOUT: time::Duration = Self::WRITE_TIMEOUT; 
 
     const LISTENER_IP_ADDR: &'static str = "127.0.0.1:53410";
 
@@ -33,11 +33,7 @@ impl Manager {
             establisher: Self::establisher(connections.clone(), establisher_from_handles),
             sender: Self::sender(connections.clone(), sender_from_handles, to_establisher.clone()),
         };
-        let handle = ipc::Handle {
-            connections,
-            to_establisher,
-            to_sender: to_sender.clone()
-        };
+        let handle = ipc::Handle::new(connections, to_establisher, to_sender);
 
         (manager, handle)
     }
@@ -69,12 +65,12 @@ impl Manager {
                         let mut pending_connections = pending_connections.write().unwrap();
 
                         // Register the new stream in ConnectionSet to all of the PublicAddresses it is associated with.
-                        let public_addrs: Vec<([u8; 32], SocketAddr)> = pending_connections
+                        let matching_public_addrs: Vec<([u8; 32], SocketAddr)> = pending_connections
                             .iter()
                             .filter(|(_, _peer_addr)| **_peer_addr == peer_addr) 
                             .map(|(public_addr, peer_addr)| (public_addr.to_owned(), peer_addr.to_owned()))
                             .collect();
-                        for (public_addr, _) in public_addrs {
+                        for (public_addr, _) in matching_public_addrs {
                             connections.write().unwrap().insert(public_addr, stream.try_clone().unwrap());
                             pending_connections.remove(&public_addr);
                         }                        
@@ -127,7 +123,9 @@ impl Manager {
                         for (public_addr, peer_addr) in addrs {
                             // Safety:
                             // This would be None in this timing scenario (assume that `Sender::send` are received in the order of sending):
+                            //
                             // | (Thread that owns) Handle    | Sender  thread             |
+                            // | ---------------------------- | -------------------------- |
                             // |                              | 1. Encounter errored conn. |
                             // | 2. Send ReplaceConnectionSet |                            |
                             // |                              | 3. Send Reconnect          |
