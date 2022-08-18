@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::collections::HashMap;
-use std::net::TcpStream;
 use crate::msg_types::PublicAddress;
-use crate::ipc::CRwLock;
+use crate::ipc::RwTcpStream;
 
-pub(crate) type ConnectionSet = HashMap<PublicAddress, Arc<CRwLock<TcpStream>>>;
+pub(crate) type ConnectionSet = HashMap<PublicAddress, Arc<RwTcpStream>>;

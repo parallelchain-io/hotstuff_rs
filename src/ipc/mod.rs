@@ -16,5 +16,5 @@ pub(crate) use manager::Manager;
 pub(crate) mod connection_set;
 pub(crate) use connection_set::ConnectionSet;
 
-pub(crate) mod crw_lock;
-pub(crate) use crw_lock::CRwLock;
+pub(crate) mod rw_tcpstream;
+pub(crate) use rw_tcpstream::RwTcpStream;

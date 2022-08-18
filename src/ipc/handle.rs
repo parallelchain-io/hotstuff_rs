@@ -5,8 +5,9 @@ use std::cmp;
 use std::thread;
 use threadpool::ThreadPool;
 use crate::msg_types::{ConsensusMsg, PublicAddress};
-use crate::ipc::ConnectionSet;
+use crate::ipc::{ConnectionSet, RwTcpStream};
 use crate::ipc::manager::{Manager, EstablisherRequest, SendRequest};
+
 
 #[derive(Clone)]
 pub(crate) struct Handle {
@@ -59,7 +60,7 @@ impl Handle {
         while beginning.elapsed() < timeout {
             match self.connections.read().unwrap().get(participant) {
                 None => thread::yield_now(),
-                Some(stream) => return ConsensusMsg::deserialize_from_stream(stream.read(), &timeout),
+                Some(stream) => return ConsensusMsg::deserialize_from_stream(stream, &timeout),
             }
         }
 
@@ -92,11 +93,11 @@ impl Handle {
 pub struct RecvError;
 
 impl ConsensusMsg {
-    fn deserialize_from_stream(stream: &TcpStream, timeout: &Duration) -> Result<ConsensusMsg, RecvError> {
+    fn deserialize_from_stream(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, RecvError> {
         todo!()
     }
 
-    fn deserialize_from_stream_peek(stream: &TcpStream, timeout: &Duration) -> Result<ConsensusMsg, RecvError> {
+    fn deserialize_from_stream_peek(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, RecvError> {
         todo!()
     }
 }

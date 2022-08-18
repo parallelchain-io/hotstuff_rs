@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock, Mutex, mpsc};
 use std::time;
 use threadpool::ThreadPool;
 use crate::msg_types::{PublicAddress, ConsensusMsg, SerDe};
-use crate::ipc::{self, ConnectionSet, CRwLock};
+use crate::ipc::{self, ConnectionSet, RwTcpStream};
 
 /// ipc::Manager works in the background to implement the non-blocking sends, broadcasts, and establishment of new TCP connections
 /// offered by ipc::Handle.
@@ -60,6 +60,7 @@ impl Manager {
                     if let Ok(stream) = stream {
                         stream.set_read_timeout(Some(Self::READ_TIMEOUT)).unwrap();
                         stream.set_write_timeout(Some(Self::WRITE_TIMEOUT)).unwrap();
+                        let stream = Arc::new(RwTcpStream::new(stream));
 
                         let peer_addr = stream.peer_addr().unwrap();
                         let mut pending_connections = pending_connections.write().unwrap();
@@ -71,7 +72,7 @@ impl Manager {
                             .map(|(public_addr, peer_addr)| (public_addr.to_owned(), peer_addr.to_owned()))
                             .collect();
                         for (public_addr, _) in matching_public_addrs {
-                            connections.write().unwrap().insert(public_addr, Arc::new(CRwLock::new(stream.try_clone().unwrap())));
+                            connections.write().unwrap().insert(public_addr, stream.clone());
                             pending_connections.remove(&public_addr);
                         }                        
                     } 
@@ -92,7 +93,7 @@ impl Manager {
                 loop {
                     for (public_addr, peer_addr) in &*pending_connections.read().unwrap() {
                         if let Ok(stream) = TcpStream::connect_timeout(peer_addr, Self::ESTABLISH_TIMEOUT) {
-                            connections.write().unwrap().insert(*public_addr, Arc::new(CRwLock::new(stream)));
+                            connections.write().unwrap().insert(*public_addr, Arc::new(RwTcpStream::new(stream)));
                         }
                     } 
                 }
@@ -106,8 +107,8 @@ impl Manager {
                 match request {
                     EstablisherRequest::ReplaceConnectionSet(new_addrs) => {
                         // Remove actual connections that should not be part of the new ConnectionSet.
-                        connections.retain(|public_addr, socket_addr| {
-                            new_addrs.contains(&(*public_addr, socket_addr.read().peer_addr().unwrap()))
+                        connections.retain(|public_addr, stream| {
+                            new_addrs.contains(&(*public_addr, stream.peer_addr().unwrap()))
                         });
 
                         // Re-populate pending connections with connections that should be part of the new
@@ -154,7 +155,6 @@ impl Manager {
                                 let stream = stream.clone();
                                 let to_establisher = to_establisher.clone();
                                 workers.execute(move || {
-                                    let mut stream = stream.write();
                                     if let Err(e) = stream.write_all(&msg.serialize()) {
                                         if e.kind() != io::ErrorKind::TimedOut {
                                             to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
@@ -172,7 +172,6 @@ impl Manager {
                                 let stream = stream.clone();
                                 let to_establisher = to_establisher.clone();
                                 workers.execute(move || {
-                                    let mut stream = stream.write();
                                     if let Err(e) = stream.write_all(&msg.serialize()) {
                                         if e.kind() != io::ErrorKind::TimedOut {
                                             to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
