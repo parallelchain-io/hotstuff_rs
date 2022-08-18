@@ -15,3 +15,6 @@ pub(crate) use manager::Manager;
 /// throughout the IPC module. 
 pub(crate) mod connection_set;
 pub(crate) use connection_set::ConnectionSet;
+
+pub(crate) mod crw_lock;
+pub(crate) use crw_lock::CRwLock;

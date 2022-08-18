@@ -9,7 +9,7 @@ use crate::ipc::ConnectionSet;
 use crate::ipc::manager::{Manager, EstablisherRequest, SendRequest};
 
 #[derive(Clone)]
-pub struct Handle {
+pub(crate) struct Handle {
     connections: Arc<RwLock<ConnectionSet>>,
     to_establisher: mpsc::Sender<EstablisherRequest>,
     to_sender: mpsc::Sender<SendRequest>,
@@ -59,7 +59,7 @@ impl Handle {
         while beginning.elapsed() < timeout {
             match self.connections.read().unwrap().get(participant) {
                 None => thread::yield_now(),
-                Some(stream) => return ConsensusMsg::deserialize_from_stream(stream, &timeout),
+                Some(stream) => return ConsensusMsg::deserialize_from_stream(stream.read(), &timeout),
             }
         }
 
@@ -76,15 +76,16 @@ impl Handle {
         //      to the Establisher.
         // 3. The moment the main thread receives a ConsensusMsg, remove that message from the socket on which in was
         //    received, and then return the ConsensusMsg.
-        let (to_main, from_worker) = mpsc::channel();
-        let connections = self.connections.read().unwrap();
-        for (_, stream) in connections {
+        todo!()
+        // let (to_main, from_worker) = mpsc::channel();
+        // let connections = self.connections.read().unwrap();
+        // for (_, stream) in connections {
 
-            let stream = stream.try_clone().unwrap();
-            self.receivers.execute(move || {
+        //     let stream = stream.try_clone().unwrap();
+        //     self.receivers.execute(move || {
                 
-            })
-        } 
+        //     })
+        // } 
     }
 }
 
