@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::net::{TcpStream, SocketAddr};
 use std::io::{self, Read, Write};
+use std::time::{Duration, Instant};
 
 /// RwTcpStream is a synchronization wrapper around RwTcpStream that allows at most a single thread to read from the
 /// stream AND a single thread to write from the stream.
@@ -32,9 +33,21 @@ impl RwTcpStream {
         (&mut &self.stream).read_exact(buf)
     } 
     
-    pub fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn peek_exact_timeout(&self, buf: &mut [u8], dur: Duration) -> io::Result<usize> {
+        let start = Instant::now();
+
         let _read_lock = self.read_lock.lock().unwrap();
-        self.stream.peek(buf)
+
+        let mut time_left = dur - start.elapsed();
+        let mut len_read = 0usize;
+        while len_read < buf.len() && !time_left.is_zero() {
+            self.stream.set_read_timeout(Some(time_left));
+            let buf = &mut buf[len_read..];
+            len_read += self.stream.peek(buf)?;
+            time_left = dur.saturating_sub(start.elapsed());
+        }
+
+        Ok(len_read)
     }
 
     pub fn write_all(&self, buf: &[u8]) -> io::Result<()> {
