@@ -157,7 +157,7 @@ impl Manager {
                                     let mut stream = stream.write();
                                     if let Err(e) = stream.write_all(&msg.serialize()) {
                                         if e.kind() != io::ErrorKind::TimedOut {
-                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap())));
+                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
                                         }
                                     }
                                 });
@@ -175,7 +175,7 @@ impl Manager {
                                     let mut stream = stream.write();
                                     if let Err(e) = stream.write_all(&msg.serialize()) {
                                         if e.kind() != io::ErrorKind::TimedOut {
-                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap())));
+                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
                                         }
                                     }
                                 })
