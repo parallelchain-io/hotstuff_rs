@@ -28,24 +28,39 @@ impl RwTcpStream {
         }
     }
 
-    pub fn read_exact(&self, buf: &mut [u8]) -> io::Result<()> {
+    pub fn read_exact_timeout(&self, buf: &mut [u8], dur: Option<Duration>) -> io::Result<()> {
         let _read_lock = self.read_lock.lock().unwrap();
-        (&mut &self.stream).read_exact(buf)
+        let original_read_timeout = self.stream.read_timeout().unwrap();
+
+        self.stream.set_read_timeout(dur).unwrap();
+        let bs = (&mut &self.stream).read_exact(buf)?;
+
+        self.stream.set_read_timeout(original_read_timeout).unwrap();
+
+        Ok(bs)
     } 
     
-    pub fn peek_exact_timeout(&self, buf: &mut [u8], dur: Duration) -> io::Result<usize> {
+    pub fn peek_exact_timeout(&self, buf: &mut [u8], dur: Option<Duration>) -> io::Result<usize> {
         let start = Instant::now();
 
         let _read_lock = self.read_lock.lock().unwrap();
+        let original_read_timeout = self.stream.read_timeout().unwrap();
 
-        let mut time_left = dur - start.elapsed();
+        let mut time_left = match dur {
+            Some(dur) => dur - start.elapsed(),
+            None => Duration::MAX,
+        };
         let mut len_read = 0usize;
         while len_read < buf.len() && !time_left.is_zero() {
-            self.stream.set_read_timeout(Some(time_left));
+            self.stream.set_read_timeout(Some(time_left)).unwrap();
             let buf = &mut buf[len_read..];
             len_read += self.stream.peek(buf)?;
-            time_left = dur.saturating_sub(start.elapsed());
+            if let Some(dur) = dur {
+                time_left = dur.saturating_sub(start.elapsed());
+            }
         }
+
+        self.stream.set_read_timeout(original_read_timeout).unwrap();
 
         Ok(len_read)
     }

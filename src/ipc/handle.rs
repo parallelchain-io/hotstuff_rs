@@ -128,7 +128,9 @@ struct ReceiverResult {
 impl ReceiverResult {
     fn get(self) -> ConsensusMsg {
         let mut _buf = Vec::with_capacity(self.msg_len);
-        self.stream.read_exact(&mut _buf);
+        // Liveness: struct ReceiverResult is constructed only after a Receiver thread has successfully peeked self.msg_len bytes
+        // from self.stream, so read_exact_timeout will return virtually immediately even with a None timeout.
+        self.stream.read_exact_timeout(&mut _buf, None);
         self.msg
     }
 }
@@ -137,6 +139,9 @@ type BytesRead = usize;
 
 impl ConsensusMsg {
     fn deserialize_from_stream(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, DeserializeFromStreamError> {
+        let mut time_left = timeout;
+        // Determine the variant of ConsensusMsg.
+
         todo!()
     }
 

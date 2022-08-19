@@ -67,12 +67,12 @@ impl SerDe for ConsensusMsg {
     fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
         let mut cursor = 0usize;
 
-        let kind_prefix = bs[cursor..mem::size_of::<KindPrefix>()].try_into()?;
+        let variant_prefix = bs[cursor..mem::size_of::<KindPrefix>()].try_into()?;
         cursor += mem::size_of::<KindPrefix>();
 
         let vn = u64::from_le_bytes(bs[cursor..mem::size_of::<ViewNumber>()].try_into()?); 
         cursor += mem::size_of::<ViewNumber>();
-        match kind_prefix {
+        match variant_prefix {
             Self::PREFIX_PROPOSE => {
                 let node = Node::deserialize(bs[cursor..].to_vec())?;
                 Ok(Self::Propose(vn, node))
