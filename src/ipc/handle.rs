@@ -1,4 +1,4 @@
-use std::net::{TcpStream, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, RwLock, mpsc};
 use std::time::{Duration, Instant};
 use std::thread;
@@ -6,7 +6,7 @@ use std::io;
 use threadpool::ThreadPool;
 use crate::msg_types::{ConsensusMsg, PublicAddress};
 use crate::ipc::{ConnectionSet, RwTcpStream};
-use crate::ipc::manager::{Manager, EstablisherRequest, SendRequest};
+use crate::ipc::manager::{EstablisherRequest, SendRequest};
 
 
 #[derive(Clone)]
@@ -41,7 +41,9 @@ impl Handle {
         self.to_sender.send(SendRequest::Broadcast(msg)).unwrap();
     }
 
-    /// Receive a ConsensusMsg from an identified participant, waiting for at most the provided timeout.
+    /// Receive a ConsensusMsg from an identified participant, waiting for at most the provided timeout. For all of this
+    /// method's use-cases inside HotStuff-rs, this timeout *should not* be greater than `Manager::READ_TIMEOUT`,
+    /// but this method behaves as expected even if the constraint is not satisfied.
     ///  
     /// This call can fail in a variety of different ways. These are all handled transparently by the function,
     /// but for completeness, it may fail because:
@@ -71,15 +73,6 @@ impl Handle {
 
     /// Like `recv_from`, but tries to get a ConsensusMsg from one (any) of the connections in the ConnectionSet. 
     pub fn recv_from_any(&self, timeout: Duration) -> Result<ConsensusMsg, RecvError> {
-        // Rough flow:
-        // 1. In a threadpool, create as many tasks as there are open connections.
-        // 2. Worker threads try to peek from each connection. If it manages to get a ConsensusMsg, it sends it
-        //    back to the main thread.
-        // Alt. If an undeserializable message appears or the connection fails in any way, send a Reconnect request
-        //      to the Establisher.
-        // 3. The moment the main thread receives a ConsensusMsg, remove that message from the socket on which in was
-        //    received, and then return the ConsensusMsg.
-        assert!(timeout > Manager::READ_TIMEOUT);
         let start = Instant::now();        
 
         let (to_main, from_workers) = mpsc::channel();
@@ -95,7 +88,14 @@ impl Handle {
                 // 2. As a Receiver, try to peek from connection.
                 let time_left = timeout.saturating_sub(start.elapsed());
                 match ConsensusMsg::deserialize_from_stream_peek(&stream, &time_left) {
-                    Ok(msg) => to_main.send(msg).unwrap(),
+                    Ok((msg, bytes_read)) => { 
+                        let receiver_result = ReceiverResult {
+                            msg,
+                            msg_len: bytes_read,
+                            stream,
+                        };
+                        to_main.send(receiver_result).unwrap()
+                    },
                     Err(_) => {
                         to_establisher.send(EstablisherRequest::Reconnect((public_addr, stream.peer_addr().unwrap()))).unwrap();
                         return
@@ -106,21 +106,41 @@ impl Handle {
 
         // 3. As main, wait for a worker to send a ConsensusMsg.
         let time_left = timeout.saturating_sub(start.elapsed());
-        let msg = from_workers.recv_timeout(time_left).map_err(|_| RecvError)?;
+        let msg = {
+            let receiver_result = from_workers.recv_timeout(time_left).map_err(|_| RecvError)?;
+            // 4. Clear peeked bytes from stream. 
+            receiver_result.get() // clear peeked bytes from stream. 
+        };
 
-        // 4. Remove the peeked and deserialized bytes from the originating TcpStream.
-        todo!();
+        Ok(msg)
     }
 }
 
+
 pub struct RecvError;
+
+struct ReceiverResult {
+    msg: ConsensusMsg,
+    msg_len: usize,
+    stream: Arc<RwTcpStream>,
+}
+
+impl ReceiverResult {
+    fn get(self) -> ConsensusMsg {
+        let mut _buf = Vec::with_capacity(self.msg_len);
+        self.stream.read_exact(&mut _buf);
+        self.msg
+    }
+}
+
+type BytesRead = usize;
 
 impl ConsensusMsg {
     fn deserialize_from_stream(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, DeserializeFromStreamError> {
         todo!()
     }
 
-    fn deserialize_from_stream_peek(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, DeserializeFromStreamError> {
+    fn deserialize_from_stream_peek(stream: &RwTcpStream, timeout: &Duration) -> Result<(ConsensusMsg, BytesRead), DeserializeFromStreamError> {
         todo!()
     }
 }
