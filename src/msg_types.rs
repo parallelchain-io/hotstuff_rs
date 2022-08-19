@@ -17,9 +17,9 @@ pub enum ConsensusMsg {
 type KindPrefix = [u8; 1];
 
 impl ConsensusMsg {
-    const PREFIX_PROPOSE: KindPrefix = [0u8];
-    const PREFIX_VOTE: KindPrefix = [1u8];
-    const PREFIX_NEW_VIEW: KindPrefix = [2u8]; 
+    pub const PREFIX_PROPOSE: KindPrefix = [0u8];
+    pub const PREFIX_VOTE: KindPrefix = [1u8];
+    pub const PREFIX_NEW_VIEW: KindPrefix = [2u8]; 
 }
 
 impl SerDe for ConsensusMsg {

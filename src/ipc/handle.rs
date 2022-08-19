@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 use std::io;
 use threadpool::ThreadPool;
-use crate::msg_types::{ConsensusMsg, PublicAddress};
+use crate::msg_types::{ConsensusMsg, Node, QuorumCertificate, PublicAddress};
 use crate::ipc::{ConnectionSet, RwTcpStream};
 use crate::ipc::manager::{EstablisherRequest, SendRequest};
 
@@ -116,39 +116,7 @@ impl Handle {
     }
 }
 
-
 pub struct RecvError;
-
-struct ReceiverResult {
-    msg: ConsensusMsg,
-    msg_len: usize,
-    stream: Arc<RwTcpStream>,
-}
-
-impl ReceiverResult {
-    fn get(self) -> ConsensusMsg {
-        let mut _buf = Vec::with_capacity(self.msg_len);
-        // Liveness: struct ReceiverResult is constructed only after a Receiver thread has successfully peeked self.msg_len bytes
-        // from self.stream, so read_exact_timeout will return virtually immediately even with a None timeout.
-        self.stream.read_exact_timeout(&mut _buf, None);
-        self.msg
-    }
-}
-
-type BytesRead = usize;
-
-impl ConsensusMsg {
-    fn deserialize_from_stream(stream: &RwTcpStream, timeout: &Duration) -> Result<ConsensusMsg, DeserializeFromStreamError> {
-        let mut time_left = timeout;
-        // Determine the variant of ConsensusMsg.
-
-        todo!()
-    }
-
-    fn deserialize_from_stream_peek(stream: &RwTcpStream, timeout: &Duration) -> Result<(ConsensusMsg, BytesRead), DeserializeFromStreamError> {
-        todo!()
-    }
-}
 
 enum DeserializeFromStreamError {
     DeserializeError,
