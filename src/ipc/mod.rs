@@ -8,13 +8,13 @@ pub(crate) use handle::Handle;
 
 /// Defines Manager, a struct which implements the blocking reads and non-blocking writes functionality that
 /// Handle exposes. In 2 words, it is Handle's backend. 
-pub(crate) mod manager;
-pub(crate) use manager::Manager;
+pub(crate) mod conn_establisher;
+pub(crate) use conn_establisher::ConnEstablisher;
 
 pub(crate) mod stream;
 pub(crate) use stream::Stream;
 
 /// Defines ConnectionSet, a type alias of HashSet<PublicAddress, Arc<RwTcpStream>> that is frequently referenced
 /// throughout the IPC module. 
-pub(crate) mod connection_set;
-pub(crate) use connection_set::ConnectionSet;
+pub(crate) mod conn_set;
+pub(crate) use conn_set::ConnSet;

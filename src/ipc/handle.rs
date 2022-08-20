@@ -5,13 +5,13 @@ use std::thread;
 use std::io;
 use threadpool::ThreadPool;
 use crate::msg_types::{ConsensusMsg, Node, QuorumCertificate, PublicAddress};
-use crate::ipc::{ConnectionSet, RwTcpStream};
-use crate::ipc::manager::{EstablisherRequest, SendRequest};
+use crate::ipc::{ConnSet, RwTcpStream};
+use crate::ipc::conn_establisher::{EstablisherRequest, SendRequest};
 
 
 #[derive(Clone)]
 pub(crate) struct Handle {
-    connections: Arc<RwLock<ConnectionSet>>,
+    connections: Arc<RwLock<ConnSet>>,
     to_establisher: mpsc::Sender<EstablisherRequest>,
     to_sender: mpsc::Sender<SendRequest>,
     receivers: ThreadPool, 
@@ -20,7 +20,7 @@ pub(crate) struct Handle {
 impl Handle {
     const N_RECEIVERS: usize = 4;
 
-    pub fn new(connections: Arc<RwLock<ConnectionSet>>, to_establisher: mpsc::Sender<EstablisherRequest>, to_sender: mpsc::Sender<SendRequest>) -> Handle {
+    pub fn new(connections: Arc<RwLock<ConnSet>>, to_establisher: mpsc::Sender<EstablisherRequest>, to_sender: mpsc::Sender<SendRequest>) -> Handle {
         Handle {
             connections,
             to_establisher,
