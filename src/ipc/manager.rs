@@ -1,18 +1,15 @@
 use std::collections::HashMap;
-use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::thread;
-use std::sync::{Arc, RwLock, Mutex, mpsc};
+use std::sync::{Arc, RwLock, mpsc};
 use std::time;
-use threadpool::ThreadPool;
-use crate::msg_types::{PublicAddress, ConsensusMsg, SerDe};
+use crate::msg_types::{PublicAddress, ConsensusMsg};
 use crate::ipc::{self, ConnectionSet, RwTcpStream};
 
 /// ipc::Manager works in the background to implement the non-blocking sends, broadcasts, and establishment of new TCP connections
 /// offered by ipc::Handle.
 pub struct Manager {
     establisher: thread::JoinHandle<()>,
-    sender: thread::JoinHandle<()>,
     // The listening side of sender is blocking, and is implemented directly on ipc::Handle. 
 }
 
@@ -31,7 +28,6 @@ impl Manager {
         let (to_sender, sender_from_handles ) = mpsc::channel();
         let manager = Manager {
             establisher: Self::establisher(connections.clone(), establisher_from_handles),
-            sender: Self::sender(connections.clone(), sender_from_handles, to_establisher.clone()),
         };
         let handle = ipc::Handle::new(connections, to_establisher, to_sender);
 
@@ -140,50 +136,6 @@ impl Manager {
             }
         })
     } 
-
-    // Spawn the Sender threads. These are responsible for handling Send-Tos and Broadcasts in the background, allowing 
-    // the corresponding methods in ipc::Handle to return quickly.
-    fn sender(connections: Arc<RwLock<ConnectionSet>>, requests: mpsc::Receiver<SendRequest>, to_establisher: mpsc::Sender<EstablisherRequest>) -> thread::JoinHandle<()> {
-        thread::spawn(move || {
-            let workers = ThreadPool::new(Self::N_SENDERS);
-    
-            for request in requests {
-                match request {
-                        SendRequest::SendTo(public_addr, msg) => {
-                            if let Some(stream) = connections.read().unwrap().get(&public_addr) {
-                                // TODO: when scoped threads become stable, these clones can be removed.
-                                let stream = stream.clone();
-                                let to_establisher = to_establisher.clone();
-                                workers.execute(move || {
-                                    if let Err(e) = stream.write_all(&msg.serialize()) {
-                                        if e.kind() != io::ErrorKind::TimedOut {
-                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
-                                        }
-                                    }
-                                });
-                            }
-                        },
-                        SendRequest::Broadcast(msg) => {
-                            let connections = connections.read().unwrap();
-                            for (public_addr, stream) in &*connections {
-                                // TODO: when scoped threads become stable, these clones can be removed.
-                                let msg = msg.clone();
-                                let public_addr = public_addr.clone();
-                                let stream = stream.clone();
-                                let to_establisher = to_establisher.clone();
-                                workers.execute(move || {
-                                    if let Err(e) = stream.write_all(&msg.serialize()) {
-                                        if e.kind() != io::ErrorKind::TimedOut {
-                                            to_establisher.send(EstablisherRequest::Reconnect((public_addr.clone(), stream.peer_addr().unwrap()))).unwrap();
-                                        }
-                                    }
-                                })
-                            }  
-                        },
-                    }
-                }
-        })
-    }
 }
 
 pub enum EstablisherRequest {

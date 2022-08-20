@@ -53,6 +53,8 @@ impl Handle {
     pub fn recv_from(&self, participant: &PublicAddress, timeout: Duration) -> Result<ConsensusMsg, RecvError> {
         let start = Instant::now();
 
+        todo!();
+
         while start.elapsed() < timeout {
             match self.connections.read().unwrap().get(participant) {
                 None => thread::yield_now(),
@@ -77,6 +79,8 @@ impl Handle {
 
         let (to_main, from_workers) = mpsc::channel();
         let connections = self.connections.read().unwrap();
+
+        todo!();
 
         // 1. Create as many Receiver tasks as there are open connections.
         for (public_addr, stream) in &*connections {
