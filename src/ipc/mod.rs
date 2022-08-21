@@ -5,10 +5,10 @@ pub(crate) mod handle;
 pub(crate) use handle::Handle;
 
 pub(crate) mod managed_conn_set;
-pub(crate) use managed_conn_set::ManagedConnSet;
+pub(in crate::ipc) use managed_conn_set::ManagedConnSet;
 
 pub(crate) mod conn_set;
-pub(crate) use conn_set::ConnSet;
+pub(in crate::ipc) use conn_set::ConnSet;
 
 pub(crate) mod stream;
-pub(crate) use stream::Stream;
+pub(in crate::ipc) use stream::Stream;

@@ -152,7 +152,14 @@ impl SerDe for QuorumCertificate {
     }
 }
 
-pub type Signatures = Vec<Option<Signature>>; 
+#[derive(Clone)]
+pub struct Signatures(Vec<Option<Signature>>); 
+
+impl Signatures {
+    fn verify(&self, participant_set: ParticipantSet) -> bool {
+        todo!()
+    }
+}
 
 impl SerDe for Signatures {
     // Encoding:
@@ -169,6 +176,8 @@ impl SerDe for Signatures {
         todo!() 
     }
 }
+
+pub struct ParticipantSet;
 
 pub trait SerDe: Sized {
     fn serialize(&self) -> Vec<u8>;
