@@ -8,15 +8,16 @@ use crate::participants::ParticipantSet;
 
 pub struct ConnectionSet {
     connections: Arc<Mutex<IndexMap<PublicAddress, ipc::Stream>>>,
+    participant_set: (ParticipantSetVersion, ParticipantSet), 
     maintainer: thread::JoinHandle<()>,
     to_maintainer: mpsc::Sender<MaintainerCmd>,
 }
 
+type ParticipantSetVersion = usize;
+
 impl ConnectionSet {
     pub fn new() -> ConnectionSet { todo!() }
 
-    // For consistency, does *not* remove the connections that do not feature in new_participant_set immediately, instead, schedules for the maintainer thread to do this,
-    // as well as establish new connections, later.
     pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { todo!() }
 
     // Removes the connection identified by public_addr immediately, and schedules it for establishment later.
@@ -46,13 +47,31 @@ impl<'a> IntoIterator for &'a IterGuard<'a> {
 impl ConnectionSet {
     fn maintainer(
         connections: Arc<Mutex<IndexMap<PublicAddress, ipc::Stream>>>,
-        cmds: mpsc::Receiver<MaintainerCmd>,
+        participant_set: Arc<Mutex<(ParticipantSetVersion, ParticipantSet)>>,
     ) -> thread::JoinHandle<()> { 
-        // 1. Get EstablisherCmd.
-        // 2A. If Replace, set target_conns = new_conns, and tasks = new_conns - cur_conns. Split tasks into two task lists according to the predicates in the comments below.
-        // 2B. If Reconnect, then put in the appropriate task list (according to the predicates).
-        // 3. established conn = recv_timeout from initiator and from listener. If conn is in target_connections and *not* in conns, insert to connections.
-        todo!()
+        // 1. Lock participant_set.
+
+        // 2. Check (using ParticipantSetVersion) if ParticipantSet has changed.
+        
+        // 3. If no, continue, if yes:
+        //    1. Lock connections.
+        //    2. Compute tasks = participant_set - connections.
+        //    3. Divvy up tasks to initiator and listener using the formulae in the comments below.
+        //    4. Unlock connections.
+
+        // 4. Unlock participant_set.
+
+        // 5. Wait a timeout to receive newly established connection `new_conn` from Initiator or Listener. 
+
+        // 6. Lock participant_set.
+        
+        // 7. Lock connections.
+        
+        // 8. If `new_conn` in participant_set but not in connections, insert to connections.
+        
+        // 9. Unlock participant_set.
+
+        // 10. Unlock connections.
     } 
 
     /// iff target_public_address < my_public_address, initiator_tasks.insert...
