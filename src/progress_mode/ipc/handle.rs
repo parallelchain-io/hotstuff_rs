@@ -1,7 +1,7 @@
 use std::io;
 use std::time::Duration;
 use crate::msg_types::{ConsensusMsg, PublicAddress};
-use crate::ipc::ConnectionSet;
+use crate::progress_mode::ipc::ConnectionSet;
 
 pub struct Handle(ConnectionSet);
 

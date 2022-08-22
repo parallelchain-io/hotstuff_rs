@@ -5,7 +5,7 @@ pub(crate) mod handle;
 pub(crate) use handle::Handle;
 
 pub(crate) mod connection_set;
-pub(in crate::ipc) use connection_set::ConnectionSet;
+pub(in crate::progress_mode::ipc) use connection_set::ConnectionSet;
 
 pub(crate) mod stream;
-pub(in crate::ipc) use stream::Stream;
+pub(in crate::progress_mode::ipc) use stream::Stream;

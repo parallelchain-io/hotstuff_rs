@@ -1,10 +1,9 @@
-use std::collections::hash_map;
 use std::thread;
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::net::SocketAddr;
 use indexmap::{map, IndexMap};
-use crate::ipc;
 use crate::msg_types::{PublicAddress,  ParticipantSet};
+use crate::progress_mode::ipc;
 
 pub struct ConnectionSet {
     connections: Arc<Mutex<IndexMap<PublicAddress, ipc::Stream>>>,
@@ -15,7 +14,7 @@ pub struct ConnectionSet {
 impl ConnectionSet {
     pub fn new() -> ConnectionSet { todo!() }
 
-    pub fn replace(&mut self, new_participant_set: ParticipantSet) { todo!() }
+    pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { todo!() }
 
     // Queues the corresponding (PublicAddress, SocketAddr) pairs for re-establishment.
     pub fn reconnect(&mut self, socket_addrs: Vec<SocketAddr>) { todo!() }
