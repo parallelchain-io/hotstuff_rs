@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use crate::msg_types::PublicAddr;
 
-pub type ParticipantSet = HashMap<PublicAddr, SocketAddr>;
+pub type ParticipantSet = HashMap<PublicAddr, IpAddr>;
