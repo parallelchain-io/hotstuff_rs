@@ -3,7 +3,6 @@ use std::thread;
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::net::{SocketAddr, TcpStream, TcpListener};
 use std::io::ErrorKind;
-use std::collections::HashMap;
 use std::time::Duration;
 use indexmap::{map, IndexMap};
 use rand::Rng;
@@ -180,19 +179,40 @@ impl Establisher {
             let mut rng = rand::thread_rng();
             loop {
                 // 1. Lock tasks.
-                let tasks = tasks.lock().unwrap();
+                let tasks_lock = tasks.lock().unwrap();
 
                 // 2. Pick random task, if any, and try to establish connection.
-                let random_idx = rng.gen_range(0..tasks.len());
-                if let Some((&public_addr, &socket_addr)) = tasks.get_index(random_idx) {
+                let random_idx = rng.gen_range(0..tasks_lock.len());
+                if let Some((&public_addr, &socket_addr)) = tasks_lock.get_index(random_idx) {
 
                     // 3. Drop lock on tasks. 
-                    drop(tasks);
+                    drop(tasks_lock);
         
-                    // 4. If successful, remove from tasks and send established conn to Master.
+                    // 4. If successfully established connection, remove task from the tasks list and send the connection to Master.
                     match TcpStream::connect(socket_addr) {
                         Ok(new_stream) => {
-                            established_conns.send((public_addr, ipc::Stream::new(new_stream)));
+                            // Safety: tasks is locked before the established connection is sent to Master to avoid the *possible* pathological scenario that goes:
+                            // 1. Initiator sends established connection to Master.
+                            // 2. Master receives and ignores the established connection because it is not in participant_set.
+                            // 3. Main adds the ignored connection to participant_set.
+                            // 4. Master adds the connection to tasks list.
+                            // 5. Initiator removes the connection from the tasks list.
+                            //
+                            // At the end of this scenario, the ignored connection will never be re-established, even though it is in the latest
+                            // participant_set. Locking tasks before sending the established connection forces step number 5 in the scenario to
+                            // happen before step number 4, so that in the end of the scenario, the ignored connection will still be in the tasks
+                            // list. Like so:
+                            // 1. Initiator sends established connection to Master.
+                            // -- Initiator locks the tasks list -- 
+                            // 2. Master receives and ignores the established connection because it is not in participant_set.
+                            // 3. Main adds the ignored connection to participant_set.
+                            // 4. Initiator removes the connection from the tasks list.
+                            // -- Initiator drops the lock on the tasks list --
+                            // 5. Master adds the connection to tasks list.
+                            let mut tasks_lock = tasks.lock().unwrap();
+                            established_conns.send((public_addr, ipc::Stream::new(new_stream)))
+                                .expect("Programming error: Initiator thread lost connection to Master thread.");
+                            tasks_lock.remove(&public_addr);
                         },
                         Err(e) => if e.kind() != ErrorKind::TimedOut {
                             panic!("Programming error: unexpected error when trying the establish connection with remote peer.")
@@ -222,15 +242,20 @@ impl Establisher {
                     .expect("Programming error: un-matched error when trying to accept incoming TcpStream."); 
 
                 // 2. Lock tasks. 
-                let tasks = tasks.lock().unwrap();
+                let mut tasks = tasks.lock().unwrap();
 
-                // 3. Check if new stream is in tasks. If so, send the established stream to Master.
-                if let Some(public_addr) = tasks.get(&incoming_stream.peer_addr()
-                    .expect("Programming error: un-matched error when trying to get peer_addr() of stream.")) {
-                    established_conns.send((*public_addr, ipc::Stream::new(incoming_stream)));
+                // 3. Check if new stream is in the tasks list. If so, send the established stream to Master.
+                let peer_addr = incoming_stream.peer_addr()
+                    .expect("Programming error: un-matched error when trying to get peer_addr() of stream.");
+                if let Some(public_addr) = tasks.get(&peer_addr) {
+                    established_conns.send((*public_addr, ipc::Stream::new(incoming_stream))).unwrap();
                 }
 
-                // 4. Implicitly drop lock on tasks.
+                // 4. Remove completed task from the tasks list.
+                tasks.remove(&peer_addr);
+
+
+                // 5. Drop lock on tasks.
             }
         })
     }
