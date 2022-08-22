@@ -15,9 +15,12 @@ pub struct ConnectionSet {
 impl ConnectionSet {
     pub fn new() -> ConnectionSet { todo!() }
 
+    // For consistency, does *not* remove the connections that do not feature in new_participant_set immediately, instead, schedules for the maintainer thread to do this,
+    // as well as establish new connections later.
     pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { todo!() }
 
-    pub fn reconnect(&mut self, public_addr: PublicAddress) { todo!() }
+    // Removes the connection identified by public_addr immediately, and schedules it for establishment later.
+    pub fn reconnect(&mut self, public_addr: PublicAddress) -> bool { todo!() }
 
     pub fn get(&self, public_addr: PublicAddress) -> Option<&ipc::Stream> { todo!() }
 
@@ -45,10 +48,10 @@ impl ConnectionSet {
         connections: Arc<Mutex<IndexMap<PublicAddress, ipc::Stream>>>,
         cmds: mpsc::Receiver<MaintainerCmd>,
     ) -> thread::JoinHandle<()> { 
-        // 1. Get MaintainerCmd.
-        // 2. If Replace, set target_conns = new_conns. Then, compute new_conns - cur_conns = tasks. Split tasks into two task lists according to the predicates in the comments below.
-        // 3. established conn = recv_timeout from initiator and from listener. If conns is not in target_conns, discard. Else, assert that it is *not* in conns, then insert to conns.
-        // 4. If Reconnect, then put in the appropriate task list (according to the predicates).
+        // 1. Get EstablisherCmd.
+        // 2A. If Replace, set target_conns = new_conns, and tasks = new_conns - cur_conns. Split tasks into two task lists according to the predicates in the comments below.
+        // 2B. If Reconnect, then put in the appropriate task list (according to the predicates).
+        // 3. established conn = recv_timeout from initiator and from listener. If conn is in target_connections and *not* in conns, insert to connections.
         todo!()
     } 
 
