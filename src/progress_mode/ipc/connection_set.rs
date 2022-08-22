@@ -6,29 +6,96 @@ use std::io::ErrorKind;
 use std::time::Duration;
 use indexmap::{map, IndexMap};
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use crate::progress_mode::ipc;
 use crate::msg_types::PublicAddr;
-use crate::participants::ParticipantSet;
+use crate::identity::{self, ParticipantSet};
 
 pub struct ConnectionSet {
-    connections: Arc<Mutex<IndexMap<PublicAddr, ipc::Stream>>>,
-    participant_set: (ParticipantSetVersion, ParticipantSet), 
+    // To prevent deadlocks, when locking both participant_set and connections, lock participant_set first.
+    participant_set: Arc<Mutex<(ParticipantSetVersion, ParticipantSet)>>, 
+    // Randomness source for `get_random`.
+    rng: Mutex<ThreadRng>,
+    connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
     establisher: Establisher,
 }
 
 type ParticipantSetVersion = usize;
 
 impl ConnectionSet {
-    pub fn new() -> ConnectionSet { todo!() }
+    // Network-configuration related knobs.
+    const LISTENING_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    const LISTENING_PORT: u16 = 53410;
 
-    pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { todo!() }
+    pub fn new(initial_participant_set: ParticipantSet) -> ConnectionSet { 
+        let connections = Arc::new(Mutex::new(IndexMap::new()));
+        let rng = Mutex::new(rand::thread_rng());
+        let participant_set = Arc::new(Mutex::new((0, initial_participant_set)));
+        let establisher = Establisher::start(Arc::clone(&connections), Arc::clone(&participant_set));
 
-    // Removes the connection identified by public_addr immediately, and schedules it for establishment later.
-    pub fn reconnect(&mut self, public_addr: PublicAddr) -> bool { todo!() }
+        ConnectionSet {
+            connections,
+            rng,
+            participant_set,
+            establisher,
+        }
+    }
 
-    pub fn get(&self, public_addr: PublicAddr) -> Option<&ipc::Stream> { todo!() }
+    // Removes connections not appearing in new_participant_set immediately, and schedules new connections for establishment later.
+    pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { 
+        // 1. Lock participant_set.
+        let mut ps_lock = self.participant_set.lock().unwrap();
 
-    pub fn get_random(&self) -> Option<&ipc::Stream> { todo!() } // Returns None is ConnSet is empty.
+        // 2. Remove all existing connections that do not feature in new_participant_set.
+        let mut connections = self.connections.lock().unwrap();
+        connections.retain(|public_addr, socket_addr| {
+            if let Some(ip_addr) = ps_lock.1.get(public_addr) {
+                socket_addr.peer_addr().ip() == *ip_addr
+            } else {
+                false
+            }
+        });
+
+        // 3. Replace participant_set.
+        ps_lock.1.clear();
+        ps_lock.1.extend(new_participant_set.into_iter());
+
+        // 4. Increment ParticipantSet version so the Establisher thread knows that it has been changed.
+        ps_lock.0 += 1;
+
+    }
+
+    // Removes the connection identified by public_addr immediately, and schedules it for establishment later. If no connection existed which
+    // is identified by public_addr, this is a no-op, and returns false. Otherwise, this returns true.
+    pub fn reconnect(&self, public_addr: &PublicAddr) -> bool { 
+        // Lock participant_set so that we can increment its version later. This is the only way we can tell the Establisher to re-establish
+        // the removed connection.
+        let mut ps_lock = self.participant_set.lock().unwrap();
+        let mut connections = self.connections.lock().unwrap();
+        if let Some(_) = connections.remove(public_addr) {
+            ps_lock.0 += 1; 
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get(&self, public_addr: &PublicAddr) -> Option<Arc<ipc::Stream>> { 
+        match self.connections.lock().unwrap().get(public_addr) {
+            Some(stream) => Some(Arc::clone(stream)),
+            None => None,
+        }
+    }
+
+    // Returns None if ConnectionSet is empty.
+    pub fn get_random(&self) -> Option<(PublicAddr, Arc<ipc::Stream>)> { 
+        let connections = self.connections.lock().unwrap();
+        let random_idx = self.rng.lock().unwrap().gen_range(0..connections.len());
+        match connections.get_index(random_idx) {
+            Some((public_addr, stream)) => Some((*public_addr, Arc::clone(stream))),
+            None => None,
+        }
+    }
 
     pub fn iter(&self) -> IterGuard {
         let conn_set = self.connections.lock().unwrap();
@@ -36,11 +103,11 @@ impl ConnectionSet {
     }
 }
 
-pub struct IterGuard<'a>(MutexGuard<'a, IndexMap<PublicAddr, ipc::Stream>>);
+pub struct IterGuard<'a>(MutexGuard<'a, IndexMap<PublicAddr, Arc<ipc::Stream>>>);
 
 impl<'a> IntoIterator for &'a IterGuard<'a> {
-    type Item = (&'a PublicAddr, &'a ipc::Stream);
-    type IntoIter = map::Iter<'a, PublicAddr, ipc::Stream>;
+    type Item = (&'a PublicAddr, &'a Arc<ipc::Stream>);
+    type IntoIter = map::Iter<'a, PublicAddr, Arc<ipc::Stream>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()    
@@ -55,18 +122,12 @@ impl<'a> IntoIterator for &'a IterGuard<'a> {
 ///    participant set version number with the last number it has seen. It acts as a Master, divvying up tasks to two Slaves: 'Initiator'
 ///    and 'Listener'.
 /// 2. The Initiator Thread is responsible for forming connections to Participants with a PublicAddr smaller than this Participant's
-///    PublicAddr. It does so by actively hitting other Participants' `PROGRESS_MODE_LISTENING_PORT`.
+///    PublicAddr. It does so by actively hitting other Participants' `ConnectionSet::LISTENING_PORT`.
 /// 3. The Listener Thread is responsible for forming connections to Participants with a PublicAddr larger than this Participant's
-///    PublicAddr. It does so by waiting on this machine's `PROGRESS_MODE_LISTENING_PORT` for new connection attempts.
-/// 
-/// PROGRESS_MODE_LISTENING_PORT can be configured before compilation by modifying the associated constants below.
+///    PublicAddr. It does so by waiting on this machine's `ConnectionSet::LISTENING_PORT` for new connection attempts.
 struct Establisher(thread::JoinHandle<()>);
 
 impl Establisher {
-    // Network-configuration related knobs.
-    const PROGRESS_MODE_LISTENING_IP_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    const PROGRESS_MODE_LISTENING_PORT: u16 = 53410;
-
     // Performance-related knobs.
     const MASTER_THREAD_SLEEP_TIME: Duration = Duration::new(1, 0);
     const INITIATOR_THREAD_SLEEP_TIME: Duration = Duration::new(1, 0);
@@ -75,9 +136,8 @@ impl Establisher {
     const LISTENER_TO_MASTER_SYNC_CHANNEL_BOUND: usize = 1000;
 
     fn start(
-        connections: Arc<Mutex<IndexMap<PublicAddr, ipc::Stream>>>,
+        connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
         participant_set_and_version: Arc<Mutex<(ParticipantSetVersion, ParticipantSet)>>,
-        my_public_addr: PublicAddr,
     ) -> Establisher {  
         let master_thread = thread::spawn(move || {
             let mut ps_version = None;
@@ -129,9 +189,9 @@ impl Establisher {
                     let mut listener_tasks = listener_tasks.lock().unwrap();
                     listener_tasks.clear();
                     for ((public_addr, ip_addr)) in tasks {
-                        if public_addr > my_public_addr {
+                        if public_addr > identity::MY_PUBLIC_ADDR {
                             initiator_tasks.insert(public_addr, ip_addr);
-                        } else if public_addr < my_public_addr {
+                        } else if public_addr < identity::MY_PUBLIC_ADDR {
                             listener_tasks.insert(ip_addr, public_addr);
                         } else  {
                             // public_addr == my_public_addr: no-op.
@@ -190,7 +250,7 @@ impl Establisher {
     /// iff target_public_address < my_public_address, initiator_tasks.insert...
     fn start_initiator(
         tasks: Arc<Mutex<IndexMap<PublicAddr, IpAddr>>>,
-        established_conns: mpsc::SyncSender<(PublicAddr, ipc::Stream)>,
+        established_conns: mpsc::SyncSender<(PublicAddr, Arc<ipc::Stream>)>,
     ) -> thread::JoinHandle<()> { 
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
@@ -206,7 +266,7 @@ impl Establisher {
                     drop(tasks_lock);
         
                     // 4. Try to establish connection.
-                    let listening_socket_addr = SocketAddr::new(ip_addr, Self::PROGRESS_MODE_LISTENING_PORT);
+                    let listening_socket_addr = SocketAddr::new(ip_addr, ConnectionSet::LISTENING_PORT);
                     match TcpStream::connect(listening_socket_addr) {
                         Ok(new_stream) => {
                             // 4.1. Lock tasks.
@@ -231,7 +291,7 @@ impl Establisher {
                             let mut tasks_lock = tasks.lock().unwrap();
 
                             // 4.2. Send established connection to Master.
-                            established_conns.send((public_addr, ipc::Stream::new(new_stream)))
+                            established_conns.send((public_addr, Arc::new(ipc::Stream::new(new_stream))))
                                 .expect("Programming error: Initiator thread lost connection to Master thread.");
                             
                             // 4.3. Remove completed task from tasks list.
@@ -255,10 +315,10 @@ impl Establisher {
     /// iff target_public_address > my_public_address, listener_tasks.insert...
     fn start_listener(
         tasks: Arc<Mutex<IndexMap<IpAddr, PublicAddr>>>,
-        established_conns: mpsc::SyncSender<(PublicAddr, ipc::Stream)>,
+        established_conns: mpsc::SyncSender<(PublicAddr, Arc<ipc::Stream>)>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let listener_socket_addr = SocketAddr::new(Self::PROGRESS_MODE_LISTENING_IP_ADDR, Self::PROGRESS_MODE_LISTENING_PORT);
+            let listener_socket_addr = SocketAddr::new(ConnectionSet::LISTENING_IP_ADDR, ConnectionSet::LISTENING_PORT);
             let listener = TcpListener::bind(listener_socket_addr)
                 .expect(&format!("Configuration or Programming error: fail to bind TcpListener to addr: {}", listener_socket_addr));
 
@@ -276,12 +336,11 @@ impl Establisher {
                     .expect("Programming error: un-matched error when trying to get peer_addr() of stream.")
                     .ip();
                 if let Some(public_addr) = tasks.get(&peer_addr) {
-                    established_conns.send((*public_addr, ipc::Stream::new(incoming_stream))).unwrap();
+                    established_conns.send((*public_addr, Arc::new(ipc::Stream::new(incoming_stream)))).unwrap();
                 }
 
                 // 4. Remove completed task from the tasks list.
                 tasks.remove(&peer_addr);
-
 
                 // 5. Drop lock on tasks.
                 drop(tasks)

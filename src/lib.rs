@@ -8,5 +8,5 @@ pub(crate) mod node_tree;
 
 pub(crate) mod progress_mode;
 
-pub(crate) mod participants;
-pub(crate) use participants::ParticipantSet;
+pub(crate) mod identity;
+pub(crate) use identity::ParticipantSet;
