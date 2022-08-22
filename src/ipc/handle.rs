@@ -1,10 +1,9 @@
 use std::io;
-use std::ops::Deref;
 use std::time::Duration;
 use crate::msg_types::{ConsensusMsg, PublicAddress};
-use crate::ipc::ManagedConnSet;
+use crate::ipc::ConnectionSet;
 
-pub struct Handle(ManagedConnSet);
+pub struct Handle(ConnectionSet);
 
 // `send_to` and `broadcast` are non-blocking. 
 // `recv` and `recv_from_any` are blocking with a timeout (typically set to some function of TNT).
