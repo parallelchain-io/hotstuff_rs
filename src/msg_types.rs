@@ -65,7 +65,7 @@ impl SerDe for ConsensusMsg {
         return buf
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
         let mut cursor = 0usize;
 
         let variant_prefix = bs[cursor..mem::size_of::<KindPrefix>()].try_into()?;
@@ -75,7 +75,7 @@ impl SerDe for ConsensusMsg {
         cursor += mem::size_of::<ViewNumber>();
         match variant_prefix {
             Self::PREFIX_PROPOSE => {
-                let node = Node::deserialize(bs[cursor..].to_vec())?;
+                let node = Node::deserialize(&bs[cursor..])?;
                 Ok(Self::Propose(vn, node))
             },
             Self::PREFIX_VOTE => {
@@ -87,7 +87,7 @@ impl SerDe for ConsensusMsg {
                 Ok(Self::Vote(vn, node_hash, signature))
             },
             Self::PREFIX_NEW_VIEW => {
-                let qc = QuorumCertificate::deserialize(bs[cursor..].to_vec())?;
+                let qc = QuorumCertificate::deserialize(&bs[cursor..])?;
                 Ok(Self::NewView(vn, qc))
             },
             _ => Err(DeserializationError) 
@@ -111,14 +111,28 @@ impl Node {
 
 impl SerDe for Node {
     fn serialize(&self) -> Vec<u8> {
-        todo!()
-        // Encoding
-        // command.length() ++
-        // command
+        let mut bs = Vec::new();
+        bs.extend_from_slice(&u64::to_le_bytes(self.command.len() as u64));
+        bs.extend_from_slice(&self.command);
+        bs.extend_from_slice(&self.justify.serialize());
+        bs
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
-        todo!()
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
+        let mut cursor = 0;
+
+        let command_len = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
+        cursor += mem::size_of::<u64>();
+
+        let command = bs[cursor..command_len as usize].to_vec();
+        cursor += command_len as usize;
+
+        let justify = QuorumCertificate::deserialize(&bs[cursor..])?; 
+
+        Ok(Node {
+            command,
+            justify
+        })
     }
 }
 
@@ -126,9 +140,8 @@ impl SerDe for Node {
 pub struct QuorumCertificate {
     pub vn: ViewNumber,
     pub node_hash: NodeHash,
-    pub sigs: Signatures,
+    pub sigs: SignatureSet,
 }
-
 
 impl SerDe for QuorumCertificate {
     fn serialize(&self) -> Vec<u8> {
@@ -140,10 +153,10 @@ impl SerDe for QuorumCertificate {
         return bs
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<QuorumCertificate, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<QuorumCertificate, DeserializationError> {
         let vn = u64::from_le_bytes(bs[0..8].try_into()?);
         let node_hash = bs[8..40].try_into()?;
-        let sigs = Signatures::deserialize(bs[40..].to_vec())?;
+        let sigs = SignatureSet::deserialize(&bs[40..])?;
 
         Ok(QuorumCertificate {
             vn,
@@ -154,15 +167,15 @@ impl SerDe for QuorumCertificate {
 }
 
 #[derive(Clone)]
-pub struct Signatures(Vec<Option<Signature>>); 
+pub struct SignatureSet(Vec<Option<Signature>>); 
 
-impl Signatures {
+impl SignatureSet {
     fn verify(&self, participant_set: ParticipantSet) -> bool {
         todo!()
     }
 }
 
-impl SerDe for Signatures {
+impl SerDe for SignatureSet {
     // Encoding:
     // if None: 
     // 0 
@@ -173,14 +186,14 @@ impl SerDe for Signatures {
         todo!()
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
         todo!() 
     }
 }
 
 pub trait SerDe: Sized {
     fn serialize(&self) -> Vec<u8>;
-    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError>;
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError>;
 }
 
 #[derive(Debug)]
