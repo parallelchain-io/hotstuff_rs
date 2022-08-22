@@ -1,6 +1,6 @@
 use std::io;
 use std::time::Duration;
-use crate::msg_types::{ConsensusMsg, PublicAddress};
+use crate::msg_types::{ConsensusMsg, PublicAddr};
 use crate::progress_mode::ipc::ConnectionSet;
 
 pub struct Handle(ConnectionSet);
@@ -10,7 +10,7 @@ pub struct Handle(ConnectionSet);
 // All functions transparently handle errored streams by calling `ManagedConnSet::reconnect` on them. 
 impl Handle {
     // Returns false if there is no Stream corresponding to public_address in ConnSet.
-    pub fn send_to(&self, participant: PublicAddress, msg: ConsensusMsg) -> io::Error {
+    pub fn send_to(&self, participant: PublicAddr, msg: ConsensusMsg) -> io::Error {
         todo!()
     }
 
@@ -21,7 +21,7 @@ impl Handle {
     // # Possible ErrorKinds
     // 1. ErrorKind::TimedOut.
     // 2. ErrorKind::NotConnected.
-    pub fn recv_from(&self, participant: PublicAddress, timeout: Duration) -> io::Result<ConsensusMsg> {
+    pub fn recv_from(&self, participant: PublicAddr, timeout: Duration) -> io::Result<ConsensusMsg> {
         todo!()
     }
 

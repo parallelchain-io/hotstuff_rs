@@ -5,7 +5,7 @@ use crate::ParticipantSet;
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
 pub type Command = Vec<u8>;
-pub type PublicAddress = [u8; 32];
+pub type PublicAddr = [u8; 32];
 pub type Signature = [u8; 64];
 
 #[derive(Clone)]
