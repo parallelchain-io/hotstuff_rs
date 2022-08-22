@@ -33,7 +33,7 @@ impl Database {
     pub fn get_node(&self, hash: &NodeHash) -> Result<Option<msg_types::Node>, rocksdb::Error> {
         let keyspaced_key = keyspaces::prefix(&keyspaces::NODES_PREFIX, hash);
         match self.0.get(&keyspaced_key)? {
-            Some(bs) => Ok(Some(msg_types::Node::deserialize(bs).unwrap())),
+            Some(bs) => Ok(Some(msg_types::Node::deserialize(&bs).unwrap())),
             None => Ok(None)
         }
     }
@@ -41,7 +41,7 @@ impl Database {
     pub fn get_write_set(&self, of_node: &NodeHash) -> Result<WriteSet, rocksdb::Error> {
         let keyspaced_key = keyspaces::prefix(&keyspaces::WRITE_SETS_PREFIX, of_node);
         match self.0.get(&keyspaced_key)? {
-            Some(bs) => Ok(WriteSet::deserialize(bs).unwrap()),
+            Some(bs) => Ok(WriteSet::deserialize(&bs).unwrap()),
             None => Ok(WriteSet::new())
         }
     }
@@ -49,7 +49,7 @@ impl Database {
     pub fn get_children(&self, of_node: &NodeHash) -> Result<Children, rocksdb::Error> {
         let keyspaced_key = keyspaces::prefix(&keyspaces::CHILDREN_PREFIX, of_node);
         match self.0.get(&keyspaced_key)? {
-            Some(bs) => Ok(Children::deserialize(bs).unwrap()),
+            Some(bs) => Ok(Children::deserialize(&bs).unwrap()),
             None => Ok(Children::new())
         }
     }
@@ -58,7 +58,7 @@ impl Database {
         // SAFETY: NODE_CONTAINING_GENERIC_QC is initialized to the Genesis Node during Participant initialization,
         // so this can never be None.
         let bs = self.0.get(&keyspaces::NODE_CONTAINING_GENERIC_QC)?.unwrap();
-        Ok(msg_types::Node::deserialize(bs).unwrap())
+        Ok(msg_types::Node::deserialize(&bs).unwrap())
     }
 
     pub fn get_from_state(&self, key: &Key) -> Result<Value, rocksdb::Error> {

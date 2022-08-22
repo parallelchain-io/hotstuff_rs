@@ -159,7 +159,7 @@ impl DeserializeFromStream for ConsensusMsg {
 }
 
 impl DeserializeFromStream for Node {
-    fn deserialize_from_stream(tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
+    fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         let command_len = {
             let mut buf = [0u8; mem::size_of::<u64>()];
             tcp_stream.read_exact(&mut buf);
@@ -182,7 +182,7 @@ impl DeserializeFromStream for Node {
 }
 
 impl DeserializeFromStream for QuorumCertificate {
-    fn deserialize_from_stream(tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
+    fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         let vn = {
             let mut buf = [0u8; mem::size_of::<u64>()];
             tcp_stream.read_exact(&mut buf);

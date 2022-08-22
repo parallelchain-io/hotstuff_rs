@@ -22,7 +22,7 @@ impl SerDe for WriteSet {
         buf
     }
     
-    fn deserialize(bs: Vec<u8>) -> Result<WriteSet, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<WriteSet, DeserializationError> {
         let mut res = WriteSet::new();
         let mut cursor = 0usize;
         while cursor < bs.len() {
@@ -67,7 +67,7 @@ impl SerDe for Children {
         return buf
     }
 
-    fn deserialize(bs: Vec<u8>) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
         let mut res = Children::new();
         let mut cursor = 0usize;
         while cursor < bs.len() {
