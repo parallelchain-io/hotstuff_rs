@@ -1,1 +1,1 @@
-pub(crate) struct ParticipantSet;
+pub struct ParticipantSet;

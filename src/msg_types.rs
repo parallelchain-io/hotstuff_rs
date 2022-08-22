@@ -1,5 +1,6 @@
 use std::array;
 use std::mem;
+use crate::ParticipantSet;
 
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
@@ -176,8 +177,6 @@ impl SerDe for Signatures {
         todo!() 
     }
 }
-
-pub struct ParticipantSet;
 
 pub trait SerDe: Sized {
     fn serialize(&self) -> Vec<u8>;

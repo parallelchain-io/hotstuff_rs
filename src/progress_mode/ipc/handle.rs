@@ -15,14 +15,7 @@ impl Handle {
     }
 
     pub fn broadcast(&mut self, msg: ConsensusMsg) {
-        let mut errored_streams = Vec::new();
-        for (_, stream) in &self.0.iter() {
-            if let Err(_) = stream.write(&msg) {
-                errored_streams.push(stream.peer_addr());
-            }
-        }
-
-        self.0.reconnect(errored_streams);
+        todo!()
     }
 
     // # Possible ErrorKinds
