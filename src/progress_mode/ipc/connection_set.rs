@@ -16,7 +16,7 @@ impl ConnectionSet {
     pub fn new() -> ConnectionSet { todo!() }
 
     // For consistency, does *not* remove the connections that do not feature in new_participant_set immediately, instead, schedules for the maintainer thread to do this,
-    // as well as establish new connections later.
+    // as well as establish new connections, later.
     pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { todo!() }
 
     // Removes the connection identified by public_addr immediately, and schedules it for establishment later.
