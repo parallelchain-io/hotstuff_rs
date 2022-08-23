@@ -115,7 +115,7 @@ impl<'a> IntoIterator for &'a IterGuard<'a> {
 }
 
 /// The Establisher struct establishes connections in the background to eventually update the `connections` field in a ConnectionSet to
-/// contains connections to all the participants in its `participant_set`.
+/// contains connections to all the participants in its `participant_set`. 
 /// 
 /// It is composed of three threads:
 /// 1. The 'Master' Thread periodically polls `participant_set` for changes. It determines if a change has occured by comparing the latest
@@ -125,6 +125,41 @@ impl<'a> IntoIterator for &'a IterGuard<'a> {
 ///    PublicAddr. It does so by actively hitting other Participants' `ConnectionSet::LISTENING_PORT`.
 /// 3. The Listener Thread is responsible for forming connections to Participants with a PublicAddr larger than this Participant's
 ///    PublicAddr. It does so by waiting on this machine's `ConnectionSet::LISTENING_PORT` for new connection attempts.
+/// 
+/// # TODO
+/// The interaction model between Handle and Establisher is unintuitive, overly complex, and couples the two components tightly together.
+/// It was painstakingly designed in a (it turns out, futile) attempt to: 1. Minimize 'spurious reconnects', and 2. Avoid diffing 
+/// `participant_set` and `connections` inside Establisher. Even though it manages to achieve 1, it has failed to achieve 2, and as it
+/// turns out, spurious reconnects turns out to not be that big of a deal since pairs of Participants will eventually use one stable
+/// connection.
+/// 
+/// These issues do not cause correctness problems, and are ignored now since we intend to re-implement Progress Mode IPC as a libp2p
+/// protocol soon (at the latest, in Testnet 4), at which point we will be able to rely on rust-libp2p to handle connection establishment
+/// for us. Just as a record of thinking, and to remind the Maintainer what she *would* have done differently in ConnectionSet-Establisher
+/// had she considered what she has considered now, we list down three possible designs:
+/// ## Option 1: Purely channel-based interaction between ConnectionSet and Establisher. 
+/// - Single message-> type: Connect. 
+/// - Single <-message type: Connected.
+/// 
+/// ### Pros
+/// - Coupling: minimal.
+/// - Spurious reconnects: minimal, if ConnectionSet keeps track of the Connect requests that it has sent to Establisher that are still
+///   pending.
+/// 
+/// ### Cons
+/// - There needs to be a prelude before the 'business logic' of each of ConnectionSet methods to receive Connected requests and insert
+///   them into the ConnectionSet.
+/// 
+/// ## Option 2: Mix of channel-based and shared-memory interaction between ConnectionSet and Establisher.
+/// - This is what we originally attempted.
+/// 
+/// ### Cons
+/// - (Subjectively) the most complex to reason about (but not that much worse than Option 3).
+/// 
+/// ## Option 3: Purely shared-memory interaction between ConnectionSet and Establisher.
+/// 
+/// ### Cons
+/// - (Subjectively) the ugliest code.
 struct Establisher(thread::JoinHandle<()>);
 
 impl Establisher {
