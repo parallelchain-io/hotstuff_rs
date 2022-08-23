@@ -20,7 +20,7 @@ impl Handle {
                 match stream.write(&msg) {
                     Ok(_) => true,
                     Err(_) => {
-                        let _ = self.connections.reconnect(&participant);
+                        let _ = self.connections.reconnect((participant, stream.peer_addr().ip()));
                         false
                     },
                 }
@@ -30,24 +30,24 @@ impl Handle {
     }
 
     pub fn broadcast(&self, msg: &ConsensusMsg) {
-        let mut public_addrs_of_errored_connections = vec![];
+        let mut errored_conns = vec![];
         for (public_addr, stream) in &self.connections.iter() {
             if stream.write(msg).is_err() {
-                public_addrs_of_errored_connections.push(*public_addr);
+                errored_conns.push((*public_addr, stream.peer_addr().ip()));
             }
         }
 
-        for public_addr_of_errored_connection in public_addrs_of_errored_connections {
-            self.connections.reconnect(&public_addr_of_errored_connection);
+        for errored_conn in errored_conns {
+            self.connections.reconnect(errored_conn);
         }
     }
 
-    pub fn recv_from(&self, participant: &PublicAddr, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
-        match self.connections.get(participant) {
+    pub fn recv_from(&self, public_addr: &PublicAddr, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+        match self.connections.get(public_addr) {
             Some(stream) => {
                 stream.read(timeout).map_err(|e| match e {
                     StreamReadError::Corrupted => {
-                        self.connections.reconnect(participant);
+                        self.connections.reconnect((*public_addr, stream.peer_addr().ip()));
                        RecvFromError::NotConnected
                     },
                     StreamReadError::Timeout => RecvFromError::Timeout,
@@ -65,7 +65,7 @@ impl Handle {
                     Ok(msg) => return Ok(msg),
                     Err(e) => match e {
                         StreamReadError::Corrupted => {
-                            self.connections.reconnect(&public_addr);
+                            self.connections.reconnect((public_addr, stream.peer_addr().ip()));
                             continue
                         },
                         StreamReadError::Timeout => continue

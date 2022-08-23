@@ -7,5 +7,8 @@ pub(crate) use handle::Handle;
 pub(crate) mod connection_set;
 pub(in crate::progress_mode::ipc) use connection_set::ConnectionSet;
 
+pub(crate) mod establisher;
+pub(in crate::progress_mode::ipc) use establisher::*;
+
 pub(crate) mod stream;
 pub(in crate::progress_mode::ipc) use stream::Stream;
