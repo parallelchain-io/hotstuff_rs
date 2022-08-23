@@ -167,9 +167,14 @@ impl SerDe for QuorumCertificate {
 }
 
 #[derive(Clone)]
-pub struct SignatureSet(Vec<Option<Signature>>); 
+pub struct SignatureSet {
+    pub signatures: Vec<Option<Signature>>,
+} 
 
 impl SignatureSet {
+    pub const SOME_PREFIX: u8 = 1;
+    pub const NONE_PREFIX: u8 = 0; 
+
     fn verify(&self, participant_set: ParticipantSet) -> bool {
         todo!()
     }
@@ -177,17 +182,54 @@ impl SignatureSet {
 
 impl SerDe for SignatureSet {
     // Encoding:
-    // if None: 
-    // 0 
-    // if Some:
-    // 1 ++
-    // signature
+    // `participant_set.len()` as u64
+    // ++
+    // for each signature in signatures:
+    //     if Some:
+    //         1 ++ signature
+    //     if None: 
+    //         0 
     fn serialize(&self) -> Vec<u8> {
-        todo!()
+        let mut buf = Vec::new();
+        for signature in &self.signatures {
+            match signature {
+                Some(sig) => { 
+                    buf.push(Self::SOME_PREFIX);
+                    buf.extend_from_slice(sig);
+                },
+                None => {
+                    buf.push(Self::NONE_PREFIX);
+                }
+            }
+        }
+        buf
     }
 
     fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
-        todo!() 
+        let mut signatures = Vec::new();
+
+        let mut cursor = 0usize;
+        let num_sigs = u64::from_le_bytes(bs[0..mem::size_of::<u64>()].try_into().unwrap());
+        cursor += mem::size_of::<u64>();
+
+        for _ in 0..num_sigs {
+            let variant_prefix = u8::from_le_bytes(bs[cursor..mem::size_of::<u8>()].try_into().unwrap());
+            cursor += mem::size_of::<u8>();
+            match variant_prefix {
+                Self::SOME_PREFIX => {
+                    let sig = bs[cursor..mem::size_of::<Signature>()].try_into().unwrap();
+                    signatures.push(Some(sig));
+                }, 
+                Self::NONE_PREFIX => {
+                    signatures.push(None);
+                },
+                _ => return Err(DeserializationError)
+            }
+        }
+
+        Ok(SignatureSet {
+            signatures 
+        })
     }
 }
 

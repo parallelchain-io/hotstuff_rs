@@ -5,8 +5,7 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
-use crate::msg_types::{self, ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet};
-use crate::progress_mode::ipc::handle;
+use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
 pub struct Stream {
@@ -81,6 +80,8 @@ impl Stream {
             while let Ok(msg) = from_main.recv() {
                 let bs = msg.serialize();
                 if let Err(_) = tcp_stream.write_all(&bs) {
+                    // This causes the main-to-writer channel to become unusable, marking the Stream as 'corrupt', marking
+                    // the stream for reconnection.
                     break
                 };
             }
@@ -100,6 +101,10 @@ impl Stream {
                     break;
                 };
             } 
+
+            // Breaking out of the while loop causes the main-to-reader channel to become unusable, marking the Stream
+            // for reconnection.
+
         })
     }
 }
@@ -162,13 +167,13 @@ impl DeserializeFromStream for Node {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         let command_len = {
             let mut buf = [0u8; mem::size_of::<u64>()];
-            tcp_stream.read_exact(&mut buf);
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
             u64::from_le_bytes(buf)
         };
 
         let command = {
             let mut buf = vec![0u8; command_len as usize];
-            tcp_stream.read_exact(&mut buf);
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
             buf
         };
 
@@ -185,13 +190,13 @@ impl DeserializeFromStream for QuorumCertificate {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         let vn = {
             let mut buf = [0u8; mem::size_of::<u64>()];
-            tcp_stream.read_exact(&mut buf);
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
             u64::from_le_bytes(buf)
         };
 
         let node_hash = {
             let mut buf = [0u8; mem::size_of::<NodeHash>()];
-            tcp_stream.read_exact(&mut buf);
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
             buf
         };
 
@@ -206,8 +211,40 @@ impl DeserializeFromStream for QuorumCertificate {
 }
 
 impl DeserializeFromStream for SignatureSet {
-    fn deserialize_from_stream(tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
-        todo!()
+    fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
+        let mut signatures = Vec::new();
+
+        let num_sigs = {
+            let mut buf = [0u8; mem::size_of::<u64>()];
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+            u64::from_le_bytes(buf.try_into().unwrap())
+        };
+
+        for _ in 0..num_sigs {
+            let variant_prefix = {
+                let mut buf = [0u8; mem::size_of::<u8>()];
+                tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+                u8::from_le_bytes(buf.try_into().unwrap())
+            };
+            match variant_prefix {
+                Self::SOME_PREFIX => {
+                    let sig = {
+                        let mut buf = [0u8; mem::size_of::<Signature>()];
+                        tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+                        buf
+                    };
+                    signatures.push(Some(sig));
+                },
+                Self::NONE_PREFIX => {
+                    signatures.push(None);
+                },
+                _ => return Err(DeserializeFromStreamError::DeserializationError)
+            }
+        }
+
+        Ok(SignatureSet { 
+            signatures 
+        })
     }
 }
 
