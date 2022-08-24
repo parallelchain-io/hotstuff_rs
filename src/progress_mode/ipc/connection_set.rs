@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::net::{IpAddr, Ipv4Addr};
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::thread;
 use std::time::Duration;
 use indexmap::{map, IndexMap};
@@ -12,7 +12,7 @@ use crate::identity::{self, PublicAddr, ParticipantSet};
 pub struct ConnectionSet {
     // To avoid deadlocks and to guarantee consistency, lock participant_set first, then connections, and finally pending_connections.
     participant_set: Arc<Mutex<ParticipantSet>>, 
-    pending_connections: Arc<Mutex<HashMap<PublicAddr, IpAddr>>>,
+    pending_connections: Arc<Mutex<BTreeMap<PublicAddr, IpAddr>>>,
     connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
 
     // Randomness source for `get_random`.
@@ -148,7 +148,7 @@ impl ConnectionSet {
         from_establisher: mpsc::Receiver<EstablisherResult>, 
         participant_set: Arc<Mutex<ParticipantSet>>,
         connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
-        pending_connections: Arc<Mutex<HashMap<PublicAddr, IpAddr>>>,
+        pending_connections: Arc<Mutex<BTreeMap<PublicAddr, IpAddr>>>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             loop {

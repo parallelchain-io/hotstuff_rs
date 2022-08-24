@@ -11,7 +11,7 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 
 ## 2. The HotStuff Consensus Protocol
 
-HotStuff works by building a 'NodeTree': a directed acyclic graph of Nodes. Node is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence, the choice of terminology.
+HotStuff works by building a 'NodeTree': a directed acyclic graph of Nodes. Node is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
 
 HotStuff guarantees that committed Nodes are *immutable*. That is, they can never be *un*-committed as long as at least a supermajority of voting power faithfully execute the protocol. This guarantee enables applications to make hard-to-reverse actions with confidence. 
 
@@ -182,12 +182,12 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 1. Read messages from *every* participant **until** `timeout` is elapsed  **or** until a new QC is collected:
     - If message is a `VOTE`:
         1. If `vote.view_number < cur_view`: discard it.
-        2. If `vote.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
-        3. If `vote.view_number > cur_view`: discard it.
+        2. Else if `vote.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
+        3. Else if `vote.view_number > cur_view`: discard it.
         4. Else (if `vote.view_number == cur_view`): `if Ok(qc) = qc_collector.collect { generic_qc = qc }`.
     - If message is a `NEW-VIEW`:
         1. If `new_view.view_number < cur_view - 1`: discard it.
-        2. If `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
+        2. Else if `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
         3. Else: discard it.
     - Else (if message is a `PROPOSE`): discard it. 
 2. `cur_view += 1`.
@@ -197,7 +197,7 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 This state is entered when a *View Timeout* is triggered at any point in the Engine's lifetime.
 
 1. Send out a `NEW-VIEW` containing `view_number` and `generic_qc`.
-2. Set `view_number += 1` and return to *BeginView*.
+2. Set `view_number += 1` and change to *BeginView*.
 
 ### 4.4.4. View Timeouts
 

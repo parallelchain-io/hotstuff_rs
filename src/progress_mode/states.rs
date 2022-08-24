@@ -1,16 +1,16 @@
 use std::time::{Instant, Duration};
 use std::cmp;
 use std::thread;
-use crate::app::InvalidNodeError;
-use crate::node_tree::{NodeTree, self};
-use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg};
+use crate::node_tree::NodeTree;
+use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::identity::{MY_PUBLIC_ADDR, MY_SECRET_KEY, STATIC_PARTICIPANT_SET};
 use crate::App;
-use crate::progress_mode::{self, view, ipc};
+use crate::app::InvalidNodeError;
 use crate::sync_mode;
+use crate::progress_mode::{self, view, ipc};
+use crate::progress_mode::ipc::handle::RecvFromError;
 
-use super::ipc::handle::RecvFromError;
-const TARGET_NODE_TIME: Duration = todo!();
+const TARGET_NODE_TIME: Duration = Duration::ZERO; // TODO
 
 struct StateMachine<A: App> {
     cur_view: ViewNumber,
@@ -25,7 +25,7 @@ impl<A: App> StateMachine<A> {
     pub fn initialize(node_tree: NodeTree, app: A) -> StateMachine<A> {
         let generic_qc = node_tree.get_generic_qc();
         let view_number = generic_qc.view_number;
-        let ipc_handle = ipc::Handle::new(STATIC_PARTICIPANT_SET);
+        let ipc_handle = ipc::Handle::new(STATIC_PARTICIPANT_SET.clone());
 
         StateMachine {
             cur_view: view_number,
@@ -43,7 +43,8 @@ impl<A: App> StateMachine<A> {
                 State::BeginView => self.do_begin_view(),
                 State::Leader(deadline) => self.do_leader(deadline),
                 State::Replica(deadline) => self.do_replica(deadline),
-                State::NextLeader(deadline) => self.do_next_leader(deadline),
+                State::NextLeader(deadline, node_hash) => self.do_next_leader(deadline, node_hash),
+                State::NewView => self.do_new_view(),
             }
         }
     }
@@ -99,7 +100,7 @@ impl<A: App> StateMachine<A> {
 
         // 3. If next_leader == me, change to State::NextLeader.
         if next_leader == MY_PUBLIC_ADDR {
-            return State::NextLeader(deadline)
+            return State::NextLeader(deadline, leaf_hash)
         }
 
         // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
@@ -175,7 +176,7 @@ impl<A: App> StateMachine<A> {
 
         // 2. If next leader == me, change to State::NextLeader.
         if next_leader == MY_PUBLIC_ADDR {
-            return State::NextLeader(deadline)
+            return State::NextLeader(deadline, node_hash)
         }
 
         // Phase 4: Wait for the next leader to finish collecting votes
@@ -188,19 +189,54 @@ impl<A: App> StateMachine<A> {
         State::BeginView
     }
 
-    fn do_next_leader(&mut self, deadline: Instant) -> progress_mode::State {
+    fn do_next_leader(&mut self, deadline: Instant, node_hash: NodeHash) -> progress_mode::State {
         // 1. Read messages from every participant until deadline is reached or until a new QC is collected.
-        let qc;
+        let mut qc_builder = QuorumCertificateBuilder::new(self.cur_view, node_hash, STATIC_PARTICIPANT_SET.clone());
         loop {
-            match self.ipc_handle.recv_from_any(Instant::now() - deadline) {
-
+            if Instant::now() >= deadline {
+                return State::NewView
             }
 
+            match self.ipc_handle.recv_from_any(Instant::now() - deadline) {
+                Ok((public_addr, ConsensusMsg::Vote(vn, node_hash, sig))) => {
+                    if vn < self.cur_view {
+                        continue
+                    } else if self.node_tree.get_node(&node_hash).is_none() {
+                        return sync_mode::enter(&mut self.node_tree)
+                    } else if vn > self.cur_view {
+                        continue
+                    } else {
+                        // if vote.view_number == cur_view
+                        if let Ok(true) = qc_builder.insert(sig, public_addr) {
+                            self.generic_qc = qc_builder.into_qc();
+                            self.cur_view += 1;
+                            return State::BeginView
+                        }
+                    }
+                },
+                Ok((_, ConsensusMsg::NewView(vn, qc))) => {
+                    if vn < self.cur_view - 1 {
+                        continue
+                    } else if vn > self.generic_qc.view_number {
+                        return sync_mode::enter(&mut self.node_tree)
+                    } else {
+                        continue
+                    }
+                },
+                Ok((_, ConsensusMsg::Propose(_, _))) => continue,
+                Err(RecvFromError::Timeout) => continue,
+                Err(RecvFromError::NotConnected) => continue,
+            }
         }
     }
 
     fn do_new_view(&mut self) -> progress_mode::State {
-        todo!()
+        // 1. Send out a NEW-VIEW message containing cur_view and our generic_qc.
+        let new_view = ConsensusMsg::NewView(self.cur_view, self.generic_qc.clone());
+        self.ipc_handle.broadcast(&new_view);
+
+        self.cur_view += 1;
+        State::BeginView
     }
 }
 
@@ -208,6 +244,8 @@ pub enum State {
     BeginView,
     Leader(Instant),
     Replica(Instant),
-    NextLeader(Instant),
+    /// NodeHash (the second item in the tuple) is the Node that we expect to Justify in the next
+    /// View, when we become Leader.
+    NextLeader(Instant, NodeHash),
     NewView
 }

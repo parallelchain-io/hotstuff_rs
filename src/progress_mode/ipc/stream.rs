@@ -220,6 +220,7 @@ impl DeserializeFromStream for SignatureSet {
             u64::from_le_bytes(buf.try_into().unwrap())
         };
 
+        let mut count = 0;
         for _ in 0..num_sigs {
             let variant_prefix = {
                 let mut buf = [0u8; mem::size_of::<u8>()];
@@ -234,6 +235,7 @@ impl DeserializeFromStream for SignatureSet {
                         buf
                     };
                     signatures.push(Some(sig));
+                    count += 1;
                 },
                 Self::NONE_PREFIX => {
                     signatures.push(None);
@@ -243,7 +245,8 @@ impl DeserializeFromStream for SignatureSet {
         }
 
         Ok(SignatureSet { 
-            signatures 
+            signatures,
+            count
         })
     }
 }

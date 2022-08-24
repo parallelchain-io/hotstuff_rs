@@ -12,4 +12,3 @@ pub(crate) mod progress_mode;
 pub(crate) mod sync_mode;
 
 pub(crate) mod identity;
-pub(crate) use identity::ParticipantSet;

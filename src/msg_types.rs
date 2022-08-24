@@ -1,6 +1,6 @@
 use std::array;
 use std::mem;
-use crate::ParticipantSet;
+use crate::identity::{PublicAddr, ParticipantSet};
 
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
@@ -142,6 +142,13 @@ pub struct QuorumCertificate {
     pub sigs: SignatureSet,
 }
 
+impl QuorumCertificate {
+    pub fn is_quorum(num_votes: usize, num_participants: usize) -> bool {
+        // '/' here is integer (floor) division. 
+        num_votes >= (num_participants * 2) / 3 + 1
+    }
+}
+
 impl SerDe for QuorumCertificate {
     fn serialize(&self) -> Vec<u8> {
         let mut bs = Vec::new();
@@ -165,16 +172,84 @@ impl SerDe for QuorumCertificate {
     }
 }
 
+pub struct QuorumCertificateBuilder {
+    view_number: ViewNumber,
+    node_hash: NodeHash,
+    participant_set: ParticipantSet,
+    signature_set: SignatureSet,
+}
+
+impl QuorumCertificateBuilder {
+    pub fn new(view_number: ViewNumber, node_hash: NodeHash, participant_set: ParticipantSet) -> QuorumCertificateBuilder {
+        QuorumCertificateBuilder {
+            view_number,
+            node_hash,
+            signature_set: SignatureSet::new(participant_set.len()),
+            participant_set,
+        }
+    }
+
+    /// - This does not check whether signature is a correct signature.
+    /// - Returns Ok(true) when insertion makes QuorumCertificateBuilder contain enough Signatures to form a QuorumCertificate.
+    pub fn insert(&mut self, signature: Signature, of_public_addr: PublicAddr) -> Result<bool, QCBuilderInsertError> {
+        if QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()) {
+            return Err(QCBuilderInsertError::AlreadyAQuorum)
+        }
+
+        if let Some(position) = self.participant_set.keys().position(|public_addr| *public_addr == of_public_addr) {
+            self.signature_set.insert(position, signature);
+
+            Ok(QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()))
+        } else {
+            Err(QCBuilderInsertError::PublicAddrNotInParticipantSet)
+        }
+    }
+
+    pub fn into_qc(self) -> QuorumCertificate {
+        QuorumCertificate { 
+            view_number: self.view_number,
+            node_hash: self.node_hash,
+            sigs:  self.signature_set
+        }
+    }
+}
+
+pub enum QCBuilderInsertError {
+    AlreadyAQuorum,
+    PublicAddrNotInParticipantSet,
+}
+
 #[derive(Clone)]
 pub struct SignatureSet {
     pub signatures: Vec<Option<Signature>>,
+    pub count: usize,
 } 
 
 impl SignatureSet {
     pub const SOME_PREFIX: u8 = 1;
     pub const NONE_PREFIX: u8 = 0; 
 
-    fn verify(&self, participant_set: ParticipantSet) -> bool {
+    pub fn new(length: usize) -> SignatureSet {
+        let signatures = vec![None; length];
+        SignatureSet {
+            signatures,
+            count: 0,
+        }
+    }
+
+    /// The caller has the responsibility to ensure that Signatures in the SignatureSet are sorted in ascending order of the
+    /// PublicAddr that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
+    /// to the 'length - n' numerically largest Participant in a ParticipantSet. By imposing an order on SignatureSet, mappings
+    /// between PublicAddr and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
+    pub fn insert(&mut self, index: usize, signature: Signature) {
+        todo!()
+    }  
+
+    pub fn verify(&self, participant_set: ParticipantSet) -> bool {
+        todo!()
+    }
+
+    pub fn count(&self) -> usize {
         todo!()
     }
 }
@@ -211,6 +286,7 @@ impl SerDe for SignatureSet {
         let num_sigs = u64::from_le_bytes(bs[0..mem::size_of::<u64>()].try_into().unwrap());
         cursor += mem::size_of::<u64>();
 
+        let mut count = 0;
         for _ in 0..num_sigs {
             let variant_prefix = u8::from_le_bytes(bs[cursor..mem::size_of::<u8>()].try_into().unwrap());
             cursor += mem::size_of::<u8>();
@@ -218,6 +294,7 @@ impl SerDe for SignatureSet {
                 Self::SOME_PREFIX => {
                     let sig = bs[cursor..mem::size_of::<Signature>()].try_into().unwrap();
                     signatures.push(Some(sig));
+                    count += 1;
                 }, 
                 Self::NONE_PREFIX => {
                     signatures.push(None);
@@ -227,7 +304,8 @@ impl SerDe for SignatureSet {
         }
 
         Ok(SignatureSet {
-            signatures 
+            signatures, 
+            count,
         })
     }
 }

@@ -65,12 +65,12 @@ impl Handle {
     }
 
     /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
-    pub fn recv_from_any(&self, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+    pub fn recv_from_any(&self, timeout: Duration) -> Result<(PublicAddr, ConsensusMsg), RecvFromError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             match self.connections.get_random() {
                 Some((public_addr, stream)) => match stream.read(Duration::ZERO) {
-                    Ok(msg) => return Ok(msg),
+                    Ok(msg) => return Ok((public_addr, msg)),
                     Err(e) => match e {
                         StreamReadError::Corrupted => {
                             self.connections.reconnect((public_addr, stream.peer_addr().ip()));
