@@ -114,7 +114,7 @@ The flow proceeds in the following sequence of steps:
 4. If `len(chain) == CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree, then jump back to step 1.
     1. Else if `len(chain) < CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree.
     2. If a Node fails validation in the 'execute and insert' step, panic (this indicates that more than $f$ Participants are faulty at this moment).
-5. Switch to *Progress Mode*, entering into *Initialize* if the state has not been entered, or *BeginView*, otherwise. 
+5. Switch to *Progress Mode*, entering into *BeginView*. 
 
 ### 4.4.3. Progress Mode
 
@@ -125,13 +125,13 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 ### Initialize
 
 1. `generic_qc` = `get_generic_qc()`
-2. `view_number` = `generic_qc.view_number`
+2. `cur_view` = `generic_qc.view_number`
 3. Jump to *BeginView*.
 
 ### BeginView
 
-1. `view_number = max(view_number, generic_qc.view_number + 1)`
-2. If `leader(view_number) == me`: jump to *Leader*, else, jump to *Replica*.
+1. `cur_view = max(cur_view, generic_qc.view_number + 1)`
+2. If `leader(cur_view) == me`: jump to *Leader*, else, jump to *Replica*.
 
 ### Leader 
 
@@ -142,10 +142,10 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 #### Phase 2: Broadcast a Proposal.
 3. Broadcast a new `PROPOSE` message containing the leaf to every participant.
 4. Send a `VOTE` for our own proposal to the next leader.
-5. If `leader(view_number + 1) == me`: jump to *NextLeader* with `timeout` = `TNT` - `time since Phase 1 began`, else continue.
+5. If `leader(cur_view + 1) == me`: jump to *NextLeader* with `timeout` = `TNT` - `time since Phase 1 began`, else continue.
 
 #### Phase 3: Wait for Replicas to send vote for proposal to the next leader.
-6. Sleep for `2 * NET_LATENCY + time elapsed in Phase 2` milliseconds.
+6. Sleep for `2 * NET_LATENCY + time elapsed since Phase 1 began` seconds or until the the view timeout, whichever is sooner.
 7. Set `cur_view += 1` and return to *BeginView*.
 
 
@@ -171,11 +171,11 @@ The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the
 
 #### Phase 3: Send a vote.
 4. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
-5. If `leader(cur_view + 1) == me`: jump to `NextLeader` with `timeout` = `TNT - time since Phase 1 began`, else continue.
+5. If `leader(cur_view + 1) == me`: jump to `NextLeader` with `timeout` = `TNT - time elapsed in this view`, else continue.
 
 #### Phase 4: Wait for the next leader to finish collecting votes.
 6. Sleep for `NET_LATENCY`.
-7. `view_number += 1` and return to *BeginView*.
+7. `cur_view += 1` and return to *BeginView*.
 
 ### NextLeader(parameter: `timeout`)
 
@@ -208,5 +208,5 @@ If View timeout is a constant and Participants' View Numbers become unsynchroniz
 In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout grows exponentially in terms of the number of consecutive views the Participant fails to insert a new node:
 
 ```rust
-Timeout(cur_view, generic_qc) = 2 ** (cur_view - generic_qc.view_number)
+Timeout(cur_view, generic_qc) = TNT + 2 ** (cur_view - generic_qc.view_number) seconds
 ```

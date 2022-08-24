@@ -7,8 +7,7 @@ use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use crate::progress_mode::ipc::{self, Establisher, EstablisherConfig, EstablisherResult};
-use crate::msg_types::PublicAddr;
-use crate::identity::{self, ParticipantSet};
+use crate::identity::{self, PublicAddr, ParticipantSet};
 
 pub struct ConnectionSet {
     // To avoid deadlocks and to guarantee consistency, lock participant_set first, then connections, and finally pending_connections.

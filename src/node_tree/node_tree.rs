@@ -14,7 +14,7 @@ use crate::node_tree;
 /// 
 /// Internally, NodeTree is implemented as a wrapper around `Database`, which itself is a wrapper around an
 /// Arc<rocksdb::DB>. Hence, NodeTree is cheaply Clone-able and shareable between threads.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeTree {
     db: Database,
 }

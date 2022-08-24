@@ -203,7 +203,7 @@ impl DeserializeFromStream for QuorumCertificate {
         let sigs = SignatureSet::deserialize_from_stream(tcp_stream)?;
         
         Ok(QuorumCertificate {
-            vn,
+            view_number: vn,
             node_hash,
             sigs
         })

@@ -37,4 +37,8 @@ impl State {
             self.db.get_from_state(key).unwrap()
         }
     }
+
+    pub(crate) fn get_writes(self) -> WriteSet {
+        self.writes
+    }
 }

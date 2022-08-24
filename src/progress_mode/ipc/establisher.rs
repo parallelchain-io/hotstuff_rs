@@ -6,8 +6,8 @@ use std::time::Duration;
 use std::io::ErrorKind;
 use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
-use crate::msg_types::PublicAddr;
 use crate::progress_mode::ipc;
+use crate::identity::PublicAddr;
 
 pub struct Establisher {
     initiator: thread::JoinHandle<()>,

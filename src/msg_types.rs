@@ -5,7 +5,6 @@ use crate::ParticipantSet;
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
 pub type Command = Vec<u8>;
-pub type PublicAddr = [u8; 32];
 pub type Signature = [u8; 64];
 
 #[derive(Clone)]
@@ -138,7 +137,7 @@ impl SerDe for Node {
 
 #[derive(Clone)]
 pub struct QuorumCertificate {
-    pub vn: ViewNumber,
+    pub view_number: ViewNumber,
     pub node_hash: NodeHash,
     pub sigs: SignatureSet,
 }
@@ -146,7 +145,7 @@ pub struct QuorumCertificate {
 impl SerDe for QuorumCertificate {
     fn serialize(&self) -> Vec<u8> {
         let mut bs = Vec::new();
-        bs.extend_from_slice(&self.vn.to_le_bytes());
+        bs.extend_from_slice(&self.view_number.to_le_bytes());
         bs.extend_from_slice(&self.node_hash);
         bs.extend_from_slice(&self.sigs.serialize());
 
@@ -159,7 +158,7 @@ impl SerDe for QuorumCertificate {
         let sigs = SignatureSet::deserialize(&bs[40..])?;
 
         Ok(QuorumCertificate {
-            vn,
+            view_number: vn,
             node_hash,
             sigs,
         })

@@ -19,7 +19,7 @@ use crate::msg_types::{self, NodeHash, SerDe};
 /// 2. `Database` is used in another place besides `NodeTree`, namely `node_tree::Node`. Had we not separated storage logic into
 ///    this struct, `Node` would need to own a reference to `NodeTree`, a weird inversion of the intuitive hierarchy between the
 ///    two types. 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Database(Arc<rocksdb::DB>);
 
 impl Database {
