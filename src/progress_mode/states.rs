@@ -191,8 +191,11 @@ impl<A: App> StateMachine<A> {
     fn do_next_leader(&mut self, deadline: Instant) -> progress_mode::State {
         // 1. Read messages from every participant until deadline is reached or until a new QC is collected.
         let qc;
-        while Instant::now() < deadline {
-            match self.ipc_handle.recv_from_any(Instant::now() < deadline)
+        loop {
+            match self.ipc_handle.recv_from_any(Instant::now() - deadline) {
+
+            }
+
         }
     }
 
