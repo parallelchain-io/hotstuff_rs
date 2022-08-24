@@ -1,6 +1,6 @@
 use std::time::{Instant, Duration};
 use crate::msg_types::ConsensusMsg;
-use crate::identity::PublicAddr;
+use crate::identity::{PublicAddr, ParticipantSet};
 use crate::progress_mode::ipc::{ConnectionSet, StreamReadError};
 
 /// Handle exposes methods for sending ConsensusMsgs to, and receiving ConsensusMsgs from other Participants. All of Handle's methods
@@ -10,16 +10,22 @@ pub struct Handle {
 }
 
 impl Handle {
+    pub fn new(initial_participant_set: ParticipantSet) -> Handle {
+        Handle {
+            connections: ConnectionSet::new(initial_participant_set),
+        }
+    }
+
     /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. Returns false if there is
     /// no Stream corresponding to public_addr in the ConnectionSet, or if the Stream is corrupted, in which case Handle will
     /// transparently arrange for Stream to be dropped and re-established.
-    pub fn send_to(&self, public_addr: PublicAddr, msg: &ConsensusMsg) -> bool {
+    pub fn send_to(&self, public_addr: &PublicAddr, msg: &ConsensusMsg) -> bool {
         match self.connections.get(&public_addr) {
             Some(stream) => {
                 match stream.write(&msg) {
                     Ok(_) => true,
                     Err(_) => {
-                        let _ = self.connections.reconnect((public_addr, stream.peer_addr().ip()));
+                        let _ = self.connections.reconnect((*public_addr, stream.peer_addr().ip()));
                         false
                     },
                 }
@@ -79,6 +85,10 @@ impl Handle {
 
         Err(RecvFromError::Timeout)
     }
+
+    pub fn update_participant_set(&mut self, new_participant_set: ParticipantSet) {
+        self.connections.replace_set(new_participant_set);
+    } 
 }
 
 pub enum RecvFromError {

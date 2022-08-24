@@ -1,3 +1,4 @@
 mod ipc;
 
-mod states;
+pub(crate) mod state;
+pub(crate) use state::enter;

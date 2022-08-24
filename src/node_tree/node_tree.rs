@@ -34,7 +34,7 @@ impl NodeTree {
     /// 2. Deleting abandoned branches.
     /// 
     /// If node.justify.node_hash is not in the NodeTree, returns a ParentNotInDBError.
-    pub(crate) fn try_insert_node(&mut self, node: msg_types::Node, writes: WriteSet) -> Result<(), ParentNotInDBError> { 
+    pub(crate) fn try_insert_node(&mut self, node: &msg_types::Node, writes: &WriteSet) -> Result<(), ParentNotInDBError> { 
         // 1. Open WriteBatch.
         let mut wb = WriteBatch::new();
 
@@ -92,6 +92,13 @@ impl NodeTree {
         node_with_locked_qc.justify.clone()
     }
 
+    pub(crate) fn make_speculative_node(&self, node: msg_types::Node) -> node_tree::Node {
+        node_tree::Node {
+            inner: node,
+            db: self.db.clone()
+        }
+    }
+
     fn abandon_siblings(&self, of_node: &NodeHash, wb: &mut WriteBatch) {
         let parent_hash = self.get_node(of_node).unwrap().justify.node_hash;
         let siblings = self.db.get_children(&parent_hash).unwrap();
@@ -114,4 +121,5 @@ impl NodeTree {
     }
 }
 
+#[derive(Debug)]
 pub struct ParentNotInDBError;
