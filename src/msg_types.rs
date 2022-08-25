@@ -1,11 +1,11 @@
 use std::array;
 use std::mem;
+use std::ops::Deref;
 use crate::identity::{PublicAddr, ParticipantSet};
 
 pub type ViewNumber = u64;
 pub type NodeHash = [u8; 32];
 pub type Command = Vec<u8>;
-pub type Signature = [u8; 64];
 
 #[derive(Clone)]
 pub enum ConsensusMsg {
@@ -52,7 +52,7 @@ impl SerDe for ConsensusMsg {
                 buf.extend_from_slice(&Self::PREFIX_VOTE);
                 buf.extend_from_slice(&vn.to_le_bytes());
                 buf.extend_from_slice(node_hash);
-                buf.extend_from_slice(signature);
+                buf.extend_from_slice(&signature.0);
             },
             Self::NewView(vn, qc) => {
                 buf.extend_from_slice(&Self::PREFIX_NEW_VIEW);
@@ -81,7 +81,7 @@ impl SerDe for ConsensusMsg {
                 let node_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
                 cursor += mem::size_of::<NodeHash>();
 
-                let signature = bs[cursor..mem::size_of::<Signature>()].try_into()?;
+                let signature = <[u8; 64]>::try_from(&bs[cursor..64]).unwrap().into();
                 cursor += mem::size_of::<Signature>();
                 Ok(Self::Vote(vn, node_hash, signature))
             },
@@ -241,18 +241,31 @@ impl SignatureSet {
     /// PublicAddr that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
     /// to the 'length - n' numerically largest Participant in a ParticipantSet. By imposing an order on SignatureSet, mappings
     /// between PublicAddr and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
-    pub fn insert(&mut self, index: usize, signature: Signature) {
-        todo!()
+    pub fn insert(&mut self, index: usize, signature: Signature) -> Result<(), AlreadyInsertedError> {
+        if self.signatures[index].is_some() {
+            Err(AlreadyInsertedError)
+        } else {
+            self.signatures[index] = Some(signature);
+            self.count += 1;
+            Ok(())
+        }
     }  
 
-    pub fn verify(&self, participant_set: ParticipantSet) -> bool {
-        todo!()
+    pub fn verify(&self, msg: &[u8], participant_set: ParticipantSet) -> bool {
+        self.signatures.iter().all(|sig| {
+            match sig {
+                None => true,
+                Some(sig) => sig.is_correct(msg),
+            }
+        })
     }
 
     pub fn count(&self) -> usize {
-        todo!()
+        self.count
     }
 }
+
+pub struct AlreadyInsertedError;
 
 impl SerDe for SignatureSet {
     // Encoding:
@@ -269,7 +282,7 @@ impl SerDe for SignatureSet {
             match signature {
                 Some(sig) => { 
                     buf.push(Self::SOME_PREFIX);
-                    buf.extend_from_slice(sig);
+                    buf.extend_from_slice(sig.into());
                 },
                 None => {
                     buf.push(Self::NONE_PREFIX);
@@ -292,7 +305,7 @@ impl SerDe for SignatureSet {
             cursor += mem::size_of::<u8>();
             match variant_prefix {
                 Self::SOME_PREFIX => {
-                    let sig = bs[cursor..mem::size_of::<Signature>()].try_into().unwrap();
+                    let sig = <[u8; 64]>::try_from(&bs[cursor..64]).unwrap().into();
                     signatures.push(Some(sig));
                     count += 1;
                 }, 
@@ -307,6 +320,39 @@ impl SerDe for SignatureSet {
             signatures, 
             count,
         })
+    }
+}
+
+#[derive(Clone)]
+pub struct Signature(pub [u8; 64]);
+
+impl Signature {
+    pub fn is_correct(&self, msg: &[u8]) -> bool {
+        todo!()
+    }
+}
+
+impl From<[u8; 64]> for Signature {
+    fn from(bs: [u8; 64]) -> Self {
+        Self(bs)
+    }
+}
+
+impl Into<[u8; 64]> for Signature {
+    fn into(self) -> [u8; 64] {
+        self.0
+    }
+}
+
+impl<'a> Into<&'a [u8; 64]> for &'a Signature {
+    fn into(self) -> &'a [u8; 64] {
+        &self.0
+    }
+}
+
+impl<'a> Into<&'a [u8]> for &'a Signature {
+    fn into(self) -> &'a [u8] {
+        &self.0
     }
 }
 

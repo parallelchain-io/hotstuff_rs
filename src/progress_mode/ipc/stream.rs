@@ -5,7 +5,6 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
-use crate::config::IPCConfig;
 use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
@@ -144,7 +143,7 @@ impl DeserializeFromStream for ConsensusMsg {
                 let signature = {
                     let mut buf = [0u8; 64];
                     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                    buf
+                    buf.into()
                 };
 
                 Ok(Self::Vote(vn, node_hash, signature))
@@ -228,7 +227,7 @@ impl DeserializeFromStream for SignatureSet {
                     let sig = {
                         let mut buf = [0u8; mem::size_of::<Signature>()];
                         tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                        buf
+                        buf.into()
                     };
                     signatures.push(Some(sig));
                     count += 1;
