@@ -1,5 +1,5 @@
 mod states;
-pub(crate) use states::State;
+pub(crate) use states::{State, StateMachine};
 
 mod view;
 

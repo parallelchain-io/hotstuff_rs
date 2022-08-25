@@ -5,12 +5,11 @@ use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
 use crate::node_tree::NodeTree;
 use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::App;
-use crate::app::InvalidNodeError;
 use crate::sync_mode;
 use crate::progress_mode::{self, view, ipc};
 use crate::progress_mode::ipc::handle::RecvFromError;
 
-struct StateMachine<A: App> {
+pub(crate) struct StateMachine<A: App> {
     cur_view: ViewNumber,
     generic_qc: QuorumCertificate,
     node_tree: NodeTree,
@@ -73,8 +72,6 @@ impl<A: App> StateMachine<A> {
     }
 
     fn do_leader(&mut self, deadline: Instant) -> progress_mode::State {
-        let start = Instant::now();
-
         // Phase 1: Produce a new Node.
 
         // 1. Extend the branch containing Generic QC with a new leaf Node.
@@ -82,7 +79,8 @@ impl<A: App> StateMachine<A> {
             let parent_node = self.node_tree
                 .get_node(&self.generic_qc.node_hash)
                 .expect("Programming error: generic_qc.node_hash is not in DB.");
-            let (command, state) = self.app.create_leaf(parent_node);
+            let deadline = deadline - 2 * self.ipc_config.expected_worst_case_net_latency;
+            let (command, state) = self.app.create_leaf(parent_node, deadline);
             let node = msg_types::Node {
                 command,
                 justify: self.generic_qc.clone(),
@@ -138,7 +136,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view {
                         continue
                     } else if self.node_tree.get_node(&node.justify.node_hash).is_none() {
-                        return sync_mode::enter(&mut self.node_tree)
+                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
                     } else if vn > self.cur_view {
                         // Note: the protocol requires that the condition `vn > self.cur_view` be considered only if the second
                         // condition is false.
@@ -153,7 +151,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.generic_qc.view_number {
-                        return sync_mode::enter(&mut self.node_tree)
+                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
                     } else {
                         continue
                     }
@@ -169,13 +167,15 @@ impl<A: App> StateMachine<A> {
         // 1. Execute Node.
         let node = self.node_tree.make_speculative_node(proposal.1.clone());
         let node_hash = node.hash();
-        let writes = match self.app.try_execute(node) {
+        let deadline = deadline - self.ipc_config.expected_worst_case_net_latency;
+        let writes = match self.app.try_execute(node, deadline) {
             Ok(writes) => writes.get_writes(),
-            Err(InvalidNodeError) => return State::NewView,
+            Err(_) => return State::NewView,
         };
 
         // 2. Write validated Node into NodeTree.
-        self.node_tree.try_insert_node(&proposal.1, &writes);
+        self.node_tree.try_insert_node(&proposal.1, &writes)
+            .expect("Programming error: proposed Node accepted to Phase 2 of the Replica state even though its parent is not in the NodeTree.");
 
         // Phase 3: Vote for the proposal.
 
@@ -212,7 +212,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view {
                         continue
                     } else if self.node_tree.get_node(&node_hash).is_none() {
-                        return sync_mode::enter(&mut self.node_tree)
+                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
                     } else if vn > self.cur_view {
                         continue
                     } else {
@@ -227,8 +227,8 @@ impl<A: App> StateMachine<A> {
                 Ok((_, ConsensusMsg::NewView(vn, qc))) => {
                     if vn < self.cur_view - 1 {
                         continue
-                    } else if vn > self.generic_qc.view_number {
-                        return sync_mode::enter(&mut self.node_tree)
+                    } else if qc.view_number > self.generic_qc.view_number {
+                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
                     } else {
                         continue
                     }
