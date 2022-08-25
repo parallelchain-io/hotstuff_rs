@@ -1,37 +1,47 @@
-use std::time::{Instant, Duration};
+use std::time::Instant;
 use std::cmp;
 use std::thread;
+use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
 use crate::node_tree::NodeTree;
 use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
-use crate::identity::{MY_PUBLIC_ADDR, MY_SECRET_KEY, STATIC_PARTICIPANT_SET};
 use crate::App;
 use crate::app::InvalidNodeError;
 use crate::sync_mode;
 use crate::progress_mode::{self, view, ipc};
 use crate::progress_mode::ipc::handle::RecvFromError;
 
-const TARGET_NODE_TIME: Duration = Duration::ZERO; // TODO
-
 struct StateMachine<A: App> {
     cur_view: ViewNumber,
     generic_qc: QuorumCertificate,
     node_tree: NodeTree,
     ipc_handle: ipc::Handle,
+    ipc_config: IPCConfig,
+    identity_config: IdentityConfig,
+    progress_mode_config: ProgressModeConfig,
     app: A,
 }
 
 impl<A: App> StateMachine<A> {
     // Implements the Initialize state as it is described in the top-level README.
-    pub fn initialize(node_tree: NodeTree, app: A) -> StateMachine<A> {
+    pub fn initialize(
+        node_tree: NodeTree,
+        app: A,
+        progress_mode_config: ProgressModeConfig,
+        identity_config: IdentityConfig,
+        ipc_config: IPCConfig
+    ) -> StateMachine<A> {
         let generic_qc = node_tree.get_generic_qc();
         let view_number = generic_qc.view_number;
-        let ipc_handle = ipc::Handle::new(STATIC_PARTICIPANT_SET.clone());
+        let ipc_handle = ipc::Handle::new(identity_config.clone(), ipc_config.clone());
 
         StateMachine {
             cur_view: view_number,
             generic_qc,
             node_tree,
             ipc_handle,
+            ipc_config,
+            identity_config,
+            progress_mode_config,
             app
         }
     }
@@ -51,10 +61,10 @@ impl<A: App> StateMachine<A> {
 
     fn do_begin_view(&mut self) -> progress_mode::State {
         self.cur_view = cmp::max(self.cur_view, self.generic_qc.view_number + 1);
-        let timeout = view::timeout(TARGET_NODE_TIME, self.cur_view, &self.generic_qc);
+        let timeout = view::timeout(self.progress_mode_config.target_node_time, self.cur_view, &self.generic_qc);
         let deadline = Instant::now() + timeout;
 
-        if view::leader(self.cur_view, &STATIC_PARTICIPANT_SET) == MY_PUBLIC_ADDR {
+        if view::leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
             State::Leader(deadline)
         } else {
             State::Replica(deadline)
@@ -94,17 +104,17 @@ impl<A: App> StateMachine<A> {
         self.ipc_handle.broadcast(&proposal);
 
         // 2. Send a VOTE for our own proposal to the next leader.
-        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, MY_SECRET_KEY.sign(&leaf_hash));
-        let next_leader = view::leader(self.cur_view + 1, &STATIC_PARTICIPANT_SET);
+        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, self.identity_config.my_secret_key.sign(&leaf_hash));
+        let next_leader = view::leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 3. If next_leader == me, change to State::NextLeader.
-        if next_leader == MY_PUBLIC_ADDR {
+        if next_leader == self.identity_config.my_public_addr {
             return State::NextLeader(deadline, leaf_hash)
         }
 
         // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
-        let sleep_duration = cmp::min(2 * ipc::NET_LATENCY, deadline - Instant::now());
+        let sleep_duration = cmp::min(2 * self.ipc_config.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Increment view number.
@@ -114,7 +124,7 @@ impl<A: App> StateMachine<A> {
     }
 
     fn do_replica(&mut self, deadline: Instant) -> progress_mode::State {
-        let leader = view::leader(self.cur_view, &STATIC_PARTICIPANT_SET);
+        let leader = view::leader(self.cur_view, &self.identity_config.static_participant_set);
 
         // Phase 1: Wait for a proposal.
         let proposal;
@@ -170,17 +180,17 @@ impl<A: App> StateMachine<A> {
         // Phase 3: Vote for the proposal.
 
         // 1. Send a VOTE message to the next leader.
-        let next_leader = view::leader(self.cur_view + 1, &STATIC_PARTICIPANT_SET);
-        let vote = ConsensusMsg::Vote(self.cur_view, node_hash, MY_SECRET_KEY.sign(&node_hash));
+        let next_leader = view::leader(self.cur_view + 1, &self.identity_config.static_participant_set);
+        let vote = ConsensusMsg::Vote(self.cur_view, node_hash, self.identity_config.my_secret_key.sign(&node_hash));
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 2. If next leader == me, change to State::NextLeader.
-        if next_leader == MY_PUBLIC_ADDR {
+        if next_leader == self.identity_config.my_public_addr {
             return State::NextLeader(deadline, node_hash)
         }
 
         // Phase 4: Wait for the next leader to finish collecting votes
-        let sleep_duration = cmp::min(ipc::NET_LATENCY, deadline - Instant::now());
+        let sleep_duration = cmp::min(self.ipc_config.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Increment view number.
@@ -191,7 +201,7 @@ impl<A: App> StateMachine<A> {
 
     fn do_next_leader(&mut self, deadline: Instant, node_hash: NodeHash) -> progress_mode::State {
         // 1. Read messages from every participant until deadline is reached or until a new QC is collected.
-        let mut qc_builder = QuorumCertificateBuilder::new(self.cur_view, node_hash, STATIC_PARTICIPANT_SET.clone());
+        let mut qc_builder = QuorumCertificateBuilder::new(self.cur_view, node_hash, self.identity_config.static_participant_set.clone());
         loop {
             if Instant::now() >= deadline {
                 return State::NewView

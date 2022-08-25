@@ -23,9 +23,8 @@ use crate::msg_types::{self, NodeHash, SerDe};
 pub(crate) struct Database(Arc<rocksdb::DB>);
 
 impl Database {
-    pub fn open() -> Result<Database, rocksdb::Error> {
-        const DB_PATH: &str = "./database";
-        let db = Arc::new(rocksdb::DB::open_default(DB_PATH)?);
+    pub fn open(db_path: &str) -> Result<Database, rocksdb::Error> {
+        let db = Arc::new(rocksdb::DB::open_default(db_path)?);
 
         Ok(Database(db))
     } 

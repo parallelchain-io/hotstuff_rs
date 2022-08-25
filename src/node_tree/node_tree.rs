@@ -1,3 +1,4 @@
+use crate::config::NodeTreeConfig;
 use crate::msg_types::{self, NodeHash, QuorumCertificate};
 use crate::node_tree::storage::{Database, WriteBatch};
 use crate::node_tree::stored_types::WriteSet;
@@ -20,8 +21,8 @@ pub struct NodeTree {
 }
 
 impl NodeTree {
-    pub(crate) fn open() -> NodeTree { 
-        let db = Database::open().unwrap();
+    pub(crate) fn open(config: NodeTreeConfig) -> NodeTree { 
+        let db = Database::open(&config.db_path).unwrap();
 
         NodeTree {
             db

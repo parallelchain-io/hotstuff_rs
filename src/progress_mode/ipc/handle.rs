@@ -1,4 +1,5 @@
 use std::time::{Instant, Duration};
+use crate::config::{IdentityConfig, IPCConfig};
 use crate::msg_types::ConsensusMsg;
 use crate::identity::{PublicAddr, ParticipantSet};
 use crate::progress_mode::ipc::{ConnectionSet, StreamReadError};
@@ -6,13 +7,15 @@ use crate::progress_mode::ipc::{ConnectionSet, StreamReadError};
 /// Handle exposes methods for sending ConsensusMsgs to, and receiving ConsensusMsgs from other Participants. All of Handle's methods
 /// transparently handle errored streams by calling `ConnectionSet::reconnect` on them. 
 pub struct Handle {
-    connections: ConnectionSet
+    connections: ConnectionSet,
+    ipc_config: IPCConfig,
 }
 
 impl Handle {
-    pub fn new(initial_participant_set: ParticipantSet) -> Handle {
+    pub fn new(identity_config: IdentityConfig, ipc_config: IPCConfig) -> Handle {
         Handle {
-            connections: ConnectionSet::new(initial_participant_set),
+            connections: ConnectionSet::new(identity_config, ipc_config.clone()),
+            ipc_config,
         }
     }
 

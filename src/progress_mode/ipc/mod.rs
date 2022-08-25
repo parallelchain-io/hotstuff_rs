@@ -1,9 +1,6 @@
 /// The IPC module handles HotStuff-rs' interactions with other Participants in Progress Mode. Inter-process
 /// interactions in Sync Mode are handled in `crate::sync_mode::ipc`.
 
-use std::time::Duration;
-pub(crate) const NET_LATENCY: Duration = Duration::ZERO; // TODO.
-
 pub(crate) mod handle;
 pub(crate) use handle::Handle;
 

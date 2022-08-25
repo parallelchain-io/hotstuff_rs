@@ -1,13 +1,14 @@
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::net::{IpAddr, Ipv4Addr};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::BTreeMap;
 use std::thread;
 use std::time::Duration;
 use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
-use crate::progress_mode::ipc::{self, Establisher, EstablisherConfig, EstablisherResult};
-use crate::identity::{self, PublicAddr, ParticipantSet};
+use crate::config::{IPCConfig, IdentityConfig};
+use crate::progress_mode::ipc::{self, Establisher, EstablisherResult};
+use crate::identity::{PublicAddr, ParticipantSet};
 
 pub struct ConnectionSet {
     // To avoid deadlocks and to guarantee consistency, lock participant_set first, then connections, and finally pending_connections.
@@ -25,27 +26,17 @@ pub struct ConnectionSet {
 type ParticipantSetVersion = usize;
 
 impl ConnectionSet {
-    // Network-configuration related knobs.
-    const LISTENING_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    const LISTENING_PORT: u16 = 53410;
-    const INITIATOR_TIMEOUT: Duration = Duration::new(10, 0);
-    
-    pub fn new(initial_participant_set: ParticipantSet) -> ConnectionSet { 
+    pub fn new(identity_config: IdentityConfig, ipc_config: IPCConfig) -> ConnectionSet { 
         // 1. Create Establisher.
-        let (establisher, from_establisher) = Establisher::new(EstablisherConfig {
-            listening_addr: Self::LISTENING_ADDR,
-            listening_port: Self::LISTENING_PORT,
-            initiator_timeout: Self::INITIATOR_TIMEOUT,
-            my_public_addr: identity::MY_PUBLIC_ADDR,
-        });
+        let (establisher, from_establisher) = Establisher::new(ipc_config, identity_config.my_public_addr);
         
-        // 2. Send Connect requests to Establisher for all participants in initial_participant_set.
-        for target in initial_participant_set.iter() {
+        // 2. Send Connect requests to Establisher for all participants in the static participant set.
+        for target in identity_config.static_participant_set.iter() {
             establisher.connect_later((*target.0, *target.1));
         }
 
-        let participant_set = Arc::new(Mutex::new(initial_participant_set.clone()));
-        let pending_connections = Arc::new(Mutex::new(initial_participant_set));
+        let participant_set = Arc::new(Mutex::new(identity_config.static_participant_set.clone()));
+        let pending_connections = Arc::new(Mutex::new(identity_config.static_participant_set));
         let connections = Arc::new(Mutex::new(IndexMap::new()));
 
         ConnectionSet {

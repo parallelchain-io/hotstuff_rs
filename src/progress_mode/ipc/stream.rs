@@ -5,6 +5,7 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
+use crate::config::IPCConfig;
 use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
@@ -22,17 +23,12 @@ pub struct Stream {
 }
 
 impl Stream {
-    const READ_TIMEOUT: Option<Duration> = Some(Duration::new(1000, 0));
-    const WRITE_TIMEOUT: Option<Duration> = Some(Duration::new(1000, 0));
-    const READER_CHANNEL_BUFFER_LENGTH: usize = 1000;
-    const WRITER_CHANNEL_BUFFER_LENGTH: usize = 1000;
+    pub fn new(tcp_stream: net::TcpStream, config: StreamConfig) -> Stream {
+        tcp_stream.set_read_timeout(Some(config.read_timeout)).expect("Programming error: fail to set Stream read timeout.");
+        tcp_stream.set_write_timeout(Some(config.write_timeout)).expect("Programming error: fail to set Stream write timeout");
 
-    pub fn new(tcp_stream: net::TcpStream) -> Stream {
-        tcp_stream.set_read_timeout(Self::READ_TIMEOUT).expect("Programming error: fail to set Stream read timeout.");
-        tcp_stream.set_write_timeout(Self::WRITE_TIMEOUT).expect("Programming error: fail to set Stream write timeout");
-
-        let (to_writer, from_main) = mpsc::sync_channel(Self::WRITER_CHANNEL_BUFFER_LENGTH);
-        let (to_main, from_reader) = mpsc::sync_channel(Self::READER_CHANNEL_BUFFER_LENGTH);
+        let (to_writer, from_main) = mpsc::sync_channel(config.writer_channel_buffer_len);
+        let (to_main, from_reader) = mpsc::sync_channel(config.reader_channel_buffer_len);
 
         Stream {
             writer: Self::writer(from_main, tcp_stream.try_clone().unwrap()),
@@ -249,6 +245,13 @@ impl DeserializeFromStream for SignatureSet {
             count
         })
     }
+}
+
+pub struct StreamConfig {
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub reader_channel_buffer_len: usize,
+    pub writer_channel_buffer_len: usize,
 }
 
 enum DeserializeFromStreamError {

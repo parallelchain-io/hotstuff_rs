@@ -3,6 +3,8 @@ pub use app::App;
 
 pub mod hotstuff;
 
+pub mod config;
+
 pub(crate) mod msg_types;
 
 pub(crate) mod node_tree;
