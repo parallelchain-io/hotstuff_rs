@@ -89,6 +89,11 @@ impl WriteBatch {
         } 
     }
 
+    pub fn set_node_containing_generic_qc(&mut self, node: &msg_types::Node) {
+        let keyspaced_key = keyspaces::prefix(&keyspaces::NODE_CONTAINING_GENERIC_QC, &[]);
+        self.0.put(keyspaced_key, node.serialize());
+    }
+
     pub fn set_write_set(&mut self, of_node: &NodeHash, write_set: Option<&WriteSet>) {
         let keyspaced_key = keyspaces::prefix(&keyspaces::WRITE_SETS_PREFIX, of_node);
         match write_set {
@@ -121,11 +126,13 @@ mod keyspaces {
     pub(super) type Prefix = [u8; 1];
 
     pub const NODES_PREFIX: Prefix               = [00];
+    // TODO: NODE_HASH_BY_NODE_NUMBER
     pub const WRITE_SETS_PREFIX: Prefix          = [01];
     pub const CHILDREN_PREFIX: Prefix            = [02];
     pub const STATE_PREFIX: Prefix               = [03];
 
     pub const NODE_CONTAINING_GENERIC_QC: Prefix = [10];
+    pub const HIGHEST_COMMITTED_NODE: Prefix = [11];
 
     pub fn prefix(prefix: &Prefix, key: &[u8]) -> Vec<u8> {
         let mut prefixed_key = Vec::with_capacity(1 + key.len());

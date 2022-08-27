@@ -1,4 +1,4 @@
 mod ipc;
 
-pub(crate) mod state;
-pub(crate) use state::enter;
+pub(crate) mod sync_mode;
+pub(crate) use sync_mode::enter;

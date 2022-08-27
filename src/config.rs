@@ -24,6 +24,12 @@ pub struct NodeTreeConfig {
     pub db_path: String, 
 }
 
+pub struct NodeTreeApiConfig {
+    pub listening_addr: IpAddr,
+    pub listening_port: u16,
+}
+
+
 #[derive(Clone)]
 pub struct ProgressModeConfig {
     pub target_node_time: Duration,
@@ -40,5 +46,3 @@ pub struct IPCConfig {
     pub reader_channel_buffer_len: usize,
     pub writer_channel_buffer_len: usize,
 }
-
-

@@ -1,9 +1,9 @@
 use std::array;
 use std::mem;
-use std::ops::Deref;
 use crate::identity::{PublicAddr, ParticipantSet};
 
 pub type ViewNumber = u64;
+pub type NodeHeight = u64;
 pub type NodeHash = [u8; 32];
 pub type Command = Vec<u8>;
 
@@ -367,5 +367,15 @@ pub struct DeserializationError;
 impl From<array::TryFromSliceError> for DeserializationError {
     fn from(_: array::TryFromSliceError) -> Self {
         DeserializationError
+    }
+}
+
+impl<T: SerDe> SerDe for Vec<T> {
+    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
+        todo!()        
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        todo!() 
     }
 }

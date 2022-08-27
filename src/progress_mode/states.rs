@@ -2,7 +2,7 @@ use std::time::Instant;
 use std::cmp;
 use std::thread;
 use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
-use crate::node_tree::NodeTree;
+use crate::node_tree::{self, NodeTree};
 use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::App;
 use crate::sync_mode;
@@ -29,7 +29,7 @@ impl<A: App> StateMachine<A> {
         identity_config: IdentityConfig,
         ipc_config: IPCConfig
     ) -> StateMachine<A> {
-        let generic_qc = node_tree.get_generic_qc();
+        let generic_qc = node_tree.get_node_with_generic_qc().justify;
         let view_number = generic_qc.view_number;
         let ipc_handle = ipc::Handle::new(identity_config.clone(), ipc_config.clone());
 
@@ -76,11 +76,13 @@ impl<A: App> StateMachine<A> {
 
         // 1. Extend the branch containing Generic QC with a new leaf Node.
         let (leaf, writes) = {
-            let parent_node = self.node_tree
-                .get_node(&self.generic_qc.node_hash)
-                .expect("Programming error: generic_qc.node_hash is not in DB.");
+            let parent_node =  self.node_tree
+                    .get_node(&self.generic_qc.node_hash)
+                    .expect("Programming error: generic_qc.node_hash is not in DB.");
+            let state = node_tree::WorldState::open(&parent_node, self.node_tree.get_db());
             let deadline = deadline - 2 * self.ipc_config.expected_worst_case_net_latency;
-            let (command, state) = self.app.create_leaf(parent_node, deadline);
+            let (command, state) = self.app.create_leaf(&parent_node, state, deadline);
+
             let node = msg_types::Node {
                 command,
                 justify: self.generic_qc.clone(),
@@ -144,6 +146,8 @@ impl<A: App> StateMachine<A> {
                     } else {
                         // (if vn == cur_view):
                         proposal = (vn, node);
+                        
+                        // TODO: Check if node.height is get_node(node.justify.node_hash).height + 1;
                         break
                     } 
                 },
@@ -165,17 +169,23 @@ impl<A: App> StateMachine<A> {
         // Phase 2: Validate the proposed Node.
 
         // 1. Execute Node.
-        let node = self.node_tree.make_speculative_node(proposal.1.clone());
+        let node = node_tree::NodeHandle {
+            node: proposal.1,
+            db: self.node_tree.get_db(),
+        };
         let node_hash = node.hash();
+        let parent_node = node.get_parent()
+            .expect("Programming error: proposed Node accepted to Phase 2.1 of the Replica state even though its parent is not in the NodeTree.");
+        let state = node_tree::WorldState::open(&parent_node, self.node_tree.get_db());
         let deadline = deadline - self.ipc_config.expected_worst_case_net_latency;
-        let writes = match self.app.try_execute(node, deadline) {
+        let writes = match self.app.try_execute(&node, state, deadline) {
             Ok(writes) => writes.get_writes(),
             Err(_) => return State::NewView,
         };
 
         // 2. Write validated Node into NodeTree.
-        self.node_tree.try_insert_node(&proposal.1, &writes)
-            .expect("Programming error: proposed Node accepted to Phase 2 of the Replica state even though its parent is not in the NodeTree.");
+        self.node_tree.try_insert_node(&node, &writes)
+            .expect("Programming error: proposed Node accepted to Phase 2.1 of the Replica state even though its parent is not in the NodeTree.");
 
         // Phase 3: Vote for the proposal.
 

@@ -1,5 +1,5 @@
 use crate::config::NodeTreeConfig;
-use crate::msg_types::{self, NodeHash, QuorumCertificate};
+use crate::msg_types::{self, NodeHash};
 use crate::node_tree::storage::{Database, WriteBatch};
 use crate::node_tree::stored_types::WriteSet;
 use crate::node_tree;
@@ -66,38 +66,42 @@ impl NodeTree {
         // 7. Write node.
         wb.set_node(&node.hash(), Some(&node));
 
-        // 8. Write node's writes.
+        // 8. Update node containing generic qc.
+        wb.set_node_containing_generic_qc(&node);
+
+        // 9. Write node's writes.
         wb.set_write_set(&node.hash(), Some(&writes));
 
         Ok(())
     }
 
-    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<node_tree::Node> {
+    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<node_tree::NodeHandle> {
         let inner = self.db.get_node(hash).unwrap()?;
-        let node = node_tree::Node {
-            inner,
+        let node = node_tree::NodeHandle {
+            node: inner,
             db: self.db.clone()
         };
 
         Some(node)
     }
 
-    pub(crate) fn get_generic_qc(&self) -> QuorumCertificate { 
-        self.db.get_node_with_generic_qc().unwrap().justify
-    } 
+    pub(crate) fn get_node_with_generic_qc(&self) -> node_tree::NodeHandle {
+        let inner = self.db.get_node_with_generic_qc().unwrap();
+        let node = node_tree::NodeHandle {
+            node: inner,
+            db: self.db.clone()
+        };
 
-    pub(crate) fn get_locked_qc(&self) -> QuorumCertificate { 
-        let generic_qc = self.get_generic_qc();
-        let node_with_locked_qc = self.get_node(&generic_qc.node_hash).unwrap();
-
-        node_with_locked_qc.justify.clone()
+        node
     }
 
-    pub(crate) fn make_speculative_node(&self, node: msg_types::Node) -> node_tree::Node {
-        node_tree::Node {
-            inner: node,
-            db: self.db.clone()
-        }
+    pub(crate) fn get_node_with_locked_qc(&self) -> node_tree::NodeHandle {
+        let node_with_generic_qc = self.get_node_with_generic_qc();
+        node_with_generic_qc.get_parent().unwrap()
+    }
+
+    pub(crate) fn get_db(&self) -> Database {
+        self.db.clone()
     }
 
     fn abandon_siblings(&self, of_node: &NodeHash, wb: &mut WriteBatch) {
@@ -120,6 +124,8 @@ impl NodeTree {
         wb.set_write_set(tail_node, None);
         wb.set_children(tail_node, None);
     }
+
+
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@ use std::net::{SocketAddr, IpAddr, TcpStream, TcpListener};
 use std::io::ErrorKind;
 use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
-use crate::config::{IPCConfig, IdentityConfig};
+use crate::config::IPCConfig;
 use crate::progress_mode::ipc;
 use crate::identity::PublicAddr;
 

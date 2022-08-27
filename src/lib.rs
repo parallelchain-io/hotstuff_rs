@@ -7,7 +7,9 @@ pub mod config;
 
 pub(crate) mod msg_types;
 
-pub(crate) mod node_tree;
+pub mod node_tree;
+pub use node_tree::NodeHandle;
+pub(crate) use node_tree::NodeTree;
 
 pub(crate) mod progress_mode;
 

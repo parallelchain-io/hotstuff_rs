@@ -20,7 +20,7 @@ impl HotStuff {
         }
     }
 
-    pub fn get_node(&self, hash: &NodeHash) -> Option<node_tree::Node> {
+    pub fn get_node(&self, hash: &NodeHash) -> Option<node_tree::NodeHandle> {
         self.node_tree.get_node(hash)
     }
 
