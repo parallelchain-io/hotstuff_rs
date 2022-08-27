@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::time::Instant;
-use crate::node_tree::{WorldState, NodeTree};
+use crate::node_tree::{WorldState, NodeTree, GetParentError};
 use crate::msg_types::{self, Command};
 
 pub trait App: Send + 'static {
@@ -32,7 +32,11 @@ pub struct Node {
 impl<'a, 'b> Node {
     /// Returns None if called on the Genesis Node.
     pub fn get_parent(&self) -> Option<Node> {
-        let parent = self.node_tree.get_parent(&self.hash())?;
+        let parent = match self.node_tree.get_parent(&self.hash()) {
+            Ok(node) => node,
+            Err(GetParentError::OfNodeNotFound) => unreachable!(),
+            Err(GetParentError::ParentNotFound) => return None,
+        };
         let parent = Node {
             inner: parent,
             node_tree: self.node_tree.clone(),

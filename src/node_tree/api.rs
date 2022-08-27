@@ -108,7 +108,7 @@ impl NodeTree {
         let mut cursor = self.get_node_with_generic_qc();
         while self.get_height(&cursor.hash()).ok_or(BranchAbandonedError)? 
             != self.get_height(&ancestor.hash()).ok_or(BranchAbandonedError)? + limit {
-            cursor = self.get_parent(&cursor.hash()).ok_or(BranchAbandonedError)?;
+            cursor = self.get_parent(&cursor.hash()).map_err(|_| BranchAbandonedError)?;
         }
 
         // 2. Collect the `limit` Nodes lying in the chain between ancestor and the Node stored in
@@ -117,7 +117,7 @@ impl NodeTree {
         while self.get_height(&cursor.hash()).ok_or(BranchAbandonedError)?
             != self.get_height(&ancestor.hash()).ok_or(BranchAbandonedError)? {
             res.push(cursor.into());
-            cursor = self.get_parent(&cursor.hash()).ok_or(BranchAbandonedError)?;
+            cursor = self.get_parent(&cursor.hash()).map_err(|_| BranchAbandonedError)?;
         }
 
         // 3. Reverse res.

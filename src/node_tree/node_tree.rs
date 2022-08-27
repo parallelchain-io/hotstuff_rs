@@ -88,9 +88,9 @@ impl NodeTree {
             .expect("Programming error: Node with Generic QC exists but its parent does not.")
     }
 
-    pub(crate) fn get_parent(&self, of_node: &NodeHash) -> Option<Node> {
-        let child = self.db.get_node(&of_node).unwrap()?;
-        self.db.get_node(&child.justify.node_hash).unwrap()
+    pub(crate) fn get_parent(&self, of_node: &NodeHash) -> Result<Node, GetParentError> {
+        let child = self.db.get_node(&of_node).unwrap().ok_or(GetParentError::OfNodeNotFound)?;
+        self.db.get_node(&child.justify.node_hash).unwrap().ok_or(GetParentError::ParentNotFound)
     }
 
     pub(crate) fn get_child(&self, of_node: &NodeHash) -> Result<Node, ChildNotYetCommittedError> {
@@ -127,6 +127,12 @@ impl NodeTree {
     }
 
 
+}
+
+#[derive(Debug)]
+pub enum GetParentError {
+    OfNodeNotFound,
+    ParentNotFound,
 }
 
 #[derive(Debug)]
