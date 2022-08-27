@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use crate::node_tree::NodeHandle;
-use crate::node_tree::storage;
+use crate::msg_types::Node;
+use crate::NodeTree;
+use crate::node_tree::Database;
 use crate::node_tree::stored_types::{Key, Value, WriteSet};
 
 /// Read the itemdoc for the enclosing `state` module.
@@ -8,11 +9,12 @@ pub struct WorldState {
     writes: WriteSet, 
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
-    db: storage::Database,
+    db: Database,
 }
 
 impl WorldState { 
-    pub(crate) fn open(parent_node: &NodeHandle, db: storage::Database) -> WorldState {
+    pub(crate) fn open(node_tree: &NodeTree, parent_node: &Node) -> WorldState {
+        let db = node_tree.get_db();
         let parent_writes = db.get_write_set(&parent_node.hash()).unwrap(); 
         let grandparent_writes = db.get_write_set(&parent_node.justify.node_hash).unwrap();
 

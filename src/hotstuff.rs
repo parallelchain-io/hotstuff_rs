@@ -1,8 +1,8 @@
 use std::thread;
 use crate::App;
 use crate::config::Configuration;
-use crate::msg_types::NodeHash;
-use crate::node_tree::{self, NodeTree};
+use crate::msg_types::{Node, NodeHash};
+use crate::node_tree::NodeTree;
 use crate::sync_mode;
 use crate::progress_mode;
 
@@ -20,7 +20,7 @@ impl HotStuff {
         }
     }
 
-    pub fn get_node(&self, hash: &NodeHash) -> Option<node_tree::NodeHandle> {
+    pub fn get_node(&self, hash: &NodeHash) -> Option<Node> {
         self.node_tree.get_node(hash)
     }
 

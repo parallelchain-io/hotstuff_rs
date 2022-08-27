@@ -3,9 +3,8 @@ use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
-use crate::msg_types::{self, NodeHash, SerDe};
-use crate::node_tree::{self, NodeTree};
-use crate::node_tree::node_handle::ChildNotYetCommittedError;
+use crate::msg_types::{Node, NodeHash, SerDe};
+use crate::node_tree::{NodeTree};
 use crate::config::NodeTreeApiConfig;
 
 struct Server(tokio::runtime::Runtime);
@@ -67,13 +66,13 @@ enum GetNodesDirections {
 }
 
 impl NodeTree {
-    fn get_nodes_forwards(&self, from_node: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<msg_types::Node>> {
+    fn get_nodes_forwards(&self, from_node: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
         // 1. Collect non-speculative descendants of `from_node`.
         let from_node = self.get_node(&from_node)?;
-        let mut nodes = Vec::with_capacity(limit);
+        let mut nodes: Vec<Node> = Vec::with_capacity(limit);
         nodes.push(from_node.into());
         while nodes.len() < limit {
-            let child = match from_node.get_child() {
+            let child = match self.get_child(&nodes[nodes.len() - 1].hash()) {
                 Ok(node) => node,
                 Err(ChildNotYetCommittedError) => break,
             };
@@ -100,30 +99,26 @@ impl NodeTree {
 
     // # Panics
     // if limit > 3.
-    fn get_descendants_by_backtracking(&self, ancestor: &msg_types::Node, limit: usize) -> Result<Vec<msg_types::Node>, BranchAbandonedError> {
+    fn get_descendants_by_backtracking(&self, ancestor: &Node, limit: usize) -> Result<Vec<Node>, BranchAbandonedError> {
         if limit > 3 {
             panic!("Programming error: called get_descendants_by_backtracking with limit > 3.")
         }
 
-        let ancestor = node_tree::NodeHandle {
-            node: ancestor.clone(),
-            db: self.get_db(),
-        };
-        
         // 1. Position the cursor on the Node with height == ancestor.get_height() + limit.
         let mut cursor = self.get_node_with_generic_qc();
-        while cursor.get_height().ok_or(BranchAbandonedError)? 
-            != ancestor.get_height().ok_or(BranchAbandonedError)? + limit as u64 {
-            cursor = cursor.get_parent().ok_or(BranchAbandonedError)?;
+        while self.get_height(&cursor.hash()).ok_or(BranchAbandonedError)? 
+            != self.get_height(&ancestor.hash()).ok_or(BranchAbandonedError)? + limit {
+            cursor = self.get_parent(&cursor.hash()).map_err(|_| BranchAbandonedError)?;
+            // TODO: match the error above more thoroughly.
         }
 
         // 2. Collect the `limit` Nodes lying in the chain between ancestor and the Node stored in
         // `cursor` at the end of step 1.
         let mut res = Vec::new();
-        while cursor.get_height().ok_or(BranchAbandonedError)?
-            != ancestor.get_height().ok_or(BranchAbandonedError)? {
+        while self.get_height(&cursor.hash()).ok_or(BranchAbandonedError)?
+            != self.get_height(&ancestor.hash()).ok_or(BranchAbandonedError)? {
             res.push(cursor.into());
-            cursor = cursor.get_parent().ok_or(BranchAbandonedError)?;
+            cursor = self.get_parent(&cursor.hash()).map_err(|_| BranchAbandonedError)?;
         }
 
         // 3. Reverse res.

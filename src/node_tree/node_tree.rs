@@ -1,8 +1,7 @@
 use crate::config::NodeTreeConfig;
-use crate::msg_types::{self, NodeHash};
+use crate::msg_types::{Node, NodeHash};
 use crate::node_tree::storage::{Database, WriteBatch};
 use crate::node_tree::stored_types::WriteSet;
-use crate::node_tree;
 
 /// NodeTree maintains a directed acyclic graph of 'Nodes', the object of consensus. From the point of view of
 /// an Application, a NodeTree is a sequence of commands that may mutate State. In this view, a Node is a single
@@ -35,13 +34,13 @@ impl NodeTree {
     /// 2. Deleting abandoned branches.
     /// 
     /// If node.justify.node_hash is not in the NodeTree, returns a ParentNotInDBError.
-    pub(crate) fn try_insert_node(&mut self, node: &msg_types::Node, writes: &WriteSet) -> Result<(), ParentNotInDBError> { 
+    pub(crate) fn try_insert_node(&mut self, node: &Node, writes: &WriteSet) -> Result<(), ParentNotFoundError> { 
         // 1. Open WriteBatch.
         let mut wb = WriteBatch::new();
 
         // 2. Check if `node.justify.node_hash` exists in Database.
         if self.db.get_node(&node.justify.node_hash).unwrap().is_none() {
-            return Err(ParentNotInDBError)
+            return Err(ParentNotFoundError)
         }
 
         // 3. 'Register' node as a child of parent.
@@ -75,29 +74,30 @@ impl NodeTree {
         Ok(())
     }
 
-    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<node_tree::NodeHandle> {
-        let inner = self.db.get_node(hash).unwrap()?;
-        let node = node_tree::NodeHandle {
-            node: inner,
-            db: self.db.clone()
-        };
-
-        Some(node)
+    pub(crate) fn get_node(&self, hash: &NodeHash) -> Option<Node> {
+        self.db.get_node(hash).unwrap()
     }
 
-    pub(crate) fn get_node_with_generic_qc(&self) -> node_tree::NodeHandle {
-        let inner = self.db.get_node_with_generic_qc().unwrap();
-        let node = node_tree::NodeHandle {
-            node: inner,
-            db: self.db.clone()
-        };
-
-        node
+    pub(crate) fn get_node_with_generic_qc(&self) -> Node {
+        self.db.get_node_with_generic_qc().unwrap()
     }
 
-    pub(crate) fn get_node_with_locked_qc(&self) -> node_tree::NodeHandle {
+    pub(crate) fn get_node_with_locked_qc(&self) -> Node {
         let node_with_generic_qc = self.get_node_with_generic_qc();
-        node_with_generic_qc.get_parent().unwrap()
+        self.get_parent(&node_with_generic_qc.hash())
+            .expect("Programming error: Node with Generic QC exists but its parent does not.")
+    }
+
+    pub(crate) fn get_parent(&self, of_node: &NodeHash) -> Result<Node, GetParentError> {
+        todo!()
+    }
+
+    pub(crate) fn get_child(&self, of_node: &NodeHash) -> Result<Node, ChildNotYetCommittedError> {
+        todo!()
+    }
+
+    pub(crate) fn get_height(&self, of_node: &NodeHash) -> Option<usize> {
+        todo!()
     }
 
     pub(crate) fn get_db(&self) -> Database {
@@ -129,4 +129,13 @@ impl NodeTree {
 }
 
 #[derive(Debug)]
-pub struct ParentNotInDBError;
+pub enum GetParentError {
+    OfNodeNotFound,
+    IsGenesisNode,
+}
+
+#[derive(Debug)]
+pub struct ParentNotFoundError;
+
+#[derive(Debug)]
+pub struct ChildNotYetCommittedError;
