@@ -5,7 +5,7 @@
 ### Query parameters
 
 |Key |Value |Default value |Description |
-	|--- |---   |---         |--- |
+|--- |---   |---         |--- |
 |hash|`NodeHash` as `Base64Url` |N/A | |
 |num |number|N/A | |
 |direction |"forward" or "backward" |"backward" | |
