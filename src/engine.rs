@@ -98,7 +98,7 @@ impl<A: App> StateMachine<A> {
         
         // 2. Write new leaf into NodeTree.
         self.node_tree
-            .try_insert_node(&leaf, &writes)
+            .insert_node(&leaf, &writes)
             .expect("Programming error: tried to insert App-produced Leaf node but parent is not in DB.");
 
         // Phase 2: Propose the new Node.
@@ -187,7 +187,7 @@ impl<A: App> StateMachine<A> {
         };
 
         // 2. Write validated Node into NodeTree.
-        self.node_tree.try_insert_node(&proposed_node, &writes)
+        self.node_tree.insert_node(&proposed_node, &writes)
             .expect("Programming error: proposed Node accepted to Phase 2.1 of the Replica state even though its parent is not in the NodeTree.");
 
         // Phase 3: Vote for the proposal.

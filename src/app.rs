@@ -34,7 +34,7 @@ impl<'a, 'b> Node {
     pub fn get_parent(&self) -> Option<Node> {
         let parent = match self.node_tree.get_parent(&self.hash()) {
             Ok(node) => node,
-            Err(GetParentError::OfNodeNotFound) => unreachable!(),
+            Err(GetParentError::NodeNotFound) => unreachable!(),
             Err(GetParentError::ParentNotFound) => return None,
         };
         let parent = Node {

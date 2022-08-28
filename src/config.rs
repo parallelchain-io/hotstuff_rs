@@ -29,7 +29,6 @@ pub struct NodeTreeApiConfig {
     pub listening_port: u16,
 }
 
-
 #[derive(Clone)]
 pub struct ProgressModeConfig {
     pub target_node_time: Duration,
