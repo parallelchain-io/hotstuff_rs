@@ -1,7 +1,7 @@
 # HotStuff-rs Node Tree REST API Endpoints
 
 ### Reading this document
-Quotes ("") are used in this document for clarity, but are not interpreted specially as part of query strings.
+Quotes ("") are used in this document for clarity, but are not interpreted specially in query strings.
 
 ## GET /node
 
