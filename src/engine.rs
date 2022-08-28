@@ -285,3 +285,7 @@ pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> Pu
 pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, generic_qc: &QuorumCertificate) -> Duration {
     todo!()
 }
+
+pub fn safe_node(node: Node) -> bool {
+
+}

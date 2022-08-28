@@ -98,6 +98,8 @@ impl SerDe for ConsensusMsg {
 
 #[derive(Clone)]
 pub struct Node {
+    pub hash: NodeHash,
+    pub height: NodeHeight,
     pub command: Command,
     pub justify: QuorumCertificate,
 }
