@@ -21,20 +21,4 @@ The choice of third confirmation to define commitment--as opposed to first or se
 
 HotStuff is the first consensus algorithm with a simple leader-replacement algorithm that does not have a 'wait-for-N seconds' step, and thus can make progress as fast as network latency allows.
 
-## Major modules
-
-### Engine Thread
-
-### IPC
-
-#### Consensus TCP API
-
-The Consensus TCP API carries `PROPOSE`, `VOTE`, and `NEW-VIEW` messages between Replicas. When all Nodes are up-to-date, this is the only HotStuff-rs network API that will see any traffic. 
-
-#### NodeTree HTTP API
-
-The NodeTree HTTP API serves requests for Nodes in NodeTree. This is used by out-of-date Replicas to catch up to the head of the NodeTree.  
-
-### App
-
-Anything that *you*, the HotStuff-rs user, can imagine. The Actor thread expects it to implement a trait `Application`.
+## Using HotStuff-rs in your project
