@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
 use crate::config::IPCConfig;
-use crate::progress_mode::ipc;
+use crate::ipc;
 use crate::identity::PublicAddr;
 
 use super::stream::StreamConfig;

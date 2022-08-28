@@ -2,7 +2,7 @@ use std::time::{Instant, Duration};
 use crate::config::{IdentityConfig, IPCConfig};
 use crate::msg_types::ConsensusMsg;
 use crate::identity::{PublicAddr, ParticipantSet};
-use crate::progress_mode::ipc::{ConnectionSet, StreamReadError};
+use crate::ipc::{ConnectionSet, StreamReadError};
 
 /// Handle exposes methods for sending ConsensusMsgs to, and receiving ConsensusMsgs from other Participants. All of Handle's methods
 /// transparently handle errored streams by calling `ConnectionSet::reconnect` on them. 

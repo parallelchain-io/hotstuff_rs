@@ -1,13 +1,12 @@
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::collections::BTreeMap;
 use std::thread;
-use std::time::Duration;
 use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use crate::config::{IPCConfig, IdentityConfig};
-use crate::progress_mode::ipc::{self, Establisher, EstablisherResult};
+use crate::ipc::{self, Establisher, EstablisherResult};
 use crate::identity::{PublicAddr, ParticipantSet};
 
 pub struct ConnectionSet {

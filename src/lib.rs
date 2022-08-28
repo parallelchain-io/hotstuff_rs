@@ -1,17 +1,20 @@
-pub mod app;
-pub use app::App;
-
 pub mod hotstuff;
+
+pub mod app;
 
 pub mod config;
 
-pub(crate) mod msg_types;
-
 pub mod node_tree;
-pub(crate) use node_tree::NodeTree;
 
-pub(crate) mod progress_mode;
-
-pub(crate) mod sync_mode;
+pub mod msg_types;
 
 pub(crate) mod identity;
+
+pub(crate) mod engine;
+
+pub(crate) mod ipc;
+
+// Re-exports
+pub use app::App;
+pub use node_tree::NodeTree;
+

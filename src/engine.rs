@@ -6,9 +6,7 @@ use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
 use crate::node_tree::{WorldState, NodeTree};
 use crate::msg_types::{ViewNumber, QuorumCertificate, self, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::App;
-use crate::sync_mode;
-use crate::progress_mode::{view, ipc};
-use crate::progress_mode::ipc::handle::RecvFromError;
+use crate::ipc::{self, RecvFromError};
 
 pub(crate) struct StateMachine<A: App> {
     cur_view: ViewNumber,
@@ -55,16 +53,17 @@ impl<A: App> StateMachine<A> {
                 State::Replica(deadline) => self.do_replica(deadline),
                 State::NextLeader(deadline, node_hash) => self.do_next_leader(deadline, node_hash),
                 State::NewView => self.do_new_view(),
+                State::Sync => self.do_sync(),
             }
         }
     }
 
     fn do_begin_view(&mut self) -> State {
         self.cur_view = cmp::max(self.cur_view, self.generic_qc.view_number + 1);
-        let timeout = view::timeout(self.progress_mode_config.target_node_time, self.cur_view, &self.generic_qc);
+        let timeout = view_timeout(self.progress_mode_config.target_node_time, self.cur_view, &self.generic_qc);
         let deadline = Instant::now() + timeout;
 
-        if view::leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
+        if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
             State::Leader(deadline)
         } else {
             State::Replica(deadline)
@@ -110,7 +109,7 @@ impl<A: App> StateMachine<A> {
 
         // 2. Send a VOTE for our own proposal to the next leader.
         let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, self.identity_config.my_secret_key.sign(&leaf_hash));
-        let next_leader = view::leader(self.cur_view + 1, &self.identity_config.static_participant_set);
+        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 3. If next_leader == me, change to State::NextLeader.
@@ -129,7 +128,7 @@ impl<A: App> StateMachine<A> {
     }
 
     fn do_replica(&mut self, deadline: Instant) -> State {
-        let leader = view::leader(self.cur_view, &self.identity_config.static_participant_set);
+        let leader = view_leader(self.cur_view, &self.identity_config.static_participant_set);
 
         // Phase 1: Wait for a proposal.
         let proposal;
@@ -143,16 +142,11 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view {
                         continue
                     } else if self.node_tree.get_node(&node.justify.node_hash).is_none() {
-                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
+                        return State::Sync
                     } else if vn > self.cur_view {
-                        // Note: the protocol requires that the condition `vn > self.cur_view` be considered only if the second
-                        // condition is false.
                         continue
-                    } else {
-                        // (if vn == cur_view):
+                    } else { // (if vn == cur_view):
                         proposal = (vn, node);
-                        
-                        // TODO: Check if node.height is get_node(node.justify.node_hash).height + 1;
                         break
                     } 
                 },
@@ -160,7 +154,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.generic_qc.view_number {
-                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
+                        return State::Sync
                     } else {
                         continue
                     }
@@ -186,7 +180,7 @@ impl<A: App> StateMachine<A> {
             WorldState::open(&self.node_tree, &parent_node)   
         };
         let deadline = deadline - self.ipc_config.expected_worst_case_net_latency; 
-        let writes = match self.app.try_execute(&app_node, world_state, deadline) {
+        let writes = match self.app.execute(&app_node, world_state, deadline) {
             Ok(writes) => writes.get_writes(),
             Err(_) => return State::NewView,
         };
@@ -198,7 +192,7 @@ impl<A: App> StateMachine<A> {
         // Phase 3: Vote for the proposal.
 
         // 1. Send a VOTE message to the next leader.
-        let next_leader = view::leader(self.cur_view + 1, &self.identity_config.static_participant_set);
+        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         let vote = ConsensusMsg::Vote(self.cur_view, proposed_node_hash, self.identity_config.my_secret_key.sign(&proposed_node_hash));
         self.ipc_handle.send_to(&next_leader, &vote);
 
@@ -230,7 +224,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view {
                         continue
                     } else if self.node_tree.get_node(&node_hash).is_none() {
-                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
+                        return State::Sync
                     } else if vn > self.cur_view {
                         continue
                     } else {
@@ -246,7 +240,7 @@ impl<A: App> StateMachine<A> {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.generic_qc.view_number {
-                        return sync_mode::enter(&mut self.node_tree, &self.identity_config.static_participant_set)
+                        return State::Sync
                     } else {
                         continue
                     }
@@ -266,6 +260,10 @@ impl<A: App> StateMachine<A> {
         self.cur_view += 1;
         State::BeginView
     }
+
+    fn do_sync(&mut self) -> State {
+        todo!()
+    }
 }
 
 pub enum State {
@@ -275,5 +273,14 @@ pub enum State {
     /// NodeHash (the second item in the tuple) is the Node that we expect to Justify in the next
     /// View, when we become Leader.
     NextLeader(Instant, NodeHash),
-    NewView
+    NewView,
+    Sync,
+}
+
+pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
+    todo!()
+}
+
+pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, generic_qc: &QuorumCertificate) -> Duration {
+    todo!()
 }

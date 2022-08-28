@@ -11,15 +11,15 @@ pub trait App: Send + 'static {
         deadline: Instant
     ) -> (Command, WorldState);
 
-    fn try_execute(
+    fn execute(
         &mut self,
         node: &Node,
         state: WorldState,
         deadline: Instant
-    ) -> Result<WorldState, TryExecuteError>;
+    ) -> Result<WorldState, ExecuteError>;
 }
 
-pub enum TryExecuteError {
+pub enum ExecuteError {
     RanOutOfTime,
     InvalidNode,
 }

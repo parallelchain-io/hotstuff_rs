@@ -2,9 +2,8 @@ use std::thread;
 use crate::App;
 use crate::config::Configuration;
 use crate::msg_types::{Node, NodeHash};
-use crate::node_tree::NodeTree;
-use crate::sync_mode;
-use crate::progress_mode;
+use crate::NodeTree;
+use crate::engine::{State, StateMachine};
 
 struct HotStuff {
     node_tree: NodeTree,
@@ -26,11 +25,8 @@ impl HotStuff {
 
     fn start_engine_thread(app: impl App, mut node_tree: NodeTree, configuration: Configuration) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            // 1. Sync.
-            sync_mode::enter(&mut node_tree, &configuration.identity.static_participant_set);
-
-            // 2. Initialize Progress Mode state machine.
-            progress_mode::StateMachine::initialize(node_tree, app, configuration.progress_mode, configuration.identity, configuration.ipc);
+            let state_machine = StateMachine::initialize(node_tree, app, configuration.progress_mode, configuration.identity, configuration.ipc);
+            state_machine.enter(State::Sync);
         })
     }
 }

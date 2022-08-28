@@ -2,7 +2,7 @@ pub(crate) mod api;
 
 /// node_tree defines NodeTree, a directed acyclic graph of Nodes that grows over time through consensus. 
 mod node_tree;
-pub(crate) use node_tree::*;
+pub use node_tree::*;
 
 /// state defines State, which abstracts a persistent set of Key-Value mappings that Apps mutate in response to Commands.
 mod world_state;

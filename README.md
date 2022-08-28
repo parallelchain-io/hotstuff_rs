@@ -4,18 +4,13 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 2. A small API (`Executor`) for plugging in state machine-based applications like blockchains, and
 3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
 
-## 1. Reading this document
-1. If you just want to *use* HotStuff-rs in your application: read Sections 2 and 3.5.
-2. If you want to *understand* how HotStuff works: read the HotStuff [paper](./readme_assets/HotStuff%20paper.pdf).
-3. If you want to *contribute* to HotStuff-rs' development: read the HotStuff paper, then read this entire document. 
-
-## 2. The HotStuff Consensus Protocol
+## The HotStuff Consensus Protocol
 
 HotStuff works by building a 'NodeTree': a directed acyclic graph of Nodes. Node is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
 
 HotStuff guarantees that committed Nodes are *immutable*. That is, they can never be *un*-committed as long as at least a supermajority of voting power faithfully execute the protocol. This guarantee enables applications to make hard-to-reverse actions with confidence. 
 
-![A graphic depicting a Tree (DAG) of nodes. Nodes are colored depending on how many confirmations they have.](./readme_assets/NodeTree.png "NodeTree")
+![A graphic depicting a Tree (DAG) of nodes. Nodes are colored depending on how many confirmations they have.](./readme_assets/NodeTree%20Structure%20Diagram.png)
 
 A Node becomes *committed* the instant its third confirmation is written into the NodeTree. A confirmation for a Node `A` is another Node `B` such that there is path between `B` to `A`.
 
@@ -26,187 +21,20 @@ The choice of third confirmation to define commitment--as opposed to first or se
 
 HotStuff is the first consensus algorithm with a simple leader-replacement algorithm that does not have a 'wait-for-N seconds' step, and thus can make progress as fast as network latency allows.
 
-## 3. Overview of Major Components
+## Major modules
 
-![A graphic depicting the set of relationships between HotStuff-rs' components](./readme_assets/Components.png "Components")
+### Engine Thread
 
-### 3.1. Engine Thread
+### IPC
 
-#### 3.1.1. Sync Mode
-
-#### 3.1.2. Progress Mode 
-
-### 3.2. Consensus TCP API
+#### Consensus TCP API
 
 The Consensus TCP API carries `PROPOSE`, `VOTE`, and `NEW-VIEW` messages between Replicas. When all Nodes are up-to-date, this is the only HotStuff-rs network API that will see any traffic. 
 
-### 3.3. NodeTree HTTP API
+#### NodeTree HTTP API
 
 The NodeTree HTTP API serves requests for Nodes in NodeTree. This is used by out-of-date Replicas to catch up to the head of the NodeTree.  
 
-### 3.4. Connection Manager
-
-### 3.5. Your Application
+### App
 
 Anything that *you*, the HotStuff-rs user, can imagine. The Actor thread expects it to implement a trait `Application`.
-
-## 4. Protocol Description
-
-### 4.1. Types 
-
-#### **NODE(command, justify)**
-|Field |Type |Description |
-|---   |---  |---         |
-|command |`Vec<u8>` | |
-|justify |`QC` | |
-
-#### **NodeHash**
-SHA256Hash over `parent ++ command ++ justify`.
-
-#### **QC(view_num, node_hash, sigs)**
-|Field |Type |Description |
-|---   |---  |---         |
-|view_num |`u64` | |
-|node_hash |`NodeHash` | |
-|sigs |`Vec<(PublicAddress, Signature)>` | |
-
-#### **Sig(public_address, signature)**
-|Field |Type |Description |
-|---   |---  |---         |
-|public_address |`SHA256Hash` | |
-|signature |`Ed25519Signature`
-
-### 4.2. Consensus API Messages
-
-#### **PROPOSE(view_number, node)**
-|Field |Type |Description |
-|---   |---  |---         |
-|view_number |`u64` | |
-|node |`Node` | |
-
-#### **VOTE(view_num, node_hash, sig)**
-|Field |Type |Description |
-|---   |---  |---         |
-|view_num |`u64` | |
-|node_hash |`NodeHash` | |
-|sig |`Sig` | |
-
-#### **NEW-VIEW(view_num, generic_qc)**
-|Field |Type |Description |
-|---   |---  |---         |
-|view_num|`u64` | |
-|generic_qc |`QC` | |
-
-### 4.3. NodeTree API Endpoints
-
-### 4.4. Engine Thread Sequence Flow 
-
-### 4.4.1. Initialization
-
-### 4.4.2. Sync Mode
-
-Before Consensus can make Progress, a quorum of Participants have to be synchronized on: 1. The same View Number, and 2. The same `generic_qc`*. 
-
-The flow proceeds in the following sequence of steps:
-1. Query all Participants for a chain of length max `CATCHUP_API_WINDOW_SIZE` extending from the latest committed Node of local NodeTree. 
-2. Wait `CATCHUP_API_TIMEOUT` milliseconds.
-3. Select the longest `chain` from all responses.
-4. If `len(chain) == CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree, then jump back to step 1.
-    1. Else if `len(chain) < CATCHUP_API_WINDOW_SIZE`, execute and insert the chain into the local Node Tree.
-    2. If a Node fails validation in the 'execute and insert' step, panic (this indicates that more than $f$ Participants are faulty at this moment).
-5. Switch to *Progress Mode*, entering into *BeginView*. 
-
-### 4.4.3. Progress Mode
-
-![A graphic with 2 rows of 4 rectangles each. The first row depicts the phases of Leader execution, the second depicts the phases of Replica execution.](./readme_assets/Phases%20of%20Progress%20Mode%20execution.png)
-
-The *Progress Mode* works to extend the NodeTree. Starting with *BeginView*, the flow cycles between 6 states: *Initialize*, *BeginView*, *Leader*, *Replica*, *NextLeader*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases', as illustrated in the time-sequence diagram above.
-
-### Initialize
-
-1. `generic_qc` = `get_generic_qc()`
-2. `cur_view` = `generic_qc.view_number`
-3. Jump to *BeginView*.
-
-### BeginView
-
-1. `cur_view = max(cur_view, generic_qc.view_number + 1)`
-2. If `leader(cur_view) == me`: jump to *Leader*, else, jump to *Replica*.
-
-### Leader 
-
-#### Phase 1: Produce a new Node.
-1. Call `node = create_leaf()` on Application with `parent = generic_qc.node`.
-2. Insert `node` into local NodeTree.
-
-#### Phase 2: Broadcast a Proposal.
-3. Broadcast a new `PROPOSE` message containing the leaf to every participant.
-4. Send a `VOTE` for our own proposal to the next leader.
-5. If `leader(cur_view + 1) == me`: jump to *NextLeader* with `timeout` = `TNT` - `time since Phase 1 began`, else continue.
-
-#### Phase 3: Wait for Replicas to send vote for proposal to the next leader.
-6. Sleep for `2 * NET_LATENCY + time elapsed since Phase 1 began` seconds or until the the view timeout, whichever is sooner.
-7. Set `cur_view += 1` and return to *BeginView*.
-
-
-### Replica 
-
-#### Phase 1: Wait for a Proposal.
-1. Read messages from the current leader **until** a matching proposal is received:
-    - If message is a `PROPOSE`:
-        1. If `propose.view_number < cur_view`: discard it.
-        2. If `propose.node.justify.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
-        3. If `propose.view_number > cur_view`: discard it.
-        4. Else (if `propose.view_number == cur_view`): continue.
-    - If message is a `VOTE`: discard it.
-    - Else (if message is a `NEW-VIEW`):
-        1. If `new_view.view_number < cur_view - 1`: discard it.
-        2. If `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
-        3. Else: discard it.
-
-#### Phase 2: Validate the proposed Node.
-2. Call `validate` on Application with `node = proposal.node` and `parent = proposal.node.justify.node_hash`:
-    - If Application rejects the node, jump to `NewView`.
-3. Insert `node` into the local NodeTree.
-
-#### Phase 3: Send a vote.
-4. Send out a `VOTE` containing `node_hash == proposal.node.hash()`.
-5. If `leader(cur_view + 1) == me`: jump to `NextLeader` with `timeout` = `TNT - time elapsed in this view`, else continue.
-
-#### Phase 4: Wait for the next leader to finish collecting votes.
-6. Sleep for `NET_LATENCY`.
-7. `cur_view += 1` and return to *BeginView*.
-
-### NextLeader(parameter: `timeout`)
-
-1. Read messages from *every* participant **until** `timeout` is elapsed  **or** until a new QC is collected:
-    - If message is a `VOTE`:
-        1. If `vote.view_number < cur_view`: discard it.
-        2. Else if `vote.node_hash` is not in the local NodeTree: switch to *Sync Mode*.
-        3. Else if `vote.view_number > cur_view`: discard it.
-        4. Else (if `vote.view_number == cur_view`): `if Ok(qc) = qc_collector.collect { generic_qc = qc }`.
-    - If message is a `NEW-VIEW`:
-        1. If `new_view.view_number < cur_view - 1`: discard it.
-        2. Else if `new_view.qc.view_number > generic_qc.view_number`: switch to *Sync Mode*.
-        3. Else: discard it.
-    - Else (if message is a `PROPOSE`): discard it. 
-2. `cur_view += 1`.
-
-### NewView
-
-This state is entered when a *View Timeout* is triggered at any point in the Engine's lifetime.
-
-1. Send out a `NEW-VIEW` containing `view_number` and `generic_qc`.
-2. Set `view_number += 1` and change to *BeginView*.
-
-### 4.4.4. View Timeouts
-
-View timeouts determine how long the Engine Thread remains on a View before deciding that further progress at the current View is unlikely and moving onto the next View.
-
-If View timeout is a constant and Participants' View Numbers become unsynchronized at any point in the protocol's lifetime, then Participants will never become synchronized at the same View ever again, preventing further progress.
-
-In order to ensure that Participants eventually synchronize on the same View Number for long enough to make progress, the duration of a View timeout grows exponentially in terms of the number of consecutive views the Participant fails to insert a new node:
-
-```rust
-Timeout(cur_view, generic_qc) = TNT + 2 ** (cur_view - generic_qc.view_number) seconds
-```

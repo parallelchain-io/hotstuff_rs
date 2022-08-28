@@ -2,13 +2,15 @@
 /// interactions in Sync Mode are handled in `crate::sync_mode::ipc`.
 
 pub(crate) mod handle;
-pub(crate) use handle::Handle;
 
 pub(crate) mod connection_set;
-pub(in crate::progress_mode::ipc) use connection_set::ConnectionSet;
 
 pub(crate) mod establisher;
-pub(in crate::progress_mode::ipc) use establisher::*;
 
 pub(crate) mod stream;
-pub(in crate::progress_mode::ipc) use stream::*;
+
+// Re-exports
+pub(in crate::ipc) use connection_set::ConnectionSet;
+pub(in crate::ipc) use establisher::*;
+pub(in crate::ipc) use stream::*;
+pub(crate) use handle::{Handle, RecvFromError};
