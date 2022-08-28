@@ -1,5 +1,8 @@
 # HotStuff-rs Node Tree REST API Endpoints
 
+### Reading this document
+Quotes ("") are used in this document for clarity, but are not interpreted specially as part of query strings.
+
 ## GET /node
 
 ### Query parameters
@@ -16,9 +19,9 @@
 
 |Status code |Interpretation |
 |---         |---            |
-|200         |               |
-|400         |               |
-|404         |               |
+|200         |OK.            |
+|400         |Invalid query string.               |
+|404         |The Node identified by `hash` or `height` is not in this Participant's local database. Or, if `include_not_committed` is "false", not committed yet. |
 
 ### Response body
 
