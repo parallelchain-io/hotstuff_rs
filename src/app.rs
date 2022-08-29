@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::time::Instant;
-use crate::node_tree::{WorldState, NodeTree, GetParentError};
-use crate::msg_types::{self, Command};
+use crate::node_tree::{WorldState, NodeTreeWriter};
+use crate::msg_types::{Command, Node as MsgNode};
 
 pub trait App: Send + 'static {
     fn create_leaf(
@@ -24,19 +24,28 @@ pub enum ExecuteError {
     InvalidNode,
 }
 
-pub struct Node {
-    pub(crate) inner: msg_types::Node,
-    pub(crate) node_tree: NodeTree,
+pub struct Node<'a> {
+    inner: MsgNode,
+    node_tree: &'a NodeTreeWriter,
 }
 
-impl<'a, 'b> Node {
+impl<'a> Node<'a> {
+    pub fn new(node: MsgNode, node_tree: &NodeTreeWriter) -> Node {
+        Node {
+            inner: node,
+            node_tree,
+        }
+    }
+
     /// Returns None if called on the Genesis Node.
     pub fn get_parent(&self) -> Option<Node> {
-        let parent = match self.node_tree.get_parent(&self.hash()) {
-            Ok(node) => node,
-            Err(GetParentError::NodeNotFound) => unreachable!(),
-            Err(GetParentError::ParentNotFound) => return None,
-        };
+        if self.justify.view_number == 0 {
+            return None
+        }
+
+        let parent = self.node_tree.get_node(&self.inner.justify.node_hash)
+            .expect("Programming error: Non-Genesis node does not have a parent.");
+
         let parent = Node {
             inner: parent,
             node_tree: self.node_tree.clone(),
@@ -46,8 +55,8 @@ impl<'a, 'b> Node {
     }
 }
 
-impl Deref for Node {
-    type Target = msg_types::Node;
+impl<'a> Deref for Node<'a> {
+    type Target = MsgNode;
 
     fn deref(&self) -> &Self::Target {
         &self.inner 

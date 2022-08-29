@@ -14,7 +14,7 @@ pub mod msg_types;
 
 pub(crate) mod identity;
 
-pub(crate) mod engine;
+pub(crate) mod state_machine;
 
 pub(crate) mod ipc;
 

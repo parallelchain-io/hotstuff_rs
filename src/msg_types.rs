@@ -105,7 +105,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn hash(&self) -> NodeHash {
+    pub fn hash(height: NodeHeight, command: &Command, justify: &QuorumCertificate) -> NodeHash {
         todo!()
     }
 }
@@ -122,6 +122,12 @@ impl SerDe for Node {
     fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
         let mut cursor = 0;
 
+        let hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
+        cursor += mem::size_of::<NodeHash>();
+
+        let height = NodeHeight::from_le_bytes(bs[cursor..mem::size_of::<NodeHeight>()].try_into()?);
+        cursor += mem::size_of::<NodeHeight>();
+
         let command_len = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
         cursor += mem::size_of::<u64>();
 
@@ -131,6 +137,8 @@ impl SerDe for Node {
         let justify = QuorumCertificate::deserialize(&bs[cursor..])?; 
 
         Ok(Node {
+            hash,
+            height,
             command,
             justify
         })

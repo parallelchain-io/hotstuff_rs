@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
+use std::cmp::min;
 use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use crate::msg_types::{Node, NodeHash, SerDe};
-use crate::{NodeTreeSnapshotFactory, NodeTreeSnapshot};
+use crate::{NodeTreeSnapshotFactory, NodeTreeSnapshot, IsHighestCommittedNodeError};
 use crate::config::NodeTreeApiConfig;
 
 struct Server(tokio::runtime::Runtime);
@@ -16,7 +17,7 @@ impl Server {
         // GET /nodes
         let get_nodes = warp::path("nodes")
             .and(warp::query::<GetNodesParams>())
-            .then(move |nodes_params| Self::handle_get_nodes(node_tree.clone(), nodes_params));
+            .then(move |nodes_params| Self::handle_get_nodes(node_tree.snapshot(), nodes_params));
 
         let server = warp::serve(get_nodes);
         let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
@@ -66,10 +67,46 @@ enum GetNodesDirections {
 }
 
 fn get_nodes_forwards(node_tree: &NodeTreeSnapshot, start_node_hash: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
-    todo!()
+    let res = Vec::with_capacity(limit);
+
+    // 1. Get start node.
+    let start_node = node_tree.get_node(start_node_hash)?;
+    let mut cursor = start_node.hash;
+    res.push(start_node);
+
+    // 2. Traverse start node's descendants until res.len() == limit or we hit uncommitted nodes.
+    while res.len() < limit {
+        let child = match node_tree.get_child(&cursor) {
+            Ok(node) => node,
+            Err(IsHighestCommittedNodeError) => break,
+        };
+        cursor = child.hash;
+        res.push(child);
+    }
+
+    // 3. If res.len() is less than limit and speculate is true:
+    if res.len() < limit && speculate {
+        let uncommitted_nodes = get_chain_between_highest_committed_node_and_top_node(&node_tree);
+        res.extend_from_slice(&uncommitted_nodes[..min(limit - res.len(), uncommitted_nodes.len())]);
+    }
+
+    Some(res)
 }
 
 fn get_chain_between_highest_committed_node_and_top_node(node_tree: &NodeTreeSnapshot) -> Vec<Node> {
-    todo!()
+    let res = Vec::new();
+
+    let top_node = node_tree.get_top_node();
+    let highest_committed_node = node_tree.get_highest_committed_node();
+    let mut cursor = top_node.justify.node_hash;
+    res.push(top_node);
+
+    while cursor != highest_committed_node.hash {
+        let node = node_tree.get_node(&cursor).unwrap();
+        cursor = node.hash;
+        res.push(node);
+    } 
+
+    res
 }
 
