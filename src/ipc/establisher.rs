@@ -7,7 +7,7 @@ use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
 use crate::config::IPCConfig;
 use crate::ipc;
-use crate::identity::PublicKey;
+use crate::identity::PublicAddr;
 
 use super::stream::StreamConfig;
 
@@ -16,12 +16,12 @@ pub struct Establisher {
     to_initiator: mpsc::Sender<EstablisherCmd>,
     listener: thread::JoinHandle<()>,
     to_listener: mpsc::Sender<EstablisherCmd>,
-    my_public_addr: PublicKey,
+    my_public_addr: PublicAddr,
     ipc_config: IPCConfig,
 }
 
 impl Establisher {
-    pub fn new(ipc_config: IPCConfig, my_public_addr: PublicKey) -> (Establisher, mpsc::Receiver<EstablisherResult>) {
+    pub fn new(ipc_config: IPCConfig, my_public_addr: PublicAddr) -> (Establisher, mpsc::Receiver<EstablisherResult>) {
         let (to_main, from_establishers) = mpsc::channel();
         let (to_initiator, initiator_from_main) = mpsc::channel();
         let (to_listener, listener_from_main) = mpsc::channel();
@@ -38,7 +38,7 @@ impl Establisher {
         (establisher, from_establishers)
     }
 
-    pub fn connect_later(&self, target: (PublicKey, IpAddr)) {
+    pub fn connect_later(&self, target: (PublicAddr, IpAddr)) {
         match target.0 {
             target_public_addr if target_public_addr > self.my_public_addr => { 
                 self.to_initiator.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between main thread and Initiator thread lost.") 
@@ -50,7 +50,7 @@ impl Establisher {
         };
     }
 
-    pub fn cancel_later(&self, target: (PublicKey, IpAddr)) {
+    pub fn cancel_later(&self, target: (PublicAddr, IpAddr)) {
         match target.0 {
             target_public_addr if target_public_addr > self.my_public_addr => {
                 self.to_initiator.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between main thread and Initiator thread lost.")
@@ -138,7 +138,7 @@ impl Establisher {
         })
     }
 
-    fn update_pending_targets_initiator(pending_targets: &mut IndexSet<(PublicKey, IpAddr)>, from_main: &mpsc::Receiver<EstablisherCmd>) -> TryRecvError {
+    fn update_pending_targets_initiator(pending_targets: &mut IndexSet<(PublicAddr, IpAddr)>, from_main: &mpsc::Receiver<EstablisherCmd>) -> TryRecvError {
         loop {
             match from_main.try_recv() {
                 Ok(cmd) => match cmd {
@@ -150,7 +150,7 @@ impl Establisher {
         }
     }
 
-    fn update_pending_targets_listener(pending_targets: &mut IndexMap<IpAddr, PublicKey>, from_main: &mpsc::Receiver<EstablisherCmd>) -> TryRecvError {
+    fn update_pending_targets_listener(pending_targets: &mut IndexMap<IpAddr, PublicAddr>, from_main: &mpsc::Receiver<EstablisherCmd>) -> TryRecvError {
         loop {
             match from_main.try_recv() {
                 Ok(cmd) => match cmd {
@@ -165,8 +165,8 @@ impl Establisher {
 }
 
 enum EstablisherCmd {
-    Connect((PublicKey, IpAddr)),
-    Cancel((PublicKey, IpAddr)),
+    Connect((PublicAddr, IpAddr)),
+    Cancel((PublicAddr, IpAddr)),
 }
 
-pub struct EstablisherResult(pub (PublicKey, Arc<ipc::Stream>));
+pub struct EstablisherResult(pub (PublicAddr, Arc<ipc::Stream>));

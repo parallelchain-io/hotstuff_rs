@@ -1,11 +1,13 @@
+use std::convert::identity;
 use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
+use ed25519_dalek::Signer;
 use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::app::{App, Node as AppNode, WorldStateHandle};
 use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
 use crate::node_tree::NodeTreeWriter;
-use crate::identity::{PublicKey, ParticipantSet};
+use crate::identity::{PublicAddr, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
 
 pub(crate) struct StateMachine<A: App> {
@@ -44,9 +46,9 @@ impl<A: App> StateMachine<A> {
         ipc_config: IPCConfig
     ) -> StateMachine<A> {
         let top_node = node_tree.get_top_node();
-        let top_qc = top_node.justify;
+        let top_qc = top_node.justify.clone();
         let cur_view = top_node.justify.view_number;
-        let ipc_handle = IPCHandle::new(identity_config.clone(), ipc_config.clone());
+        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_addr, ipc_config.clone());
 
         StateMachine {
             top_qc,
@@ -102,7 +104,7 @@ impl<A: App> StateMachine<A> {
                 hash: MsgNode::hash(parent_node.height, &command, &self.top_qc),
                 height: parent_node.height + 1,
                 command,
-                justify: self.top_qc,
+                justify: self.top_qc.clone(),
             };
 
             (node, state.into())
@@ -170,7 +172,7 @@ impl<A: App> StateMachine<A> {
                         continue
                     } else { // (if vn == cur_view):
                         proposed_node = node;
-                        self.top_qc = proposed_node.justify;
+                        self.top_qc = proposed_node.justify.clone();
                         break
                     } 
                 },     
@@ -266,16 +268,17 @@ impl<A: App> StateMachine<A> {
     }
 }
 
-pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicKey {
-    let idx = cur_view % participant_set.len();
-    participant_set[idx]
+pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
+    let idx = cur_view as usize % participant_set.len();
+    participant_set.keys().nth(idx).unwrap().clone()
 }
 
 pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
-    tnt + Duration::new(usize::checked_pow(2, cur_view - top_qc.view_number), 0)
+    let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
+    tnt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
 }
 
 pub fn safe_node(node: &MsgNode, node_tree: &NodeTreeWriter) -> bool {
     let locked_view = node_tree.get_locked_view();
-    node.justify.node_hash >= locked_view
+    node.justify.view_number >= locked_view
 }

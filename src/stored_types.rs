@@ -1,7 +1,7 @@
 use std::mem;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::collections::{hash_set, HashSet, HashMap};
-use crate::msg_types::{NodeHash, SerDe};
+use crate::msg_types::{BytesRead, NodeHash, SerDe};
 
 pub struct ChildrenList(HashSet<NodeHash>);
 
@@ -16,7 +16,7 @@ impl ChildrenList {
 }
 
 impl SerDe for ChildrenList {
-    fn deserialize(bs: &[u8]) -> Result<Self, crate::msg_types::DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), crate::msg_types::DeserializationError> {
         let mut res = ChildrenList::new();
         let mut cursor = 0usize;
         while cursor < bs.len() {
@@ -33,11 +33,12 @@ impl SerDe for ChildrenList {
             unreachable!()
         }
 
-        Ok(res)
+        Ok((cursor, res))
     }
 
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
+
         for child_hash in &self.0 {
             buf.extend_from_slice(child_hash);
         }
@@ -57,7 +58,7 @@ impl WriteSet {
 }
 
 impl SerDe for WriteSet {
-    fn deserialize(bs: &[u8]) -> Result<Self, crate::msg_types::DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), crate::msg_types::DeserializationError> {
         let mut res = WriteSet::new();
         let mut cursor = 0usize;
         while cursor < bs.len() {
@@ -81,16 +82,16 @@ impl SerDe for WriteSet {
             unreachable!()
         }
 
-        Ok(res)
+        Ok((cursor, res))
     }
 
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::<u8>::new();
-        for (key, value) in self.0 {
+        for (key, value) in &self.0 {
             buf.extend_from_slice(&(key.len() as u32).to_le_bytes());
-            buf.extend_from_slice(&key);
+            buf.extend_from_slice(key);
             buf.extend_from_slice(&(value.len() as u32).to_le_bytes());
-            buf.extend_from_slice(&value);
+            buf.extend_from_slice(value);
         }   
         buf
     }
@@ -101,5 +102,11 @@ impl Deref for WriteSet {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for WriteSet {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

@@ -5,7 +5,7 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
-use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature};
+use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature, NodeHeight};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
 pub struct Stream {
@@ -160,6 +160,18 @@ impl DeserializeFromStream for ConsensusMsg {
 
 impl DeserializeFromStream for Node {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
+        let hash = {
+            let mut buf = [0u8; mem::size_of::<NodeHash>()];
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+            buf.into()
+        };
+
+        let height = {
+            let mut buf = [0u8; mem::size_of::<NodeHeight>()];
+            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+            u64::from_le_bytes(buf)
+        };
+
         let command_len = {
             let mut buf = [0u8; mem::size_of::<u64>()];
             tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
@@ -175,6 +187,8 @@ impl DeserializeFromStream for Node {
         let justify = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
 
         Ok(Node {
+            hash,
+            height,
             command,
             justify
         })

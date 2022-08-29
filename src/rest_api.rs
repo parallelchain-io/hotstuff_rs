@@ -5,19 +5,19 @@ use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use crate::msg_types::{Node, NodeHash, SerDe};
-use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError};
+use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError, self};
 use crate::config::NodeTreeApiConfig;
 
 struct Server(tokio::runtime::Runtime);
 
 impl Server {
-    fn start(node_tree: NodeTreeSnapshotFactory, config: NodeTreeApiConfig) -> Server {
+    fn start(node_tree_snapshot_factory: NodeTreeSnapshotFactory, config: NodeTreeApiConfig) -> Server {
         // Endpoints and their behavior are documented in node_tree/rest_api.md
 
         // GET /nodes
         let get_nodes = warp::path("nodes")
             .and(warp::query::<GetNodesParams>())
-            .then(move |nodes_params| Self::handle_get_nodes(node_tree.snapshot(), nodes_params));
+            .then(move |nodes_params| Self::handle_get_nodes(node_tree_snapshot_factory.clone(), nodes_params));
 
         let server = warp::serve(get_nodes);
         let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
@@ -30,9 +30,11 @@ impl Server {
         Server(runtime)
     }
 
-    async fn handle_get_nodes<'a>(node_tree: NodeTreeSnapshot<'a>, mut params: GetNodesParams) -> impl warp::Reply {
+    async fn handle_get_nodes<'a>(node_tree_snapshot_factory: NodeTreeSnapshotFactory, mut params: GetNodesParams) -> impl warp::Reply {
+        let node_tree_snapshot = node_tree_snapshot_factory.snapshot();
+
         // Apply default values if parameter is not assigned to.
-        let _ = params.direction.get_or_insert(GetNodesAnchorEnd::Backward);
+        let _ = params.anchor_end.get_or_insert(GetNodesAnchorEnd::Head);
         let _ = params.limit.get_or_insert(1);
         let _ = params.speculate.get_or_insert(false);
 
@@ -42,7 +44,7 @@ impl Server {
                 anchor_end: Some(GetNodesAnchorEnd::Head),
                 limit,
                 speculate,
-            } => match get_nodes_up_to_head(&node_tree, &hash, limit.unwrap(), speculate.unwrap()) {
+            } => match get_nodes_up_to_head(&node_tree_snapshot, &hash, limit.unwrap(), speculate.unwrap()) {
                 Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             },
@@ -51,7 +53,7 @@ impl Server {
                 anchor_end: Some(GetNodesAnchorEnd::Tail),
                 limit,
                 speculate,
-            } => match get_nodes_from_tail(&node_tree, &hash, limit.unwrap(), speculate.unwrap()) {
+            } => match get_nodes_from_tail(&node_tree_snapshot, &hash, limit.unwrap(), speculate.unwrap()) {
                 Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             }, 
@@ -68,13 +70,14 @@ struct GetNodesParams {
     speculate: Option<bool>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 enum GetNodesAnchorEnd {
     Head,
     Tail,
 }
 
 fn get_nodes_from_tail(node_tree: &NodeTreeSnapshot, tail_node_hash: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
-    let res = Vec::with_capacity(limit);
+    let mut res = Vec::with_capacity(limit);
 
     // 1. Get tail node.
     let tail_node = node_tree.get_node(tail_node_hash)?;
@@ -95,18 +98,20 @@ fn get_nodes_from_tail(node_tree: &NodeTreeSnapshot, tail_node_hash: &NodeHash, 
     if res.len() < limit && speculate {
         let top_node = node_tree.get_top_node();
         // 3.1. Reverse uncommitted nodes so that nodes with lower heights appear first.
-        let uncommitted_nodes = get_chain_between_speculative_node_and_highest_committed_node(&node_tree, &top_node.hash).iter().rev();
-        res.extend(&uncommitted_nodes[..min(limit - res.len(), uncommitted_nodes.len())]);
+        let uncommitted_nodes: Vec<Node> = get_chain_between_speculative_node_and_highest_committed_node(&node_tree, &top_node.hash).into_iter().rev().collect();
+        res.extend_from_slice(&uncommitted_nodes[..min(limit - res.len(), uncommitted_nodes.len())]);
     }
 
     Some(res)
 }
 
 fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
-    let res = Vec::with_capacity(limit);
+    let mut res = Vec::with_capacity(limit);
 
     // 1. Get head node.
     let head_node = node_tree.get_node(head_node_hash)?;
+    let head_node_parent_hash = head_node.justify.node_hash;
+    let head_node_height = head_node.height;
     res.push(head_node);
     if limit == 1 {
         // 1.1. If only one node is requested, return immediately.
@@ -115,38 +120,42 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
 
     // 2. Check whether head node is speculative.
     let highest_committed_node = node_tree.get_highest_committed_node();
-    if head_node.height > highest_committed_node {
+    if head_node_height > highest_committed_node.height {
         // Start node IS speculative. 
         if !speculate {
             return None
         }
 
         // 2.1. Get speculative ancestors of head node.
-        let speculative_ancestors = get_chain_between_speculative_node_and_highest_committed_node(node_tree, &head_node_hash).iter().rev().collect();
-        res.append(speculative_ancestors[min(limit - res.len(), speculative_ancestors.len())]);
+        let speculative_ancestors: Vec<Node> = get_chain_between_speculative_node_and_highest_committed_node(node_tree, &head_node_hash).into_iter().rev().collect();
+        res.extend_from_slice(&speculative_ancestors[..min(limit - res.len(), speculative_ancestors.len())]);
 
         // 2.2. Get non-speculative ancestors of head node, up to the number necessary to satisfy limit.
         let mut cursor = highest_committed_node;
         while limit - res.len() > 0 {
+            let next_hash = cursor.justify.node_hash;
+            let cursor_height = cursor.height;
             res.push(cursor);
-            if cursor.height == 0 {
+            if cursor_height == 0 {
                 break
             }
 
-            cursor = node_tree.get_node(&cursor.justify.node_hash);
+            cursor = node_tree.get_node(&next_hash).unwrap();
         }
     } else {
         // Start node IS NOT speculative.
 
         // 2.1. Get ancestors of head node, up to the number necessary to satisfy limit.
-        let mut cursor = node_tree.get_node(&head_node.justify.node_hash);
+        let mut cursor = node_tree.get_node(&head_node_parent_hash).unwrap();
         while limit - res.len() > 0 {
+            let next_hash = cursor.justify.node_hash;
+            let cursor_height = cursor.height;
             res.push(cursor);
-            if cursor.height == 0 {
+            if cursor_height == 0 {
                 break
             }
 
-            cursor = node_tree.get_node(&cursor.justify.node_hash);
+            cursor = node_tree.get_node(&next_hash).unwrap();
         }
 
     }
@@ -156,7 +165,7 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
 
 // Possibly unintuitive behavior: The returned chain is ordered from GREATER node height to SMALLER node height.
 fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash) -> Vec<Node> {
-    let res = Vec::new();
+    let mut res = Vec::new();
 
     let top_node = node_tree.get_top_node();
     let highest_committed_node = node_tree.get_highest_committed_node();

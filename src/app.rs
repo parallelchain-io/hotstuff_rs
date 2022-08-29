@@ -74,7 +74,7 @@ pub struct WorldStateHandle<'a> {
 }
 
 impl<'a> WorldStateHandle<'a> {
-    pub fn open(node_tree: &NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldStateHandle {
+    pub fn open(node_tree: &'a NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldStateHandle<'a> {
         let parent_writes = node_tree.get_write_set(&parent_node_hash).map_or(WriteSet::new(), identity);
         let grandparent_writes = {
             let grandparent_node_hash = node_tree.get_node(parent_node_hash).unwrap().justify.node_hash;
@@ -101,7 +101,7 @@ impl<'a> WorldStateHandle<'a> {
         } else if let Some(value) = self.grandparent_writes.get(key) {
             value.clone()
         } else {
-            self.db.get_from_state(key).unwrap()
+            self.node_tree.get_from_world_state(key)
         }
     }
 

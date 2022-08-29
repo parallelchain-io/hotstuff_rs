@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::convert::identity;
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::NodeTreeConfig;
-use crate::stored_types::{WriteSet, ChildrenList};
+use crate::stored_types::{WriteSet, ChildrenList, Key, Value};
 use crate::msg_types::{Node, NodeHash, ViewNumber, SerDe};
 
 pub fn open(node_tree_config: &NodeTreeConfig) -> (NodeTreeWriter, NodeTreeSnapshotFactory) {
-    let db = DB::open_default(node_tree_config.db_path)
+    let db = DB::open_default(node_tree_config.db_path.clone())
         .expect("Configuration error: fail to open DB.");
     let db = Arc::new(db);
     
@@ -31,7 +31,7 @@ impl NodeTreeWriter {
     /// great-grandparent, and great-great-grandparent are the NodeTree. In open, the Genesis Node is 'padded' with
     /// 3 empty descendant Nodes to force this invariant.
     pub fn insert_node(&self, node: &Node, write_set: &WriteSet) {
-        let wb = WriteBatch::default();
+        let mut wb = WriteBatch::default();
 
         let parent_node = self.get_node(&node.justify.node_hash).unwrap();
         let grandparent_node = self.get_node(&parent_node.justify.node_hash).unwrap();
@@ -86,8 +86,8 @@ impl NodeTreeWriter {
         wb.put(special_keys::LOCKED_VIEW, view_num.to_le_bytes());
     }
 
-    pub fn get_locked_view(&self) -> usize {
-        usize::from_le_bytes(self.db.get(special_keys::LOCKED_VIEW).unwrap().unwrap().try_into().unwrap())
+    pub fn get_locked_view(&self) -> u64 {
+        u64::from_le_bytes(self.db.get(special_keys::LOCKED_VIEW).unwrap().unwrap().try_into().unwrap())
     }
 
     fn set_top_node(wb: &mut WriteBatch, node_hash: &NodeHash) {
@@ -116,7 +116,7 @@ impl NodeTreeWriter {
     }
 
     pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
-        Some(Node::deserialize(&self.db.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap())
+        Some(Node::deserialize(&self.db.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap().1)
     }
 
     fn delete_branch(&self, wb: &mut WriteBatch, tail_node_hash: &NodeHash) {
@@ -145,13 +145,17 @@ impl NodeTreeWriter {
     }
 
     pub fn get_write_set(&self, node_hash: &NodeHash) -> Option<WriteSet> {
-        Some(WriteSet::deserialize(&self.db.get(&prefix(special_prefixes::WRITE_SETS, node_hash)).unwrap()?).unwrap())
+        Some(WriteSet::deserialize(&self.db.get(&prefix(special_prefixes::WRITE_SETS, node_hash)).unwrap()?).unwrap().1)
     }
 
     pub fn apply_write_set(wb: &mut WriteBatch, write_set: &WriteSet) {
         for (key, value) in write_set.iter() {
             wb.put(prefix(special_prefixes::WORLD_STATE, key), value)
         }
+    }
+
+    pub fn get_from_world_state(&self, key: &Key) -> Value {
+        self.db.get(prefix(special_prefixes::WORLD_STATE, key)).unwrap().map_or(Value::new(), identity)
     }
 
     pub fn delete_write_set(wb: &mut WriteBatch, node_hash: &NodeHash) {
@@ -166,7 +170,7 @@ impl NodeTreeWriter {
     }
 
     pub fn get_children_list(&self, node_hash: &NodeHash) -> Option<ChildrenList> {
-        Some(ChildrenList::deserialize(&self.db.get(&prefix(special_prefixes::CHILDREN_LISTS, node_hash)).unwrap()?).unwrap())
+        Some(ChildrenList::deserialize(&self.db.get(&prefix(special_prefixes::CHILDREN_LISTS, node_hash)).unwrap()?).unwrap().1)
     }
 
     pub fn delete_children_list(wb: &mut WriteBatch, node_hash: &NodeHash) {
@@ -176,6 +180,7 @@ impl NodeTreeWriter {
 
 
 /// Shared between the multiple threads of the Node Tree REST API.
+#[derive(Clone)]
 pub struct NodeTreeSnapshotFactory {
     db: Arc<DB>,
 }
@@ -195,7 +200,7 @@ pub struct NodeTreeSnapshot<'a> {
 
 impl<'a> NodeTreeSnapshot<'a> {
     pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
-        Some(Node::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap())
+        Some(Node::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap().1)
     }
 
     pub fn get_child(&self, parent_node_hash: &NodeHash) -> Result<Node, ChildrenNotYetCommittedError> {
@@ -208,7 +213,7 @@ impl<'a> NodeTreeSnapshot<'a> {
 
         let parent_children = ChildrenList::deserialize(&self.db_snapshot.get(&prefix(special_prefixes::CHILDREN_LISTS, parent_node_hash)).unwrap().unwrap()).unwrap();
         // Safety: parent_children.len() must be 1, since parent is an ancestor of a committed Node. 
-        let child_hash = parent_children.iter().next().unwrap();
+        let child_hash = parent_children.1.iter().next().unwrap();
         Ok(self.get_node(child_hash).unwrap())
     }
 
@@ -233,7 +238,7 @@ mod special_prefixes {
 }
 
 fn prefix(prefix: [u8; 1], additional_key: &[u8]) -> Vec<u8> {
-    let prefixed_key = Vec::with_capacity(prefix.len() + additional_key.len());
+    let mut prefixed_key = Vec::with_capacity(prefix.len() + additional_key.len());
     prefixed_key.extend_from_slice(&prefix);
     prefixed_key.extend_from_slice(additional_key);
     prefixed_key

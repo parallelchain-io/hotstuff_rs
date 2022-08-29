@@ -1,6 +1,9 @@
 use std::array;
 use std::mem;
-use crate::identity::{PublicKey, ParticipantSet};
+use sha2::Digest;
+use sha2::Sha256;
+use ed25519_dalek::Signature as DalekSignature;
+use crate::identity::{PublicAddr, ParticipantSet};
 
 pub type ViewNumber = u64;
 pub type NodeHeight = u64;
@@ -52,7 +55,7 @@ impl SerDe for ConsensusMsg {
                 buf.extend_from_slice(&Self::PREFIX_VOTE);
                 buf.extend_from_slice(&vn.to_le_bytes());
                 buf.extend_from_slice(node_hash);
-                buf.extend_from_slice(&signature.0);
+                buf.extend_from_slice(&signature.to_bytes());
             },
             Self::NewView(vn, qc) => {
                 buf.extend_from_slice(&Self::PREFIX_NEW_VIEW);
@@ -64,7 +67,7 @@ impl SerDe for ConsensusMsg {
         return buf
     }
 
-    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
         let mut cursor = 0usize;
 
         let variant_prefix = bs[cursor..mem::size_of::<KindPrefix>()].try_into()?;
@@ -74,8 +77,9 @@ impl SerDe for ConsensusMsg {
         cursor += mem::size_of::<ViewNumber>();
         match variant_prefix {
             Self::PREFIX_PROPOSE => {
-                let node = Node::deserialize(&bs[cursor..])?;
-                Ok(Self::Propose(vn, node))
+                let (bytes_read, node) = Node::deserialize(&bs[cursor..])?;
+                cursor += bytes_read;
+                Ok((cursor, Self::Propose(vn, node)))
             },
             Self::PREFIX_VOTE => {
                 let node_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
@@ -83,11 +87,12 @@ impl SerDe for ConsensusMsg {
 
                 let signature = <[u8; 64]>::try_from(&bs[cursor..64]).unwrap().into();
                 cursor += mem::size_of::<Signature>();
-                Ok(Self::Vote(vn, node_hash, signature))
+                Ok((cursor, Self::Vote(vn, node_hash, signature)))
             },
             Self::PREFIX_NEW_VIEW => {
-                let qc = QuorumCertificate::deserialize(&bs[cursor..])?;
-                Ok(Self::NewView(vn, qc))
+                let (bytes_read, qc) = QuorumCertificate::deserialize(&bs[cursor..])?;
+                cursor += bytes_read;
+                Ok((cursor, Self::NewView(vn, qc)))
             },
             _ => Err(DeserializationError) 
         }
@@ -106,7 +111,12 @@ pub struct Node {
 
 impl Node {
     pub fn hash(height: NodeHeight, command: &Command, justify: &QuorumCertificate) -> NodeHash {
-        todo!()
+        Sha256::new()
+            .chain_update(height.to_le_bytes())
+            .chain_update(command)
+            .chain_update(justify.serialize())
+            .finalize()
+            .into()
     }
 }
 
@@ -119,7 +129,7 @@ impl SerDe for Node {
         bs
     }
 
-    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
         let mut cursor = 0;
 
         let hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
@@ -134,14 +144,17 @@ impl SerDe for Node {
         let command = bs[cursor..command_len as usize].to_vec();
         cursor += command_len as usize;
 
-        let justify = QuorumCertificate::deserialize(&bs[cursor..])?; 
+        let (bytes_read, justify) = QuorumCertificate::deserialize(&bs[cursor..])?; 
+        cursor += bytes_read;
 
-        Ok(Node {
+        let node = Node {
             hash,
             height,
             command,
-            justify
-        })
+            justify,
+        };
+
+        Ok((cursor, node))
     }
 }
 
@@ -169,16 +182,25 @@ impl SerDe for QuorumCertificate {
         return bs
     }
 
-    fn deserialize(bs: &[u8]) -> Result<QuorumCertificate, DeserializationError> {
-        let vn = u64::from_le_bytes(bs[0..8].try_into()?);
-        let node_hash = bs[8..40].try_into()?;
-        let sigs = SignatureSet::deserialize(&bs[40..])?;
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, QuorumCertificate), DeserializationError> {
+        let mut cursor = 0;
 
-        Ok(QuorumCertificate {
+        let vn = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
+        cursor += mem::size_of::<u64>();
+
+        let node_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
+        cursor += mem::size_of::<NodeHash>();
+
+        let (bytes_read, sigs) = SignatureSet::deserialize(&bs[40..])?;
+        cursor += bytes_read;
+
+        let qc = QuorumCertificate {
             view_number: vn,
             node_hash,
             sigs,
-        })
+        };
+
+        Ok((cursor, qc))
     }
 }
 
@@ -201,17 +223,17 @@ impl QuorumCertificateBuilder {
 
     /// - This does not check whether signature is a correct signature.
     /// - Returns Ok(true) when insertion makes QuorumCertificateBuilder contain enough Signatures to form a QuorumCertificate.
-    pub fn insert(&mut self, signature: Signature, by_public_key: PublicKey) -> Result<bool, QCBuilderInsertError> {
+    pub fn insert(&mut self, signature: Signature, by_public_addr: PublicAddr) -> Result<bool, QCBuilderInsertError> {
         if QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()) {
             return Err(QCBuilderInsertError::AlreadyAQuorum)
         }
 
-        if let Some(position) = self.participant_set.keys().position(|pk| *pk == by_public_key) {
+        if let Some(position) = self.participant_set.keys().position(|pk| *pk == by_public_addr) {
             self.signature_set.insert(position, signature);
 
             Ok(QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()))
         } else {
-            Err(QCBuilderInsertError::PublicKeyNotInParticipantSet)
+            Err(QCBuilderInsertError::PublicAddrNotInParticipantSet)
         }
     }
 
@@ -226,7 +248,7 @@ impl QuorumCertificateBuilder {
 
 pub enum QCBuilderInsertError {
     AlreadyAQuorum,
-    PublicKeyNotInParticipantSet,
+    PublicAddrNotInParticipantSet,
 }
 
 #[derive(Clone)]
@@ -248,9 +270,9 @@ impl SignatureSet {
     }
 
     /// The caller has the responsibility to ensure that Signatures in the SignatureSet are sorted in ascending order of the
-    /// PublicKey that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
+    /// PublicAddr that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
     /// to the 'length - n' numerically largest Participant in a ParticipantSet. By imposing an order on SignatureSet, mappings
-    /// between PublicKey and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
+    /// between PublicAddr and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
     pub fn insert(&mut self, index: usize, signature: Signature) -> Result<(), AlreadyInsertedError> {
         if self.signatures[index].is_some() {
             Err(AlreadyInsertedError)
@@ -260,15 +282,6 @@ impl SignatureSet {
             Ok(())
         }
     }  
-
-    pub fn verify(&self, msg: &[u8], participant_set: ParticipantSet) -> bool {
-        self.signatures.iter().all(|sig| {
-            match sig {
-                None => true,
-                Some(sig) => sig.is_correct(msg),
-            }
-        })
-    }
 
     pub fn count(&self) -> usize {
         self.count
@@ -292,7 +305,7 @@ impl SerDe for SignatureSet {
             match signature {
                 Some(sig) => { 
                     buf.push(Self::SOME_PREFIX);
-                    buf.extend_from_slice(sig.into());
+                    buf.extend_from_slice(&sig.to_bytes());
                 },
                 None => {
                     buf.push(Self::NONE_PREFIX);
@@ -302,7 +315,7 @@ impl SerDe for SignatureSet {
         buf
     }
 
-    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
         let mut signatures = Vec::new();
 
         let mut cursor = 0usize;
@@ -315,7 +328,8 @@ impl SerDe for SignatureSet {
             cursor += mem::size_of::<u8>();
             match variant_prefix {
                 Self::SOME_PREFIX => {
-                    let sig = <[u8; 64]>::try_from(&bs[cursor..64]).unwrap().into();
+                    let sig = <Signature>::try_from(&bs[cursor..64]).unwrap().into();
+                    cursor += mem::size_of::<Signature>();
                     signatures.push(Some(sig));
                     count += 1;
                 }, 
@@ -325,51 +339,24 @@ impl SerDe for SignatureSet {
                 _ => return Err(DeserializationError)
             }
         }
-
-        Ok(SignatureSet {
-            signatures, 
+        
+        let sig_set = SignatureSet {
+            signatures,
             count,
-        })
+        };
+
+        Ok((cursor, sig_set))
     }
 }
 
-#[derive(Clone)]
-pub struct Signature(pub [u8; 64]);
-
-impl Signature {
-    pub fn is_correct(&self, msg: &[u8]) -> bool {
-        todo!()
-    }
-}
-
-impl From<[u8; 64]> for Signature {
-    fn from(bs: [u8; 64]) -> Self {
-        Self(bs)
-    }
-}
-
-impl Into<[u8; 64]> for Signature {
-    fn into(self) -> [u8; 64] {
-        self.0
-    }
-}
-
-impl<'a> Into<&'a [u8; 64]> for &'a Signature {
-    fn into(self) -> &'a [u8; 64] {
-        &self.0
-    }
-}
-
-impl<'a> Into<&'a [u8]> for &'a Signature {
-    fn into(self) -> &'a [u8] {
-        &self.0
-    }
-}
+pub type Signature = DalekSignature;
 
 pub trait SerDe: Sized {
     fn serialize(&self) -> Vec<u8>;
-    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError>;
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError>;
 }
+
+pub type BytesRead = usize;
 
 #[derive(Debug)]
 pub struct DeserializationError;
@@ -381,11 +368,31 @@ impl From<array::TryFromSliceError> for DeserializationError {
 }
 
 impl<T: SerDe> SerDe for Vec<T> {
-    fn deserialize(bs: &[u8]) -> Result<Self, DeserializationError> {
-        todo!()        
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
+        let mut cursor = 0;
+
+        let num_elems = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
+        let mut res = Vec::with_capacity(num_elems as usize);
+
+        for _ in 0..num_elems {
+            let (bytes_read, elem) = T::deserialize(&bs[cursor..])?;  
+            cursor += bytes_read;
+            res.push(elem);
+        }
+
+        Ok((cursor, res))
     }
 
     fn serialize(&self) -> Vec<u8> {
-        todo!() 
+        let mut buf = Vec::new();
+
+        let num_elems = self.len() as u64;
+        buf.extend_from_slice(&num_elems.to_le_bytes());
+
+        for elem in self {
+            buf.append(&mut elem.serialize())
+        }
+
+        buf
     }
 }

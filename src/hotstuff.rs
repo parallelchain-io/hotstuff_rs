@@ -25,7 +25,7 @@ impl HotStuff {
 
     fn start_state_machine_thread(app: impl App, mut node_tree_writer: NodeTreeWriter, configuration: Configuration) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let state_machine = StateMachine::initialize(node_tree_writer, app, configuration.progress_mode, configuration.identity, configuration.ipc);
+            let mut state_machine = StateMachine::initialize(node_tree_writer, app, configuration.progress_mode, configuration.identity, configuration.ipc);
             state_machine.enter(State::Sync);
         })
     }

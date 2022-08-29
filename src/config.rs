@@ -1,10 +1,9 @@
 use std::time::Duration;
 use std::net::IpAddr;
-use crate::identity::{KeyPair, PublicKey, ParticipantSet};
+use crate::identity::{PublicAddr, ParticipantSet, KeyPair};
 
 /// Configuration as specified by the operator. This is split up into smaller, subsystem specific config structs
 /// before being passed to components.
-#[derive(Clone)]
 pub struct Configuration {
     pub identity: IdentityConfig,
     pub node_tree: NodeTreeConfig,
@@ -12,10 +11,9 @@ pub struct Configuration {
     pub ipc: IPCConfig,
 }
 
-#[derive(Clone)]
 pub struct IdentityConfig {
     pub my_keypair: KeyPair,
-    pub my_public_addr: PublicKey,
+    pub my_public_addr: PublicAddr,
     pub static_participant_set: ParticipantSet,
 }
 
