@@ -1,7 +1,7 @@
 use std::thread;
-use crate::App;
+use crate::app::App;
 use crate::config::Configuration;
-use crate::{node_tree, NodeTreeWriter, NodeTreeSnapshotFactory};
+use crate::node_tree::{self, NodeTreeWriter, NodeTreeSnapshotFactory};
 use crate::state_machine::{State, StateMachine};
 
 struct HotStuff {

@@ -17,8 +17,3 @@ pub(crate) mod identity;
 pub(crate) mod state_machine;
 
 pub(crate) mod ipc;
-
-// Re-exports
-pub use app::App;
-pub use node_tree::*;
-

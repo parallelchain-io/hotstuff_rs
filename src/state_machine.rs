@@ -2,10 +2,9 @@ use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
 use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
-use crate::app::Node as AppNode;
-use crate::App;
+use crate::app::{App, Node as AppNode, WorldStateHandle};
 use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
-use crate::{WorldState, NodeTreeWriter};
+use crate::node_tree::NodeTreeWriter;
 use crate::identity::{PublicAddr, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
 
@@ -96,7 +95,7 @@ impl<A: App> StateMachine<A> {
             let parent_node = self.node_tree.get_node(&self.top_qc.node_hash).unwrap();
             let (command, state) = {
                 let app_node = AppNode::new(parent_node.clone(), &self.node_tree);
-                let world_state = WorldState::open(&self.node_tree, &parent_node.hash);
+                let world_state = WorldStateHandle::open(&self.node_tree, &parent_node.hash);
                 self.app.create_leaf(&app_node, world_state, deadline)
             };
             let node = MsgNode {
@@ -182,7 +181,7 @@ impl<A: App> StateMachine<A> {
 
         // 1. Call App to execute the proposed Node.
         let app_node = AppNode::new(proposed_node.clone(), &self.node_tree);
-        let world_state = WorldState::open(&self.node_tree, &proposed_node.justify.node_hash);   
+        let world_state = WorldStateHandle::open(&self.node_tree, &proposed_node.justify.node_hash);   
         let deadline = deadline - self.ipc_config.expected_worst_case_net_latency; 
         let writes = match self.app.execute(&app_node, world_state, deadline) {
             Ok(writes) => writes.into(),

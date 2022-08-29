@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::convert::identity;
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::NodeTreeConfig;
-use crate::stored_types::{WriteSet, ChildrenList, Key, Value};
-use crate::msg_types::{Node, NodeHash, ViewNumber};
+use crate::stored_types::{WriteSet, ChildrenList};
+use crate::msg_types::{Node, NodeHash, ViewNumber, SerDe};
 
 pub fn open(node_tree_config: &NodeTreeConfig) -> (NodeTreeWriter, NodeTreeSnapshotFactory) {
     todo!()
@@ -100,53 +100,65 @@ impl NodeTreeWriter {
 // Getters and setters for Nodes and chains of Nodes.
 impl NodeTreeWriter {
     fn set_node(wb: &mut WriteBatch, node: &Node) {
-        todo!()
+        wb.put(prefix(special_prefixes::NODES, &node.hash), node.serialize());
     }
 
     pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
-        todo!()
+        Some(Node::deserialize(&self.db.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap())
     }
 
     fn delete_branch(&self, wb: &mut WriteBatch, tail_node_hash: &NodeHash) {
-        todo!()
+        // 1. Delete children.
+        if let Some(children) = self.get_children_list(tail_node_hash) {
+            for child_hash in children.iter() {
+                self.delete_branch(wb, &child_hash);
+            }
+        }
+
+        // 2. Delete tail.
+        Self::delete_node(wb, tail_node_hash);
+        Self::delete_write_set(wb, tail_node_hash);
+        Self::delete_children_list(wb, tail_node_hash);
     }
 
     fn delete_node(wb: &mut WriteBatch, node_hash: &NodeHash) {
-        todo!()
+        wb.delete(prefix(special_prefixes::NODES, node_hash))
     }
 }
 
 // Getters and Setters for WriteSets.
 impl NodeTreeWriter {
     pub fn set_write_set(wb: &mut WriteBatch, node_hash: &NodeHash, write_set: &WriteSet) {
-        todo!()
+        wb.put(prefix(special_prefixes::WRITE_SETS, node_hash), write_set.serialize());
     }
 
     pub fn get_write_set(&self, node_hash: &NodeHash) -> Option<WriteSet> {
-        todo!()
+        Some(WriteSet::deserialize(&self.db.get(&prefix(special_prefixes::WRITE_SETS, node_hash)).unwrap()?).unwrap())
     }
 
     pub fn apply_write_set(wb: &mut WriteBatch, write_set: &WriteSet) {
-        todo!()
+        for (key, value) in write_set.iter() {
+            wb.put(prefix(special_prefixes::WORLD_STATE, key), value)
+        }
     }
 
-    pub fn delete_write_set(wb: &mut WriteBatch, node_hash: &NodeHash) -> bool {
-        todo!()
+    pub fn delete_write_set(wb: &mut WriteBatch, node_hash: &NodeHash) {
+        wb.delete(prefix(special_prefixes::WRITE_SETS, node_hash))
     } 
 }
 
 // Getters and Setters for ChildrenLists.
 impl NodeTreeWriter {
     pub fn set_children_list(wb: &mut WriteBatch, node_hash: &NodeHash, children_list: &ChildrenList) {
-        todo!()
+        wb.put(prefix(special_prefixes::CHILDREN_LISTS, node_hash), children_list.serialize())
     }
 
     pub fn get_children_list(&self, node_hash: &NodeHash) -> Option<ChildrenList> {
-        todo!()
+        Some(ChildrenList::deserialize(&self.db.get(&prefix(special_prefixes::CHILDREN_LISTS, node_hash)).unwrap()?).unwrap())
     }
 
-    pub fn delete_children_list(wb: &mut WriteBatch, node_hash: &NodeHash) -> bool {
-        todo!()
+    pub fn delete_children_list(wb: &mut WriteBatch, node_hash: &NodeHash) {
+        wb.delete(prefix(special_prefixes::CHILDREN_LISTS, node_hash))
     }
 }
 
@@ -158,7 +170,9 @@ pub struct NodeTreeSnapshotFactory {
 
 impl NodeTreeSnapshotFactory {
     pub fn snapshot(&self) -> NodeTreeSnapshot {
-        todo!()
+        NodeTreeSnapshot {
+            db_snapshot: self.db.snapshot()
+        }
     }
 }
 
@@ -169,80 +183,52 @@ pub struct NodeTreeSnapshot<'a> {
 
 impl<'a> NodeTreeSnapshot<'a> {
     pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
-        todo!()
+        Some(Node::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap())
     }
 
-    pub fn get_child(&self, parent_node_hash: &NodeHash) -> Result<Node, IsHighestCommittedNodeError> {
-        todo!()
+    pub fn get_child(&self, parent_node_hash: &NodeHash) -> Result<Node, ChildrenNotYetCommittedError> {
+        let highest_committed_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
+        let highest_committed_node = self.get_node(&highest_committed_node_hash).unwrap();
+        let parent_node = self.get_node(&parent_node_hash).unwrap();
+        if parent_node.height >= highest_committed_node.height {
+            return Err(ChildrenNotYetCommittedError)
+        }
+
+        let parent_children = ChildrenList::deserialize(&self.db_snapshot.get(&prefix(special_prefixes::CHILDREN_LISTS, parent_node_hash)).unwrap().unwrap()).unwrap();
+        // Safety: parent_children.len() must be 1, since parent is an ancestor of a committed Node. 
+        let child_hash = parent_children.iter().next().unwrap();
+        Ok(self.get_node(child_hash).unwrap())
     }
 
     pub fn get_top_node(&self) -> Node {
-        todo!()
+        let top_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_TOP_NODE).unwrap().unwrap()).unwrap();
+        self.get_node(&top_node_hash).unwrap()
     }
 
     pub fn get_highest_committed_node(&self) -> Node {
-        todo!()
+        let highest_committed_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
+        self.get_node(&highest_committed_node_hash).unwrap()
     }
 }
 
-pub struct IsHighestCommittedNodeError;
+pub struct ChildrenNotYetCommittedError;
 
 mod special_prefixes {
-    const NODES: [u8; 1] = [00];
-    const WRITE_SETS: [u8; 1] = [01];
-    const CHILDREN_LISTS: [u8; 1] = [02];
-    const WORLD_STATE: [u8; 1] = [03]; 
+    pub(super) const NODES: [u8; 1] = [00];
+    pub(super) const WRITE_SETS: [u8; 1] = [01];
+    pub(super) const CHILDREN_LISTS: [u8; 1] = [02];
+    pub(super) const WORLD_STATE: [u8; 1] = [03]; 
 }
 
 fn prefix(prefix: [u8; 1], additional_key: &[u8]) -> Vec<u8> {
     let prefixed_key = Vec::with_capacity(prefix.len() + additional_key.len());
-        prefixed_key.extend_from_slice(&prefix);
-        prefixed_key.extend_from_slice(additional_key);
-        prefixed_key
-    }
+    prefixed_key.extend_from_slice(&prefix);
+    prefixed_key.extend_from_slice(additional_key);
+    prefixed_key
+}
 
 mod special_keys {
-    pub const LOCKED_VIEW: [u8; 1] = [10];
-    pub const HASH_OF_TOP_NODE: [u8; 1] = [11];
-    pub const HASH_OF_HIGHEST_COMMITTED_NODE: [u8; 1] = [12];
-}
-
-pub struct WorldState {
-    writes: WriteSet,
-    parent_writes: WriteSet,
-    grandparent_writes: WriteSet,
-}
-
-impl WorldState {
-    pub fn open(node_tree: &NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldState {
-        let parent_writes = node_tree.get_write_set(&parent_node_hash).map_or(WriteSet::new(), identity);
-        let grandparent_writes = {
-            let grandparent_node_hash = node_tree.get_node(parent_node_hash).unwrap().justify.node_hash;
-            node_tree.get_write_set(&grandparent_node_hash).map_or(WriteSet::new(), identity)
-        };
-
-        WorldState {
-            writes: WriteSet::new(),
-            parent_writes,
-            grandparent_writes,
-        }
-    }
-
-    pub fn set(&mut self, key: Key, value: Value) {
-        todo!()
-    }
-
-    pub fn delete(&mut self, key: &Key) {
-        todo!()
-    }
-
-    pub fn get(&self, key: &Key) -> Value {
-        todo!()
-    }
-}
-
-impl Into<WriteSet> for WorldState {
-    fn into(self) -> WriteSet {
-        todo!()
-    }
+    pub(super) const LOCKED_VIEW: [u8; 1] = [10];
+    pub(super) const HASH_OF_TOP_NODE: [u8; 1] = [11];
+    pub(super) const HASH_OF_HIGHEST_COMMITTED_NODE: [u8; 1] = [12];
 }
