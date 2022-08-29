@@ -1,6 +1,6 @@
 use std::time::Duration;
 use std::net::IpAddr;
-use crate::identity::{SecretKey, PublicAddr, ParticipantSet};
+use crate::identity::{KeyPair, PublicKey, ParticipantSet};
 
 /// Configuration as specified by the operator. This is split up into smaller, subsystem specific config structs
 /// before being passed to components.
@@ -14,8 +14,8 @@ pub struct Configuration {
 
 #[derive(Clone)]
 pub struct IdentityConfig {
-    pub my_secret_key: SecretKey,
-    pub my_public_addr: PublicAddr,
+    pub my_keypair: KeyPair,
+    pub my_public_addr: PublicKey,
     pub static_participant_set: ParticipantSet,
 }
 

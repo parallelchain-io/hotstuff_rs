@@ -1,7 +1,7 @@
 use std::time::{Instant, Duration};
 use crate::config::{IdentityConfig, IPCConfig};
 use crate::msg_types::ConsensusMsg;
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::{PublicKey, ParticipantSet};
 use crate::ipc::{ConnectionSet, StreamReadError};
 
 /// Handle exposes methods for sending ConsensusMsgs to, and receiving ConsensusMsgs from other Participants. All of Handle's methods
@@ -19,16 +19,16 @@ impl Handle {
         }
     }
 
-    /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. Returns false if there is
+    /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicKey. Returns false if there is
     /// no Stream corresponding to public_addr in the ConnectionSet, or if the Stream is corrupted, in which case Handle will
     /// transparently arrange for Stream to be dropped and re-established.
-    pub fn send_to(&self, public_addr: &PublicAddr, msg: &ConsensusMsg) -> bool {
-        match self.connections.get(&public_addr) {
+    pub fn send_to(&self, public_key: &PublicKey, msg: &ConsensusMsg) -> bool {
+        match self.connections.get(&public_key) {
             Some(stream) => {
                 match stream.write(&msg) {
                     Ok(_) => true,
                     Err(_) => {
-                        let _ = self.connections.reconnect((*public_addr, stream.peer_addr().ip()));
+                        let _ = self.connections.reconnect((*public_key, stream.peer_addr().ip()));
                         false
                     },
                 }
@@ -52,7 +52,7 @@ impl Handle {
     }
 
     /// Attempts to receive a ConsensusMsg from a particular Participant for at most timeout Duration.
-    pub fn recv_from(&self, public_addr: &PublicAddr, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+    pub fn recv_from(&self, public_addr: &PublicKey, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
         match self.connections.get(public_addr) {
             Some(stream) => {
                 stream.read(timeout).map_err(|e| match e {
@@ -68,7 +68,7 @@ impl Handle {
     }
 
     /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
-    pub fn recv_from_any(&self, timeout: Duration) -> Result<(PublicAddr, ConsensusMsg), RecvFromError> {
+    pub fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKey, ConsensusMsg), RecvFromError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             match self.connections.get_random() {

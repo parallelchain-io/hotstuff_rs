@@ -1,19 +1,17 @@
 use std::collections::BTreeMap;
 use std::net::IpAddr;
-use crate::msg_types::Signature;
+use ed25519_dalek::{
+    Keypair as DalekKeypair,
+    PublicKey as DalekPublicKey,
+    SecretKey as DalekSecretKey,
+};
 
-pub type PublicAddr = [u8; 32];
-
-/// ParticipantSet is a one-to-many mapping between PublicAddr and IpAddr in ascending order of PublicAddr: `get_index(n)` returns
-/// the (PublicAddr, IpAddr) pair with the 'length - n'-th numerically-largest PublicAddr. This property simplifies SignatureSet
+/// the (PublicKey, IpAddr) pair with the 'length - n'-th numerically-largest PublicKey. This property simplifies SignatureSet
 /// verification.
-pub type ParticipantSet = BTreeMap<PublicAddr, IpAddr>;
+pub type ParticipantSet = BTreeMap<PublicKey, IpAddr>;
 
-#[derive(Clone)]
-pub struct SecretKey([u8; 32]);
+pub type KeyPair = DalekKeypair;
 
-impl SecretKey {
-    pub fn sign(&self, bs: &[u8]) -> Signature {
-        todo!()
-    }
-}
+pub type PublicKey = DalekPublicKey;
+
+pub type SecretKey = DalekSecretKey;

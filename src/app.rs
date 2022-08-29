@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::collections::HashSet;
 use std::time::Instant;
 use crate::node_tree::NodeTreeWriter;
-use crate::stored_types::{WriteSet, Key};
+use crate::stored_types::{WriteSet, Key, Value};
 use crate::msg_types::{Command, Node as MsgNode, NodeHash};
 
 pub trait App: Send + 'static {
@@ -89,13 +89,22 @@ impl<'a> WorldStateHandle<'a> {
         }
     }
 
-    pub fn set(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    pub fn set(&mut self, key: Key, value: Value) {
         self.writes.insert(key, value); 
     }
 
-    pub fn get(&self, key: &[u8]) -> Vec<u8> {
-        todo!()
+    pub fn get(&self, key: &Key) -> Value {
+        if let Some(value) = self.writes.get(key) {
+            value.clone()
+        } else if let Some(value) = self.parent_writes.get(key) {
+            value.clone()
+        } else if let Some(value) = self.grandparent_writes.get(key) {
+            value.clone()
+        } else {
+            self.db.get_from_state(key).unwrap()
+        }
     }
+
 }
 
 impl<'a> Into<WriteSet> for WorldStateHandle<'a> {

@@ -6,7 +6,19 @@ use crate::stored_types::{WriteSet, ChildrenList};
 use crate::msg_types::{Node, NodeHash, ViewNumber, SerDe};
 
 pub fn open(node_tree_config: &NodeTreeConfig) -> (NodeTreeWriter, NodeTreeSnapshotFactory) {
-    todo!()
+    let db = DB::open_default(node_tree_config.db_path)
+        .expect("Configuration error: fail to open DB.");
+    let db = Arc::new(db);
+    
+    let node_tree_writer = NodeTreeWriter {
+        db: Arc::clone(&db),
+    };
+
+    let node_tree_snapshot_factory = NodeTreeSnapshotFactory {
+        db: Arc::clone(&db),
+    };
+
+    (node_tree_writer, node_tree_snapshot_factory)
 }
 
 /// Used exclusively by the single thread of the Engine module.

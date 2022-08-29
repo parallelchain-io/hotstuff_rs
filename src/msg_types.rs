@@ -1,6 +1,6 @@
 use std::array;
 use std::mem;
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::{PublicKey, ParticipantSet};
 
 pub type ViewNumber = u64;
 pub type NodeHeight = u64;
@@ -201,17 +201,17 @@ impl QuorumCertificateBuilder {
 
     /// - This does not check whether signature is a correct signature.
     /// - Returns Ok(true) when insertion makes QuorumCertificateBuilder contain enough Signatures to form a QuorumCertificate.
-    pub fn insert(&mut self, signature: Signature, of_public_addr: PublicAddr) -> Result<bool, QCBuilderInsertError> {
+    pub fn insert(&mut self, signature: Signature, by_public_key: PublicKey) -> Result<bool, QCBuilderInsertError> {
         if QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()) {
             return Err(QCBuilderInsertError::AlreadyAQuorum)
         }
 
-        if let Some(position) = self.participant_set.keys().position(|public_addr| *public_addr == of_public_addr) {
+        if let Some(position) = self.participant_set.keys().position(|pk| *pk == by_public_key) {
             self.signature_set.insert(position, signature);
 
             Ok(QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()))
         } else {
-            Err(QCBuilderInsertError::PublicAddrNotInParticipantSet)
+            Err(QCBuilderInsertError::PublicKeyNotInParticipantSet)
         }
     }
 
@@ -226,7 +226,7 @@ impl QuorumCertificateBuilder {
 
 pub enum QCBuilderInsertError {
     AlreadyAQuorum,
-    PublicAddrNotInParticipantSet,
+    PublicKeyNotInParticipantSet,
 }
 
 #[derive(Clone)]
@@ -248,9 +248,9 @@ impl SignatureSet {
     }
 
     /// The caller has the responsibility to ensure that Signatures in the SignatureSet are sorted in ascending order of the
-    /// PublicAddr that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
+    /// PublicKey that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
     /// to the 'length - n' numerically largest Participant in a ParticipantSet. By imposing an order on SignatureSet, mappings
-    /// between PublicAddr and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
+    /// between PublicKey and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
     pub fn insert(&mut self, index: usize, signature: Signature) -> Result<(), AlreadyInsertedError> {
         if self.signatures[index].is_some() {
             Err(AlreadyInsertedError)

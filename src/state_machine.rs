@@ -5,7 +5,7 @@ use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, Consensus
 use crate::app::{App, Node as AppNode, WorldStateHandle};
 use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
 use crate::node_tree::NodeTreeWriter;
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::{PublicKey, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
 
 pub(crate) struct StateMachine<A: App> {
@@ -119,7 +119,7 @@ impl<A: App> StateMachine<A> {
         self.ipc_handle.broadcast(&proposal);
 
         // 2. Send a VOTE for our own proposal to the next leader.
-        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, self.identity_config.my_secret_key.sign(&leaf_hash));
+        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, self.identity_config.my_keypair.sign(&leaf_hash));
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         self.ipc_handle.send_to(&next_leader, &vote);
 
@@ -195,7 +195,7 @@ impl<A: App> StateMachine<A> {
 
         // 1. Send a VOTE message to the next leader.
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
-        let vote = ConsensusMsg::Vote(self.cur_view, proposed_node.hash, self.identity_config.my_secret_key.sign(&proposed_node.hash));
+        let vote = ConsensusMsg::Vote(self.cur_view, proposed_node.hash, self.identity_config.my_keypair.sign(&proposed_node.hash));
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 2. If next leader == me, change to State::NextLeader.
@@ -266,14 +266,16 @@ impl<A: App> StateMachine<A> {
     }
 }
 
-pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
-    todo!()
+pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicKey {
+    let idx = cur_view % participant_set.len();
+    participant_set[idx]
 }
 
-pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, generic_qc: &QuorumCertificate) -> Duration {
-    todo!()
+pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
+    tnt + Duration::new(usize::checked_pow(2, cur_view - top_qc.view_number), 0)
 }
 
 pub fn safe_node(node: &MsgNode, node_tree: &NodeTreeWriter) -> bool {
-    todo!()
+    let locked_view = node_tree.get_locked_view();
+    node.justify.node_hash >= locked_view
 }
