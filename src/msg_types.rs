@@ -141,7 +141,7 @@ impl SerDe for Node {
         let command_len = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
         cursor += mem::size_of::<u64>();
 
-        let command = bs[cursor..command_len as usize].to_vec();
+        let command = bs[cursor..cursor + command_len as usize].to_vec();
         cursor += command_len as usize;
 
         let (bytes_read, justify) = QuorumCertificate::deserialize(&bs[cursor..])?; 
@@ -301,6 +301,11 @@ impl SerDe for SignatureSet {
     //         0 
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
+
+        // Number counts both Some and None signatures.
+        let num_sigs = self.signatures.len().to_le_bytes();
+        buf.extend_from_slice(&num_sigs);
+
         for signature in &self.signatures {
             match signature {
                 Some(sig) => { 
