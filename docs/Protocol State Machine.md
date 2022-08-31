@@ -1,6 +1,6 @@
-# Engine Thread
+# HotStuff-rs Protocol State Machine
 
-The *Engine Thread* works to extend the NodeTree. Starting with *Sync*, the flow cycles between 6 states: *Sync*, *BeginView*, *Leader*, *Replica*, *NextLeader*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases'.
+The *Protocol State Machine* works to extend the NodeTree. Starting with *Sync*, the flow cycles between 6 states: *Sync*, *BeginView*, *Leader*, *Replica*, *NextLeader*, and *NewView*. This section documents Progress Mode behavior in terms of its steps. To aid with understanding, we group the steps of the Leader and Replica states in terms of high-level 'phases'.
 
 ## State Machine 
 

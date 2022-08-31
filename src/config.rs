@@ -31,6 +31,7 @@ pub struct NodeTreeApiConfig {
 #[derive(Clone)]
 pub struct StateMachineConfig {
     pub target_node_time: Duration,
+    pub sync_mode_execution_timeout: Duration,
 }
 
 #[derive(Clone)]

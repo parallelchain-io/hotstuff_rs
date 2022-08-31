@@ -4,7 +4,7 @@ use std::cmp::{min, max};
 use std::thread;
 use ed25519_dalek::Signer;
 use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
-use crate::app::{App, Node as AppNode, WorldStateHandle};
+use crate::app::{App, Node as AppNode, WorldStateHandle, ExecuteError};
 use crate::config::{StateMachineConfig, NetworkingConfiguration, IdentityConfig};
 use crate::node_tree::NodeTreeWriter;
 use crate::identity::{PublicAddr, ParticipantSet};
@@ -61,6 +61,7 @@ impl<A: App> StateMachine<A> {
             cur_view,
             node_tree,
             ipc_handle,
+            round_robin_idx: 0,
             networking_config: ipc_config,
             identity_config,
             state_machine_config: progress_mode_config,
@@ -191,12 +192,13 @@ impl<A: App> StateMachine<A> {
         let app_node = AppNode::new(proposed_node.clone(), &self.node_tree);
         let world_state = WorldStateHandle::open(&self.node_tree, &proposed_node.justify.node_hash);   
         let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
-        let writes = match self.app.execute(&app_node, world_state, deadline) {
+        let execution_result = self.app.execute(&app_node, world_state, deadline);
+ 
+        // 2. If App accepts the Node, write it and its writes into the NodeTree.
+        let writes = match execution_result {
             Ok(writes) => writes.into(),
             Err(_) => return State::NewView, // If the App rejects the Node, change to NewView.
         };
-
-        // 2. Write validated Node into NodeTree.
         self.node_tree.insert_node(&proposed_node, &writes);
 
         // Phase 3: Vote for the proposal.
@@ -299,8 +301,8 @@ impl<A: App> StateMachine<A> {
                 };
     
                 // 3. Filter the extension chain so that it includes only the nodes that we do *not* have in the local NodeTree.
-                let extension_chain = extension_chain.iter().filter(|node| self.node_tree.get_node(&node.hash).is_some());
-                if extension_chain.peekable().peek().is_none() {
+                let mut extension_chain = extension_chain.iter().filter(|node| self.node_tree.get_node(&node.hash).is_some()).peekable();
+                if extension_chain.peek().is_none() {
                     // 3.1. If, after the Filter, the chain has length 0, change to BeginView (this suggests that we are *not* lagging behind, after all).
                     return State::BeginView
                 }
@@ -311,16 +313,22 @@ impl<A: App> StateMachine<A> {
                         || !node.justify.is_cryptographically_correct() {
                             // Jump back to 1.: pick another participant to sync with.
                             break
-                        }
+                    }
 
                     // 5. Call App to validate node.
+                    let app_node = AppNode::new(node.clone(), &self.node_tree);
+                    let world_state = WorldStateHandle::open(&self.node_tree, &node.justify.node_hash);
+                    let deadline = Instant::now() + self.state_machine_config.sync_mode_execution_timeout;
+                    let execution_result = self.app.execute(&app_node, world_state, deadline);
 
+                    // 6. If App accepts the Node, write it and its write into the NodeTree.
+                    let writes = match execution_result {
+                        Ok(writes) => writes.into(),
+                        Err(ExecuteError::RanOutOfTime) => panic!("Configuration Error: ran out of time executing a Node during Sync"), 
+                        Err(ExecuteError::InvalidNode) => panic!("Possible Byzantine Fault: a quorum voted on an App-invalid Node."),
+                    };
+                    self.node_tree.insert_node(&node, &writes);
                 }
-    
-    
-    
-    
-    
             }
         }
     }
