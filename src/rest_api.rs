@@ -1,9 +1,13 @@
 use std::net::SocketAddr;
 use std::cmp::min;
+use std::thread;
+use std::sync::mpsc;
+use std::time::Duration;
 use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
+use crate::identity::ParticipantSet;
 use crate::msg_types::{Node, NodeHash, SerDe};
 use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError, self};
 use crate::config::NodeTreeApiConfig;
@@ -179,4 +183,37 @@ fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &Nod
     } 
 
     res
+}
+
+pub struct SyncModeClient {
+    getter: thread::JoinHandle<()>,
+    to_getter: mpsc::Sender<GetNodesFromAllRequest>,
+    from_getter: mpsc::Receiver<Result<Vec<u8>, GetNodesFromAllError>>,
+}
+
+impl SyncModeClient {
+    pub fn new() -> SyncModeClient {
+        todo!()
+    }
+
+    pub fn get_nodes_from_all(request: GetNodesFromAllRequest) -> Result<Vec<u8>, GetNodesFromAllError> {
+        todo!()
+    }
+
+    fn start_getter() -> thread::JoinHandle<()> {
+        todo!()
+    }
+}
+
+pub struct GetNodesFromAllRequest {
+    start_node_hash: NodeHash,
+    limit: usize, 
+    participant_set: ParticipantSet,
+    timeout: Duration,
+}
+
+pub enum GetNodesFromAllError {
+    TimedOut,
+    NoQuorumAgreement,
+    StartNodeNotFound,
 }

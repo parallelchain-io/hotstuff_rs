@@ -4,13 +4,13 @@ pub mod app;
 
 pub mod config;
 
-pub mod rest_api;
-
 pub mod node_tree;
 
 pub mod stored_types;
 
 pub mod msg_types;
+
+pub(crate) mod rest_api;
 
 pub(crate) mod identity;
 
