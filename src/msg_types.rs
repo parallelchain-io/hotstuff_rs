@@ -170,9 +170,17 @@ pub struct QuorumCertificate {
 }
 
 impl QuorumCertificate {
-    pub fn is_quorum(num_votes: usize, num_participants: usize) -> bool {
+    pub fn quorum_size(num_participants: usize) -> usize {
         // '/' here is integer (floor) division. 
-        num_votes >= (num_participants * 2) / 3 + 1
+        (num_participants * 2) / 3 + 1
+    }
+
+    pub fn is_quorum(&self, num_participants: usize) -> bool {
+        self.sigs.count() > Self::quorum_size(num_participants) 
+    }
+
+    pub fn is_cryptographically_correct(&self) -> bool {
+        todo!()
     }
 }
 
@@ -224,22 +232,21 @@ impl QuorumCertificateBuilder {
             participant_set,
         }
     }
-
+    
     /// - This does not check whether signature is a correct signature.
     /// - Returns Ok(true) when insertion makes QuorumCertificateBuilder contain enough Signatures to form a QuorumCertificate.
     pub fn insert(&mut self, signature: Signature, by_public_addr: PublicAddr) -> Result<bool, QCBuilderInsertError> {
-        if QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()) {
+        if self.signature_set.count() > QuorumCertificate::quorum_size(self.participant_set.len()) {
             return Err(QCBuilderInsertError::AlreadyAQuorum)
         }
-
         if let Some(position) = self.participant_set.keys().position(|pk| *pk == by_public_addr) {
             self.signature_set.insert(position, signature);
-
-            Ok(QuorumCertificate::is_quorum(self.signature_set.count(), self.participant_set.len()))
-        } else {
-            Err(QCBuilderInsertError::PublicAddrNotInParticipantSet)
+    
+            Ok(self.signature_set.count() > QuorumCertificate::quorum_size(self.participant_set.len()))
+            } else {
+                Err(QCBuilderInsertError::PublicAddrNotInParticipantSet)
+            }
         }
-    }
 
     pub fn into_qc(self) -> QuorumCertificate {
         QuorumCertificate { 

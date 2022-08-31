@@ -3,7 +3,6 @@ use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
 use ed25519_dalek::Signer;
-use pchain_types::Base64URL;
 use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::app::{App, Node as AppNode, WorldStateHandle};
 use crate::config::{StateMachineConfig, NetworkingConfiguration, IdentityConfig};
@@ -15,7 +14,7 @@ use crate::rest_api::SyncModeClient;
 pub(crate) struct StateMachine<A: App> {
     // # Mutable state variables.
     cur_view: ViewNumber,
-    top_qc: QuorumCertificate,
+    top_qc: QuorumCertificate, // The cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
     node_tree: NodeTreeWriter,
 
     // # World State transition function.
@@ -23,9 +22,10 @@ pub(crate) struct StateMachine<A: App> {
 
     // # Networking utilities.
     ipc_handle: IPCHandle,
+    round_robin_idx: usize,
 
     // # Configuration variables.
-    network_config: NetworkingConfiguration,
+    networking_config: NetworkingConfiguration,
     identity_config: IdentityConfig,
     state_machine_config: StateMachineConfig,
 }
@@ -61,7 +61,7 @@ impl<A: App> StateMachine<A> {
             cur_view,
             node_tree,
             ipc_handle,
-            network_config: ipc_config,
+            networking_config: ipc_config,
             identity_config,
             state_machine_config: progress_mode_config,
             app
@@ -138,7 +138,7 @@ impl<A: App> StateMachine<A> {
 
         // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
 
-        let sleep_duration = min(2 * self.network_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
+        let sleep_duration = min(2 * self.networking_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Begin the next View.
@@ -190,7 +190,7 @@ impl<A: App> StateMachine<A> {
         // 1. Call App to execute the proposed Node.
         let app_node = AppNode::new(proposed_node.clone(), &self.node_tree);
         let world_state = WorldStateHandle::open(&self.node_tree, &proposed_node.justify.node_hash);   
-        let deadline = deadline - self.network_config.progress_mode.expected_worst_case_net_latency; 
+        let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
         let writes = match self.app.execute(&app_node, world_state, deadline) {
             Ok(writes) => writes.into(),
             Err(_) => return State::NewView, // If the App rejects the Node, change to NewView.
@@ -212,7 +212,7 @@ impl<A: App> StateMachine<A> {
         }
 
         // Phase 4: Wait for the next leader to finish collecting votes
-        let sleep_duration = min(self.network_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
+        let sleep_duration = min(self.networking_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Begin the next View.
@@ -222,7 +222,9 @@ impl<A: App> StateMachine<A> {
 
     fn do_next_leader(&mut self, deadline: Instant, pending_node_hash: NodeHash) -> State {
         // 1. Read messages from every participant until deadline is reached or until a new QC is collected.
-        let mut qc_builder = QuorumCertificateBuilder::new(self.cur_view, pending_node_hash, self.identity_config.static_participant_set.clone());
+        let mut qc_builder = QuorumCertificateBuilder::new(
+            self.cur_view, pending_node_hash, self.identity_config.static_participant_set.clone()
+        );
         loop {
             if Instant::now() >= deadline {
                 return State::NewView
@@ -271,8 +273,55 @@ impl<A: App> StateMachine<A> {
     }
 
     fn do_sync(&mut self) -> State {
+        let client = SyncModeClient::new(self.networking_config.sync_mode.request_timeout);
         loop {
-            todo!()
+            // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
+            let participant_idx = { 
+                self.round_robin_idx += 1; 
+                if self.identity_config.static_participant_set.len() > self.round_robin_idx {
+                    self.round_robin_idx = 0;
+                }
+                self.round_robin_idx
+            };
+            let participant_ip_addr = self.identity_config.static_participant_set.values().nth(participant_idx).unwrap();
+
+            loop {
+                // 2. Hit the participant’s GET /nodes endpoint for a chain of `request_jump_size` Nodes starting from our highest committed Node.
+                let highest_committed_node = self.node_tree.get_highest_committed_node();
+                let request_result = client.get_nodes_from_tail(
+                    &highest_committed_node.hash, 
+                    self.networking_config.sync_mode.request_jump_size,
+                    participant_ip_addr,
+                );
+                let extension_chain = match request_result {
+                    Ok(nodes) => nodes,
+                    Err(_) => continue,
+                };
+    
+                // 3. Filter the extension chain so that it includes only the nodes that we do *not* have in the local NodeTree.
+                let extension_chain = extension_chain.iter().filter(|node| self.node_tree.get_node(&node.hash).is_some());
+                if extension_chain.peekable().peek().is_none() {
+                    // 3.1. If, after the Filter, the chain has length 0, change to BeginView (this suggests that we are *not* lagging behind, after all).
+                    return State::BeginView
+                }
+    
+                for node in extension_chain {
+                    // 4. Validate node cryptographically. 
+                    if !node.justify.is_quorum(self.identity_config.static_participant_set.len())
+                        || !node.justify.is_cryptographically_correct() {
+                            // Jump back to 1.: pick another participant to sync with.
+                            break
+                        }
+
+                    // 5. Call App to validate node.
+
+                }
+    
+    
+    
+    
+    
+            }
         }
     }
 }

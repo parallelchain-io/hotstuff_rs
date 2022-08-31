@@ -194,13 +194,13 @@ fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &Nod
 pub(crate) struct SyncModeClient(reqwest::blocking::Client);
 
 impl SyncModeClient {
-    fn new(request_timeout: Duration) -> SyncModeClient {
+    pub fn new(request_timeout: Duration) -> SyncModeClient {
         let reqwest_client = reqwest::blocking::Client::builder().timeout(request_timeout).build()
             .expect("Programming or Configuration error: failed to open a HTTP client for SyncModeClient.");
         SyncModeClient(reqwest_client)
     }
 
-    fn get_nodes_from_tail(&self, tail_node_hash: &NodeHash, limit: usize, participant_ip_addr: IpAddr, timeout: Duration) -> Result<Vec<Node>, GetNodesFromTailError> {
+    pub fn get_nodes_from_tail(&self, tail_node_hash: &NodeHash, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Node>, GetNodesFromTailError> {
         let url = format!(
             "http://{}/nodes?hash={}&anchor=end&limit={}&speculate=true",
             participant_ip_addr,
