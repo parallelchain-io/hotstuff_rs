@@ -77,6 +77,9 @@ impl Establisher {
                 }
 
                 // 2. Pick random target from pending targets. 
+                if pending_targets.len() == 0 {
+                    continue
+                }
                 let random_idx = rng.gen_range(0..pending_targets.len());
                 let target = pending_targets.get_index(random_idx).unwrap();
                 let target_socket_addr = SocketAddr::new(target.1, ipc_config.progress_mode.listening_port);
