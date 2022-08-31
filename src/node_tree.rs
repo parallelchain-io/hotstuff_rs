@@ -21,15 +21,28 @@ pub fn open(node_tree_config: &NodeTreeConfig) -> (NodeTreeWriter, NodeTreeSnaps
     (node_tree_writer, node_tree_snapshot_factory)
 }
 
+fn initialize(node_tree_writer: &mut NodeTreeWriter) {
+    todo!()
+}
+
 /// Used exclusively by the single thread of the Engine module.
 pub struct NodeTreeWriter {
     db: Arc<DB>,
 }
 
 impl NodeTreeWriter {
-    /// This function assumes that `node` satisfies the SafeNode predicate, and that it has a parent, grandparent,
-    /// great-grandparent, and great-great-grandparent are the NodeTree. In open, the Genesis Node is 'padded' with
-    /// 3 empty descendant Nodes to force this invariant.
+    /// # Safety
+    /// This function assumes that `node`:
+    /// 1. Has not been inserted before,
+    /// 2. Satisfies the SafeNode predicate, and
+    /// 3. That its parent, grandparent, great-grandparent, and great-great-grandparent are in the NodeTree.
+    /// 
+    /// To satisfy each assumption, this codebase maintains the following invariants:
+    /// 1. Consensus proceeds in strictly increasing view numbers, so no two Nodes can have the same view number.
+    /// 2. `crate::StateMachine` always checks the SafeNode predicate before calling this function.
+    /// 3. `initialize` does not only add a Genesis Node to the empty NodeTree, it also pads it with three additional
+    ///    descendant Nodes. These four nodes become the parent, grandparent, great-grandparent, and great-great-grandparent
+    ///    of the first Node agreed upon by consensus.
     pub fn insert_node(&self, node: &Node, write_set: &WriteSet) {
         let mut wb = WriteBatch::default();
 

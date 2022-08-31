@@ -7,8 +7,9 @@ use crate::identity::{PublicAddr, ParticipantSet, KeyPair};
 pub struct Configuration {
     pub identity: IdentityConfig,
     pub node_tree: NodeTreeConfig,
-    pub progress_mode: ProgressModeConfig,
-    pub ipc: IPCConfig,
+    pub node_tree_api: NodeTreeApiConfig,
+    pub state_machine: StateMachineConfig,
+    pub networking: NetworkingConfiguration,
 }
 
 pub struct IdentityConfig {
@@ -28,12 +29,18 @@ pub struct NodeTreeApiConfig {
 }
 
 #[derive(Clone)]
-pub struct ProgressModeConfig {
+pub struct StateMachineConfig {
     pub target_node_time: Duration,
 }
 
 #[derive(Clone)]
-pub struct IPCConfig {
+pub struct NetworkingConfiguration {
+    pub progress_mode: ProgressModeNetworkingConfig,
+    pub sync_mode: SyncModeNetworkingConfig,
+}
+
+#[derive(Clone)]
+pub struct ProgressModeNetworkingConfig {
     pub listening_addr: IpAddr,
     pub listening_port: u16,
     pub initiator_timeout: Duration,
@@ -42,4 +49,10 @@ pub struct IPCConfig {
     pub expected_worst_case_net_latency: Duration,
     pub reader_channel_buffer_len: usize,
     pub writer_channel_buffer_len: usize,
+}
+
+#[derive(Clone)]
+pub struct SyncModeNetworkingConfig {
+    pub request_jump_size: usize,
+    pub request_timeout: Duration,
 }

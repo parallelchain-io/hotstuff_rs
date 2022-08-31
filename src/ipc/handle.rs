@@ -1,5 +1,5 @@
 use std::time::{Instant, Duration};
-use crate::config::{IdentityConfig, IPCConfig};
+use crate::config::{IdentityConfig, NetworkingConfiguration};
 use crate::msg_types::ConsensusMsg;
 use crate::identity::{PublicAddr, ParticipantSet};
 use crate::ipc::{ConnectionSet, StreamReadError};
@@ -8,11 +8,11 @@ use crate::ipc::{ConnectionSet, StreamReadError};
 /// transparently handle errored streams by calling `ConnectionSet::reconnect` on them. 
 pub struct Handle {
     connections: ConnectionSet,
-    ipc_config: IPCConfig,
+    ipc_config: NetworkingConfiguration,
 }
 
 impl Handle {
-    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicAddr, ipc_config: IPCConfig) -> Handle {
+    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicAddr, ipc_config: NetworkingConfiguration) -> Handle {
         Handle {
             connections: ConnectionSet::new(static_participant_set, my_public_addr, ipc_config.clone()),
             ipc_config,

@@ -6,8 +6,12 @@ use ed25519_dalek::Signature as DalekSignature;
 use crate::identity::{PublicAddr, ParticipantSet};
 
 pub type ViewNumber = u64;
+
 pub type NodeHeight = u64;
-pub type NodeHash = [u8; 32];
+
+pub type NodeHash = [u8; NODE_HASH_LEN];
+pub const NODE_HASH_LEN: usize = 32;
+
 pub type Command = Vec<u8>;
 
 #[derive(Clone)]

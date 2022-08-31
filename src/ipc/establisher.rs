@@ -5,7 +5,7 @@ use std::net::{SocketAddr, IpAddr, TcpStream, TcpListener};
 use std::io::ErrorKind;
 use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
-use crate::config::IPCConfig;
+use crate::config::NetworkingConfiguration;
 use crate::ipc;
 use crate::identity::PublicAddr;
 
@@ -17,11 +17,11 @@ pub struct Establisher {
     listener: thread::JoinHandle<()>,
     to_listener: mpsc::Sender<EstablisherCmd>,
     my_public_addr: PublicAddr,
-    ipc_config: IPCConfig,
+    ipc_config: NetworkingConfiguration,
 }
 
 impl Establisher {
-    pub fn new(ipc_config: IPCConfig, my_public_addr: PublicAddr) -> (Establisher, mpsc::Receiver<EstablisherResult>) {
+    pub fn new(ipc_config: NetworkingConfiguration, my_public_addr: PublicAddr) -> (Establisher, mpsc::Receiver<EstablisherResult>) {
         let (to_main, from_establishers) = mpsc::channel();
         let (to_initiator, initiator_from_main) = mpsc::channel();
         let (to_listener, listener_from_main) = mpsc::channel();
@@ -63,7 +63,7 @@ impl Establisher {
     }
 
     fn start_initiator(
-        ipc_config: IPCConfig,
+        ipc_config: NetworkingConfiguration,
         from_main: mpsc::Receiver<EstablisherCmd>,
         to_main: mpsc::Sender<EstablisherResult>
     ) -> thread::JoinHandle<()> {
@@ -79,10 +79,10 @@ impl Establisher {
                 // 2. Pick random target from pending targets. 
                 let random_idx = rng.gen_range(0..pending_targets.len());
                 let target = pending_targets.get_index(random_idx).unwrap();
-                let target_socket_addr = SocketAddr::new(target.1, ipc_config.listening_port);
+                let target_socket_addr = SocketAddr::new(target.1, ipc_config.progress_mode.listening_port);
 
                 // 3. Attempt to establish stream to pending target.
-                let stream = match TcpStream::connect_timeout(&target_socket_addr, ipc_config.initiator_timeout) {
+                let stream = match TcpStream::connect_timeout(&target_socket_addr, ipc_config.progress_mode.initiator_timeout) {
                     Ok(stream) => stream,
                     Err(e) => match e.kind() {
                         ErrorKind::TimedOut => continue,
@@ -92,10 +92,10 @@ impl Establisher {
 
                 // 4. Send established connection to main.
                 let stream_config = StreamConfig {
-                    read_timeout: ipc_config.read_timeout,
-                    write_timeout: ipc_config.write_timeout,
-                    reader_channel_buffer_len: ipc_config.reader_channel_buffer_len,
-                    writer_channel_buffer_len: ipc_config.writer_channel_buffer_len,
+                    read_timeout: ipc_config.progress_mode.read_timeout,
+                    write_timeout: ipc_config.progress_mode.write_timeout,
+                    reader_channel_buffer_len: ipc_config.progress_mode.reader_channel_buffer_len,
+                    writer_channel_buffer_len: ipc_config.progress_mode.writer_channel_buffer_len,
                 };
                 to_main.send(EstablisherResult((target.0, Arc::new(ipc::Stream::new(stream, stream_config)))))
                     .expect("Programming error: main thread disconnected from Listener thread.");
@@ -104,13 +104,13 @@ impl Establisher {
     }
 
     fn start_listener(
-        ipc_config: IPCConfig,
+        ipc_config: NetworkingConfiguration,
         from_main: mpsc::Receiver<EstablisherCmd>,
         to_main: mpsc::Sender<EstablisherResult>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             let mut pending_targets = IndexMap::new();
-            let listening_socket_addr = SocketAddr::new(ipc_config.listening_addr, ipc_config.listening_port);
+            let listening_socket_addr = SocketAddr::new(ipc_config.progress_mode.listening_addr, ipc_config.progress_mode.listening_port);
             let listener = TcpListener::bind(listening_socket_addr).expect("Programming or Configuration error: unable to bind TcpListener");
 
             // 1. Bind TcpListener to listening port.
@@ -125,10 +125,10 @@ impl Establisher {
 
                 // 4. If established connection is in tasks list, send to main. 
                 let stream_config = StreamConfig {
-                    read_timeout: ipc_config.read_timeout,
-                    write_timeout: ipc_config.write_timeout,
-                    reader_channel_buffer_len: ipc_config.reader_channel_buffer_len,
-                    writer_channel_buffer_len: ipc_config.writer_channel_buffer_len,
+                    read_timeout: ipc_config.progress_mode.read_timeout,
+                    write_timeout: ipc_config.progress_mode.write_timeout,
+                    reader_channel_buffer_len: ipc_config.progress_mode.reader_channel_buffer_len,
+                    writer_channel_buffer_len: ipc_config.progress_mode.writer_channel_buffer_len,
                 };
                 if let Some(public_addr) =  pending_targets.get(&stream.peer_addr().unwrap().ip()) {
                     to_main.send(EstablisherResult((*public_addr, Arc::new(ipc::Stream::new(stream, stream_config)))))

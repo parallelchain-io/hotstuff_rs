@@ -3,25 +3,31 @@ use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
 use ed25519_dalek::Signer;
+use pchain_types::Base64URL;
 use crate::msg_types::{Node as MsgNode, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateBuilder, NodeHash};
 use crate::app::{App, Node as AppNode, WorldStateHandle};
-use crate::config::{ProgressModeConfig, IPCConfig, IdentityConfig};
+use crate::config::{StateMachineConfig, NetworkingConfiguration, IdentityConfig};
 use crate::node_tree::NodeTreeWriter;
 use crate::identity::{PublicAddr, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
+use crate::rest_api::SyncModeClient;
 
 pub(crate) struct StateMachine<A: App> {
-    // # Mutable state variables
+    // # Mutable state variables.
     cur_view: ViewNumber,
     top_qc: QuorumCertificate,
     node_tree: NodeTreeWriter,
 
-    // # Utilities
-    ipc_handle: IPCHandle,
-    ipc_config: IPCConfig,
-    identity_config: IdentityConfig,
-    progress_mode_config: ProgressModeConfig,
+    // # World State transition function.
     app: A,
+
+    // # Networking utilities.
+    ipc_handle: IPCHandle,
+
+    // # Configuration variables.
+    network_config: NetworkingConfiguration,
+    identity_config: IdentityConfig,
+    state_machine_config: StateMachineConfig,
 }
 
 pub enum State {
@@ -41,9 +47,9 @@ impl<A: App> StateMachine<A> {
     pub fn initialize(
         node_tree: NodeTreeWriter,
         app: A,
-        progress_mode_config: ProgressModeConfig,
+        progress_mode_config: StateMachineConfig,
         identity_config: IdentityConfig,
-        ipc_config: IPCConfig
+        ipc_config: NetworkingConfiguration
     ) -> StateMachine<A> {
         let top_node = node_tree.get_top_node();
         let top_qc = top_node.justify.clone();
@@ -55,9 +61,9 @@ impl<A: App> StateMachine<A> {
             cur_view,
             node_tree,
             ipc_handle,
-            ipc_config,
+            network_config: ipc_config,
             identity_config,
-            progress_mode_config,
+            state_machine_config: progress_mode_config,
             app
         }
     }
@@ -78,7 +84,7 @@ impl<A: App> StateMachine<A> {
 
     fn do_begin_view(&mut self) -> State {
         self.cur_view = max(self.cur_view, self.top_qc.view_number + 1);
-        let timeout = view_timeout(self.progress_mode_config.target_node_time, self.cur_view, &self.top_qc);
+        let timeout = view_timeout(self.state_machine_config.target_node_time, self.cur_view, &self.top_qc);
         let deadline = Instant::now() + timeout;
 
         if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
@@ -132,7 +138,7 @@ impl<A: App> StateMachine<A> {
 
         // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
 
-        let sleep_duration = min(2 * self.ipc_config.expected_worst_case_net_latency, deadline - Instant::now());
+        let sleep_duration = min(2 * self.network_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Begin the next View.
@@ -184,7 +190,7 @@ impl<A: App> StateMachine<A> {
         // 1. Call App to execute the proposed Node.
         let app_node = AppNode::new(proposed_node.clone(), &self.node_tree);
         let world_state = WorldStateHandle::open(&self.node_tree, &proposed_node.justify.node_hash);   
-        let deadline = deadline - self.ipc_config.expected_worst_case_net_latency; 
+        let deadline = deadline - self.network_config.progress_mode.expected_worst_case_net_latency; 
         let writes = match self.app.execute(&app_node, world_state, deadline) {
             Ok(writes) => writes.into(),
             Err(_) => return State::NewView, // If the App rejects the Node, change to NewView.
@@ -206,7 +212,7 @@ impl<A: App> StateMachine<A> {
         }
 
         // Phase 4: Wait for the next leader to finish collecting votes
-        let sleep_duration = min(self.ipc_config.expected_worst_case_net_latency, deadline - Instant::now());
+        let sleep_duration = min(self.network_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
         thread::sleep(sleep_duration);
 
         // Begin the next View.
@@ -255,16 +261,19 @@ impl<A: App> StateMachine<A> {
     }
 
     fn do_new_view(&mut self) -> State {
-        // 1. Send out a NEW-VIEW message containing cur_view and our Top QC.
+        // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
+        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
-        self.ipc_handle.broadcast(&new_view);
+        self.ipc_handle.send_to(&next_leader, &new_view);
 
         self.cur_view += 1;
         State::BeginView
     }
 
     fn do_sync(&mut self) -> State {
-        todo!()
+        loop {
+            todo!()
+        }
     }
 }
 

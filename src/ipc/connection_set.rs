@@ -5,7 +5,7 @@ use std::thread;
 use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
-use crate::config::{IPCConfig, IdentityConfig};
+use crate::config::{NetworkingConfiguration, IdentityConfig};
 use crate::ipc::{self, Establisher, EstablisherResult};
 use crate::identity::{PublicAddr, ParticipantSet};
 
@@ -25,7 +25,7 @@ pub struct ConnectionSet {
 type ParticipantSetVersion = usize;
 
 impl ConnectionSet {
-    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicAddr, ipc_config: IPCConfig) -> ConnectionSet { 
+    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicAddr, ipc_config: NetworkingConfiguration) -> ConnectionSet { 
         // 1. Create Establisher.
         let (establisher, from_establisher) = Establisher::new(ipc_config, my_public_addr);
         

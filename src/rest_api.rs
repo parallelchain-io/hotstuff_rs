@@ -1,14 +1,14 @@
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr};
 use std::cmp::min;
-use std::thread;
-use std::sync::mpsc;
+use std::ops::Deref;
 use std::time::Duration;
 use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
-use crate::identity::ParticipantSet;
-use crate::msg_types::{Node, NodeHash, SerDe};
+use reqwest;
+use pchain_types::Base64URL;
+use crate::msg_types::{Node, NodeHash, SerDe, NODE_HASH_LEN};
 use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError, self};
 use crate::config::NodeTreeApiConfig;
 
@@ -35,29 +35,35 @@ impl Server {
     }
 
     async fn handle_get_nodes<'a>(node_tree_snapshot_factory: NodeTreeSnapshotFactory, mut params: GetNodesParams) -> impl warp::Reply {
+        // Interpret query parameters
+        let hash = match Base64URL::decode(&params.hash) {
+            Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
+            Ok(hash) => match hash.try_into() {
+                Ok(hash) => hash,
+                Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
+            }
+        };
+        let anchor = match params.anchor {
+            None => GetNodesAnchor::Head,
+            Some(anchor) => anchor,
+        };
+        let limit = match params.limit {
+            None => 1,
+            Some(limit) => limit,
+        };
+        let speculate = match params.speculate {
+            None => false,
+            Some(speculate) => speculate,
+        };
+
         let node_tree_snapshot = node_tree_snapshot_factory.snapshot();
 
-        // Apply default values if parameter is not assigned to.
-        let _ = params.anchor_end.get_or_insert(GetNodesAnchorEnd::Head);
-        let _ = params.limit.get_or_insert(1);
-        let _ = params.speculate.get_or_insert(false);
-
-        match params {
-            GetNodesParams {
-                hash,
-                anchor_end: Some(GetNodesAnchorEnd::Head),
-                limit,
-                speculate,
-            } => match get_nodes_up_to_head(&node_tree_snapshot, &hash, limit.unwrap(), speculate.unwrap()) {
+        match anchor {
+            GetNodesAnchor::Head => match get_nodes_up_to_head(&node_tree_snapshot, &hash, limit, speculate) {
                 Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             },
-            GetNodesParams {
-                hash,
-                anchor_end: Some(GetNodesAnchorEnd::Tail),
-                limit,
-                speculate,
-            } => match get_nodes_from_tail(&node_tree_snapshot, &hash, limit.unwrap(), speculate.unwrap()) {
+            GetNodesAnchor::Tail => match get_nodes_from_tail(&node_tree_snapshot, &hash, limit, speculate) {
                 Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             }, 
@@ -68,14 +74,14 @@ impl Server {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct GetNodesParams {
-    hash: NodeHash,
-    anchor_end: Option<GetNodesAnchorEnd>,
+    hash: String,
+    anchor: Option<GetNodesAnchor>,
     limit: Option<usize>,
     speculate: Option<bool>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-enum GetNodesAnchorEnd {
+enum GetNodesAnchor {
     Head,
     Tail,
 }
@@ -185,35 +191,50 @@ fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &Nod
     res
 }
 
-pub struct SyncModeClient {
-    getter: thread::JoinHandle<()>,
-    to_getter: mpsc::Sender<GetNodesFromAllRequest>,
-    from_getter: mpsc::Receiver<Result<Vec<u8>, GetNodesFromAllError>>,
-}
+pub(crate) struct SyncModeClient(reqwest::blocking::Client);
 
 impl SyncModeClient {
-    pub fn new() -> SyncModeClient {
-        todo!()
+    fn new(request_timeout: Duration) -> SyncModeClient {
+        let reqwest_client = reqwest::blocking::Client::builder().timeout(request_timeout).build()
+            .expect("Programming or Configuration error: failed to open a HTTP client for SyncModeClient.");
+        SyncModeClient(reqwest_client)
     }
 
-    pub fn get_nodes_from_all(request: GetNodesFromAllRequest) -> Result<Vec<u8>, GetNodesFromAllError> {
-        todo!()
+    fn get_nodes_from_tail(&self, tail_node_hash: &NodeHash, limit: usize, participant_ip_addr: IpAddr, timeout: Duration) -> Result<Vec<Node>, GetNodesFromTailError> {
+        let url = format!(
+            "http://{}/nodes?hash={}&anchor=end&limit={}&speculate=true",
+            participant_ip_addr,
+            Base64URL::encode(tail_node_hash).deref(),
+            limit,
+        );
+        let resp = self.0.get(url).send().map_err(Self::convert_request_error)?;
+        let resp_bytes = resp.bytes().map_err(|_| GetNodesFromTailError::BadResponse)?; 
+        let (_, nodes) = Vec::<Node>::deserialize(&resp_bytes).map_err(|_| GetNodesFromTailError::BadResponse)?;
+
+        Ok(nodes)
     }
 
-    fn start_getter() -> thread::JoinHandle<()> {
-        todo!()
+    fn convert_request_error(e: reqwest::Error) -> GetNodesFromTailError {
+        if e.is_timeout() {
+            GetNodesFromTailError::RequestTimedOut
+        } else if e.is_connect() {
+            GetNodesFromTailError::FailToConnectToServer
+        } else if let Some(status) = e.status() {
+            if status == StatusCode::NOT_FOUND {
+                GetNodesFromTailError::TailNodeNotFound
+            } else {
+                GetNodesFromTailError::BadResponse
+            }
+        } else {
+            GetNodesFromTailError::BadResponse
+        }
     }
 }
 
-pub struct GetNodesFromAllRequest {
-    start_node_hash: NodeHash,
-    limit: usize, 
-    participant_set: ParticipantSet,
-    timeout: Duration,
+pub(crate) enum GetNodesFromTailError {
+    FailToConnectToServer,
+    RequestTimedOut,
+    TailNodeNotFound,
+    BadResponse,
 }
 
-pub enum GetNodesFromAllError {
-    TimedOut,
-    NoQuorumAgreement,
-    StartNodeNotFound,
-}
