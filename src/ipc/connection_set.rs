@@ -5,7 +5,7 @@ use std::thread;
 use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
-use crate::config::{NetworkingConfiguration, IdentityConfig};
+use crate::config::NetworkingConfiguration;
 use crate::ipc::{self, Establisher, EstablisherResult};
 use crate::identity::{PublicAddr, ParticipantSet};
 

@@ -72,7 +72,12 @@ pub struct ProgressModeNetworkingConfig {
     /// How long should Progress Mode IPC wait to get its bytes acknowledged by the other side of a TCP connection before
     /// deciding that it has probably failed and dropping it?
     pub write_timeout: Duration,
+
+    /// Expected worst case network latency. This is used to set execution deadlines in Progress Mode. If expected worst
+    /// case network latency is high, then less time will be allocated for execution, in order to give messages more time
+    /// to arrive in their destination.
     pub expected_worst_case_net_latency: Duration,
+
     pub reader_channel_buffer_len: usize,
     pub writer_channel_buffer_len: usize,
 }
