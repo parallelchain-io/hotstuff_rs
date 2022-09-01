@@ -56,6 +56,8 @@ pub enum ExecuteError {
     InvalidNode,
 }
 
+/// A wrapper around msg_types::Node which, besides allowing App's methods to look into the Node's fields, exposes methods for traversing the 
+/// branch that this Node heads.
 pub struct Node<'a> {
     inner: MsgNode,
     node_tree: &'a NodeTreeWriter,
@@ -69,7 +71,7 @@ impl<'a> Node<'a> {
         }
     }
 
-    /// Returns None if called on the Genesis Node.
+    /// Gets the parent of this Node. This returns None if called on the Genesis Node.
     pub fn get_parent(&self) -> Option<Node> {
         if self.justify.view_number == 0 {
             return None
@@ -95,6 +97,10 @@ impl<'a> Deref for Node<'a> {
     }
 }
 
+/// A read-and-writable view of the World State after executing all the Nodes in some branch of the Node Tree. The writes (`set`s)
+/// applied into this WorldStateHandle only become permanent when the Node containing the Command that it corresponds to becomes committed. 
+/// 
+/// This structure should NOT be used in App code outside the context of `create_leaf` and `execute`.
 pub struct WorldStateHandle<'a> {
     writes: WriteSet,
     parent_writes: WriteSet,
@@ -103,7 +109,7 @@ pub struct WorldStateHandle<'a> {
 }
 
 impl<'a> WorldStateHandle<'a> {
-    pub fn open(node_tree: &'a NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldStateHandle<'a> {
+    pub(crate) fn open(node_tree: &'a NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldStateHandle<'a> {
         let parent_writes = node_tree.get_write_set(&parent_node_hash).map_or(WriteSet::new(), identity);
         let grandparent_writes = {
             let grandparent_node_hash = node_tree.get_node(parent_node_hash).unwrap().justify.node_hash;
@@ -118,10 +124,12 @@ impl<'a> WorldStateHandle<'a> {
         }
     }
 
+    /// set a key-value pair in the World State.
     pub fn set(&mut self, key: Key, value: Value) {
         self.writes.insert(key, value); 
     }
 
+    /// get a value in the World State.
     pub fn get(&self, key: &Key) -> Value {
         if let Some(value) = self.writes.get(key) {
             value.clone()
