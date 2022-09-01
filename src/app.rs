@@ -1,6 +1,5 @@
 use std::convert::identity;
 use std::ops::Deref;
-use std::collections::HashSet;
 use std::time::Instant;
 use crate::node_tree::NodeTreeWriter;
 use crate::stored_types::{WriteSet, Key, Value};
