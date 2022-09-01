@@ -10,6 +10,7 @@ struct HotStuff {
 }
 
 impl HotStuff {
+    /// Starts the HotStuff Protocol State Machine and the Node Tree REST API in the background.
     pub fn start(app: impl App, configuration: Configuration) -> HotStuff {
         let (node_tree_writer, node_tree_snapshot_factory) = node_tree::open(&configuration.node_tree);
 
@@ -19,6 +20,8 @@ impl HotStuff {
         }
     }
 
+    /// Get a factory for NodeTreeSnapshots. This can be used in user-written code to get snapshotted read-access into the
+    /// Node Tree. 
     pub fn get_node_tree_snapshot_factory(&self) -> &NodeTreeSnapshotFactory {
         &self.node_tree_snapshot_factory
     }
