@@ -6,23 +6,53 @@ use crate::stored_types::{WriteSet, Key, Value};
 use crate::msg_types::{Command, Node as MsgNode, NodeHash};
 
 pub trait App: Send + 'static {
+    /// Called by StateMachine when this Participant becomes the Leader and has to propose a new Node which extends a branch of the NodeTree.
+    /// 
+    /// # Parameters
+    /// 1. `parent_node`: the Node which the new Node directly descends from.
+    /// 2. `world_state`: a read-and-writable view of the World State after executing all Nodes in the branch headed by `parent_node`.
+    /// 3. `deadline`: this function call should return at the latest by this instant in time. Otherwise, this view in which the Participant
+    /// is the Leader is likely to fail because of view timeout.
+    /// 
+    /// # Return value
+    /// A two-tuple consisting of:
+    /// 1. A Command. This will occupy the `command` field of the Node proposed by this Participant in this view. 
+    /// 2. The instance of WorldStateHandle which was passed into this function. `set`s into this Handle will be applied into the World State
+    /// when the Node containing the returned Command becomes committed.
     fn create_leaf(
         &mut self, 
         parent_node: &Node,
-        state: WorldStateHandle,
+        world_state: WorldStateHandle,
         deadline: Instant
     ) -> (Command, WorldStateHandle);
 
+    /// Called by StateMachine when this Participant is a Replica and has to decide whether or not to vote on a Node which was proposed by
+    /// the Leader.
+    /// 
+    /// # Parameters
+    /// 1. `node`: the Node which was proposed by the Leader of this view.
+    /// 2. `world_state`: read the corresponding entry in the itemdoc for `create_leaf`.
+    /// 3. `deadline`: this function call should return at the latest by this instant in time. If not, this Participant might not be able to 
+    /// Vote in time for its signature to be included in this round's QuorumCertificate. 
+    /// 
+    /// # Return value
+    /// A two-tuple consisting of:
+    /// 1. The instance of WorldStateHandle which was passed into this function. Read the corresponding entry in the itemdoc for `create_leaf`.
+    /// 2. An ExecuteError. Read the itemdoc for `ExecuteError`.
     fn execute(
         &mut self,
         node: &Node,
-        state: WorldStateHandle,
+        world_state: WorldStateHandle,
         deadline: Instant
     ) -> Result<WorldStateHandle, ExecuteError>;
 }
 
+/// Circumstances in which an App could reject a proposed Node, causing this Participant to skip this round without voting.
 pub enum ExecuteError {
+    /// deadline was exceeded while processing the proposed Node.
     RanOutOfTime,
+
+    /// The contents of the Node, in the context of its proposed position in the Node Tree, is invalid in the view of App-level validation rules.
     InvalidNode,
 }
 

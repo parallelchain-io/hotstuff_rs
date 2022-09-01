@@ -8,8 +8,8 @@ use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use reqwest;
 use pchain_types::Base64URL;
-use crate::msg_types::{Node, NodeHash, SerDe, NODE_HASH_LEN};
-use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError, self};
+use crate::msg_types::{Node, NodeHash, SerDe};
+use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError};
 use crate::config::NodeTreeApiConfig;
 
 struct Server(tokio::runtime::Runtime);
