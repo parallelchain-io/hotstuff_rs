@@ -90,6 +90,10 @@ impl NodeTreeWriter {
 
         // 6.2. TOP_NODE.
         Self::set_top_node(&mut wb, &node.hash);
+
+        // 7. Write changes to persistent storage.
+        self.db.write(wb)
+            .expect("Programming or Configuration error: fail to insert Node into persistent storage.");
     }
 }
 
