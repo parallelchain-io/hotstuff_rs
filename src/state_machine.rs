@@ -102,15 +102,15 @@ impl<A: App> StateMachine<A> {
         // 1. Call App to produce a new leaf Node.
         let (leaf, writes) = {
             let parent_node = self.node_tree.get_node(&self.top_qc.node_hash).unwrap();
-            let (command, state) = {
+            let (commands, state) = {
                 let app_node = AppNode::new(parent_node.clone(), &self.node_tree);
                 let world_state = WorldStateHandle::open(&self.node_tree, &parent_node.hash);
                 self.app.create_leaf(&app_node, world_state, deadline)
             };
             let node = MsgNode {
-                hash: MsgNode::hash(parent_node.height, &command, &self.top_qc),
+                hash: MsgNode::hash(parent_node.height, &commands, &self.top_qc),
                 height: parent_node.height + 1,
-                command,
+                commands,
                 justify: self.top_qc.clone(),
             };
 

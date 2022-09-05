@@ -10,9 +10,12 @@ pub type ViewNumber = u64;
 pub type NodeHeight = u64;
 
 pub type NodeHash = [u8; NODE_HASH_LEN];
-pub const NODE_HASH_LEN: usize = 32;
+
+pub type Commands = Vec<Command>;
 
 pub type Command = Vec<u8>;
+
+pub const NODE_HASH_LEN: usize = 32;
 
 #[derive(Clone)]
 pub enum ConsensusMsg {
@@ -109,15 +112,15 @@ impl SerDe for ConsensusMsg {
 pub struct Node {
     pub hash: NodeHash,
     pub height: NodeHeight,
-    pub command: Command,
+    pub commands: Vec<Vec<u8>>,
     pub justify: QuorumCertificate,
 }
 
 impl Node {
-    pub fn hash(height: NodeHeight, command: &Command, justify: &QuorumCertificate) -> NodeHash {
+    pub fn hash(height: NodeHeight, commands: &Vec<Vec<u8>>, justify: &QuorumCertificate) -> NodeHash {
         Sha256::new()
             .chain_update(height.to_le_bytes())
-            .chain_update(command)
+            .chain_update(commands.serialize())
             .chain_update(justify.serialize())
             .finalize()
             .into()
@@ -127,38 +130,15 @@ impl Node {
 impl SerDe for Node {
     fn serialize(&self) -> Vec<u8> {
         let mut bs = Vec::new();
-        bs.extend_from_slice(&u64::to_le_bytes(self.command.len() as u64));
-        bs.extend_from_slice(&self.command);
+        bs.extend_from_slice(&self.hash);
+        bs.extend_from_slice(&self.height.to_le_bytes());
+        bs.extend_from_slice(&self.commands.serialize());
         bs.extend_from_slice(&self.justify.serialize());
         bs
     }
 
     fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
-        let mut cursor = 0;
-
-        let hash = bs[cursor..mem::size_of::<NodeHash>()].try_into()?;
-        cursor += mem::size_of::<NodeHash>();
-
-        let height = NodeHeight::from_le_bytes(bs[cursor..mem::size_of::<NodeHeight>()].try_into()?);
-        cursor += mem::size_of::<NodeHeight>();
-
-        let command_len = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
-        cursor += mem::size_of::<u64>();
-
-        let command = bs[cursor..cursor + command_len as usize].to_vec();
-        cursor += command_len as usize;
-
-        let (bytes_read, justify) = QuorumCertificate::deserialize(&bs[cursor..])?; 
-        cursor += bytes_read;
-
-        let node = Node {
-            hash,
-            height,
-            command,
-            justify,
-        };
-
-        Ok((cursor, node))
+        todo!()
     }
 }
 
@@ -213,6 +193,16 @@ impl SerDe for QuorumCertificate {
         };
 
         Ok((cursor, qc))
+    }
+}
+
+impl SerDe for Commands {
+    fn serialize(&self) -> Vec<u8> {
+        todo!() 
+    }
+
+    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
+        todo!() 
     }
 }
 

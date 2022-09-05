@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::time::Instant;
 use crate::node_tree::NodeTreeWriter;
 use crate::stored_types::{WriteSet, Key, Value};
-use crate::msg_types::{Command, Node as MsgNode, NodeHash};
+use crate::msg_types::{Commands, Node as MsgNode, NodeHash};
 
 /// Besides implementing the functions specified in the trait, implementors of App are additionally expected to be *deterministic*. i.e., every
 /// function it implements as part of the App trait should evaluate to the same value every time it is called with the same arguments.
@@ -18,7 +18,7 @@ pub trait App: Send + 'static {
     /// 
     /// # Return value
     /// A two-tuple consisting of:
-    /// 1. A Command. This will occupy the `command` field of the Node proposed by this Participant in this view. 
+    /// 1. Commands. This will occupy the `commands` field of the Node proposed by this Participant in this view. 
     /// 2. The instance of WorldStateHandle which was passed into this function. `set`s into this Handle will be applied into the World State
     /// when the Node containing the returned Command becomes committed.
     fn create_leaf(
@@ -26,7 +26,7 @@ pub trait App: Send + 'static {
         parent_node: &Node,
         world_state: WorldStateHandle,
         deadline: Instant
-    ) -> (Command, WorldStateHandle);
+    ) -> (Commands, WorldStateHandle);
 
     /// Called by StateMachine when this Participant is a Replica and has to decide whether or not to vote on a Node which was proposed by
     /// the Leader.

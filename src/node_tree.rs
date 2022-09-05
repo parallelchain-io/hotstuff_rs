@@ -3,7 +3,7 @@ use std::convert::identity;
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::NodeTreeConfig;
 use crate::stored_types::{WriteSet, ChildrenList, Key, Value};
-use crate::msg_types::{Node, NodeHash, ViewNumber, SerDe};
+use crate::msg_types::{Node, NodeHash, ViewNumber, SerDe, NodeHeight, Command, Commands, QuorumCertificate};
 
 pub fn open(node_tree_config: &NodeTreeConfig) -> (NodeTreeWriter, NodeTreeSnapshotFactory) {
     let db = DB::open_default(node_tree_config.db_path.clone())
@@ -218,6 +218,22 @@ pub struct NodeTreeSnapshot<'a> {
 impl<'a> NodeTreeSnapshot<'a> {
     pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
         Some(Node::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap().1)
+    }
+
+    pub fn get_node_height(hash: &NodeHash) -> Option<NodeHeight> {
+        todo!()
+    }
+
+    pub fn get_node_justify(hash: &NodeHash) -> Option<QuorumCertificate> {
+        todo!()
+    }
+
+    pub fn get_node_commands(hash: &NodeHash) -> Option<Commands> {
+        todo!()
+    }
+
+    pub fn get_node_command(hash: &NodeHash, index: usize) -> Option<Command> {
+        todo!()
     }
 
     pub fn get_child(&self, parent_node_hash: &NodeHash) -> Result<Node, ChildrenNotYetCommittedError> {

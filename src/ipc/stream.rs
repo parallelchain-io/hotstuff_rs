@@ -160,38 +160,40 @@ impl DeserializeFromStream for ConsensusMsg {
 
 impl DeserializeFromStream for Node {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
-        let hash = {
-            let mut buf = [0u8; mem::size_of::<NodeHash>()];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            buf.into()
-        };
+        // Marked as todo pending changes related to turning `command` into `commands`.
+        todo!()
+        // let hash = {
+        //     let mut buf = [0u8; mem::size_of::<NodeHash>()];
+        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+        //     buf.into()
+        // };
 
-        let height = {
-            let mut buf = [0u8; mem::size_of::<NodeHeight>()];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            u64::from_le_bytes(buf)
-        };
+        // let height = {
+        //     let mut buf = [0u8; mem::size_of::<NodeHeight>()];
+        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+        //     u64::from_le_bytes(buf)
+        // };
 
-        let command_len = {
-            let mut buf = [0u8; mem::size_of::<u64>()];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            u64::from_le_bytes(buf)
-        };
+        // let command_len = {
+        //     let mut buf = [0u8; mem::size_of::<u64>()];
+        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+        //     u64::from_le_bytes(buf)
+        // };
 
-        let command = {
-            let mut buf = vec![0u8; command_len as usize];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            buf
-        };
+        // let command = {
+        //     let mut buf = vec![0u8; command_len as usize];
+        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
+        //     buf
+        // };
 
-        let justify = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
+        // let justify = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
 
-        Ok(Node {
-            hash,
-            height,
-            command,
-            justify
-        })
+        // Ok(Node {
+        //     hash,
+        //     height,
+        //     command,
+        //     justify
+        // })
     }
 }
 
