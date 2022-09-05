@@ -90,7 +90,7 @@ fn get_nodes_from_tail(node_tree: &NodeTreeSnapshot, tail_node_hash: &NodeHash, 
     let mut res = Vec::with_capacity(limit);
 
     // 1. Get tail node.
-    let tail_node = node_tree.get_node(tail_node_hash)?;
+    let tail_node = node_tree.get_node_by_hash(tail_node_hash)?;
     let mut cursor = tail_node.hash;
     res.push(tail_node);
 
@@ -119,7 +119,7 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
     let mut res = Vec::with_capacity(limit);
 
     // 1. Get head node.
-    let head_node = node_tree.get_node(head_node_hash)?;
+    let head_node = node_tree.get_node_by_hash(head_node_hash)?;
     let head_node_parent_hash = head_node.justify.node_hash;
     let head_node_height = head_node.height;
     res.push(head_node);
@@ -150,13 +150,13 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
                 break
             }
 
-            cursor = node_tree.get_node(&next_hash).unwrap();
+            cursor = node_tree.get_node_by_hash(&next_hash).unwrap();
         }
     } else {
         // Start node IS NOT speculative.
 
         // 2.1. Get ancestors of head node, up to the number necessary to satisfy limit.
-        let mut cursor = node_tree.get_node(&head_node_parent_hash).unwrap();
+        let mut cursor = node_tree.get_node_by_hash(&head_node_parent_hash).unwrap();
         while limit - res.len() > 0 {
             let next_hash = cursor.justify.node_hash;
             let cursor_height = cursor.height;
@@ -165,7 +165,7 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
                 break
             }
 
-            cursor = node_tree.get_node(&next_hash).unwrap();
+            cursor = node_tree.get_node_by_hash(&next_hash).unwrap();
         }
 
     }
@@ -183,7 +183,7 @@ fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &Nod
     res.push(top_node);
 
     while cursor != highest_committed_node.hash {
-        let node = node_tree.get_node(&cursor).unwrap();
+        let node = node_tree.get_node_by_hash(&cursor).unwrap();
         cursor = node.justify.node_hash;
         res.push(node);
     } 

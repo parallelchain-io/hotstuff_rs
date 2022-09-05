@@ -216,30 +216,46 @@ pub struct NodeTreeSnapshot<'a> {
 }
 
 impl<'a> NodeTreeSnapshot<'a> {
-    pub fn get_node(&self, node_hash: &NodeHash) -> Option<Node> {
+    pub fn get_node_by_hash(&self, node_hash: &NodeHash) -> Option<Node> {
         Some(Node::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, node_hash)).unwrap()?).unwrap().1)
+    }
+
+    pub fn get_node_by_height(height: &NodeHeight) -> Option<Node> {
+        todo!()
     }
 
     pub fn get_node_height(hash: &NodeHash) -> Option<NodeHeight> {
         todo!()
     }
 
-    pub fn get_node_justify(hash: &NodeHash) -> Option<QuorumCertificate> {
+    pub fn get_node_justify_by_hash(hash: &NodeHash) -> Option<QuorumCertificate> {
         todo!()
     }
 
-    pub fn get_node_commands(hash: &NodeHash) -> Option<Commands> {
+    pub fn get_node_justify_by_height(height: &NodeHeight) -> Option<QuorumCertificate> {
         todo!()
     }
 
-    pub fn get_node_command(hash: &NodeHash, index: usize) -> Option<Command> {
+    pub fn get_node_commands_by_hash(hash: &NodeHash) -> Option<Commands> {
+        todo!()
+    }
+
+    pub fn get_node_commands_by_height(height: &NodeHeight) -> Option<Commands> {
+        todo!()
+    }
+
+    pub fn get_node_command_by_hash(hash: &NodeHash, index: usize) -> Option<Command> {
+        todo!()
+    }
+
+    pub fn get_node_command_by_height(height: &NodeHeight) -> Option<Command> {
         todo!()
     }
 
     pub fn get_child(&self, parent_node_hash: &NodeHash) -> Result<Node, ChildrenNotYetCommittedError> {
         let highest_committed_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
-        let highest_committed_node = self.get_node(&highest_committed_node_hash).unwrap();
-        let parent_node = self.get_node(&parent_node_hash).unwrap();
+        let highest_committed_node = self.get_node_by_hash(&highest_committed_node_hash).unwrap();
+        let parent_node = self.get_node_by_hash(&parent_node_hash).unwrap();
         if parent_node.height >= highest_committed_node.height {
             return Err(ChildrenNotYetCommittedError)
         }
@@ -247,17 +263,17 @@ impl<'a> NodeTreeSnapshot<'a> {
         let parent_children = ChildrenList::deserialize(&self.db_snapshot.get(&prefix(special_prefixes::CHILDREN_LISTS, parent_node_hash)).unwrap().unwrap()).unwrap();
         // Safety: parent_children.len() must be 1, since parent is an ancestor of a committed Node. 
         let child_hash = parent_children.1.iter().next().unwrap();
-        Ok(self.get_node(child_hash).unwrap())
+        Ok(self.get_node_by_hash(child_hash).unwrap())
     }
 
     pub fn get_top_node(&self) -> Node {
         let top_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_TOP_NODE).unwrap().unwrap()).unwrap();
-        self.get_node(&top_node_hash).unwrap()
+        self.get_node_by_hash(&top_node_hash).unwrap()
     }
 
     pub fn get_highest_committed_node(&self) -> Node {
         let highest_committed_node_hash = NodeHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
-        self.get_node(&highest_committed_node_hash).unwrap()
+        self.get_node_by_hash(&highest_committed_node_hash).unwrap()
     }
 }
 
