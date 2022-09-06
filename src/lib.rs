@@ -12,30 +12,30 @@ pub mod app;
 /// tweak these knobs to modify the system's behavior to meet your needs.
 pub mod config;
 
-/// Defines the 'Node Tree', the object of state machine replication. Consensus works to extend the Node Tree with new Nodes, causing
-/// the distributed state machine's World State to evolve over time. The 'Node Tree' is a generalization of the concept of a 'blockchain'.
-pub mod node_tree;
+/// Defines the 'Block Tree', the object of state machine replication. Consensus works to extend the Block Tree with new Blocks, causing
+/// the distributed state machine's World State to evolve over time. The 'Block Tree' is a generalization of the concept of a 'blockchain'.
+pub mod block_tree;
 
 /// Defines types and encodings that are used in messages exchanged between Participants. The wire-encodings of these types are an
 /// integral part of the protocol, and all Participant implementations that wish to communicate with the implementation in this crate
 /// needs to encode these types in the exact same way.
 pub mod msg_types;
 
-/// Defines *additional* types that the Node Tree's storage implementation needs to store to support its functionality, but which are
-/// not sent over the wire and therefore are not part of the protocol. An example functionality of the Node Tree that requires these
-/// additional types is getting the child of a Node, since a msg_types::Node only stores a pointer to its parent in the form of 
-/// `justify.node_hash`.
+/// Defines *additional* types that the Block Tree's storage implementation needs to store to support its functionality, but which are
+/// not sent over the wire and therefore are not part of the protocol. An example functionality of the Block Tree that requires these
+/// additional types is getting the child of a Block, since a msg_types::Block only stores a pointer to its parent in the form of 
+/// `justify.block_hash`.
 pub mod stored_types;
 
-/// Defines an HTTP server that serves the 'Node Tree HTTP API' (endpoints documented in '/docs'). The `GET /nodes` route of this API
-/// is used by the protocol state machine's 'Sync Mode' to catch-up lagging Participants to the global head of the Node Tree, and therefore
+/// Defines an HTTP server that serves the 'Block Tree HTTP API' (endpoints documented in '/docs'). The `GET /blocks` route of this API
+/// is used by the protocol state machine's 'Sync Mode' to catch-up lagging Participants to the global head of the Block Tree, and therefore
 /// is a required part of the protocol. The rest of the routes are optional.
 pub(crate) mod rest_api;
 
 /// Defines types that give a cryptographic identity to every Participant. This chiefly includes secret keys, public keys, and signatures.
 pub(crate) mod identity;
 
-/// Defines HotStuff-rs' Consensus State Machine, the component which actually drives the growth of the Node Tree through Byzantine Fault
+/// Defines HotStuff-rs' Consensus State Machine, the component which actually drives the growth of the Block Tree through Byzantine Fault
 /// Tolerant consensus. 
 pub(crate) mod state_machine;
 

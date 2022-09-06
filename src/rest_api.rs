@@ -8,22 +8,22 @@ use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use reqwest;
 use pchain_types::Base64URL;
-use crate::msg_types::{Node, NodeHash, SerDe};
-use crate::node_tree::{NodeTreeSnapshotFactory, NodeTreeSnapshot, ChildrenNotYetCommittedError};
-use crate::config::NodeTreeApiConfig;
+use crate::msg_types::{Block, BlockHash, SerDe};
+use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
+use crate::config::BlockTreeApiConfig;
 
 struct Server(tokio::runtime::Runtime);
 
 impl Server {
-    fn start(node_tree_snapshot_factory: NodeTreeSnapshotFactory, config: NodeTreeApiConfig) -> Server {
-        // Endpoints and their behavior are documented in node_tree/rest_api.md
+    fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: BlockTreeApiConfig) -> Server {
+        // Endpoints and their behavior are documented in block_tree/rest_api.md
 
-        // GET /nodes
-        let get_nodes = warp::path("nodes")
-            .and(warp::query::<GetNodesParams>())
-            .then(move |nodes_params| Self::handle_get_nodes(node_tree_snapshot_factory.clone(), nodes_params));
+        // GET /blocks
+        let get_blocks = warp::path("blocks")
+            .and(warp::query::<GetBlocksParams>())
+            .then(move |blocks_params| Self::handle_get_blocks(block_tree_snapshot_factory.clone(), blocks_params));
 
-        let server = warp::serve(get_nodes);
+        let server = warp::serve(get_blocks);
         let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
         let task = server.run(listening_socket_addr);
 
@@ -34,7 +34,7 @@ impl Server {
         Server(runtime)
     }
 
-    async fn handle_get_nodes<'a>(node_tree_snapshot_factory: NodeTreeSnapshotFactory, mut params: GetNodesParams) -> impl warp::Reply {
+    async fn handle_get_blocks<'a>(block_tree_snapshot_factory: BlockTreeSnapshotFactory, mut params: GetBlocksParams) -> impl warp::Reply {
         // Interpret query parameters
         let hash = match Base64URL::decode(&params.hash) {
             Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
@@ -44,7 +44,7 @@ impl Server {
             }
         };
         let anchor = match params.anchor {
-            None => GetNodesAnchor::Head,
+            None => GetBlocksAnchor::Head,
             Some(anchor) => anchor,
         };
         let limit = match params.limit {
@@ -56,15 +56,15 @@ impl Server {
             Some(speculate) => speculate,
         };
 
-        let node_tree_snapshot = node_tree_snapshot_factory.snapshot();
+        let block_tree_snapshot = block_tree_snapshot_factory.snapshot();
 
         match anchor {
-            GetNodesAnchor::Head => match get_nodes_up_to_head(&node_tree_snapshot, &hash, limit, speculate) {
-                Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
+            GetBlocksAnchor::Head => match get_blocks_up_to_head(&block_tree_snapshot, &hash, limit, speculate) {
+                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             },
-            GetNodesAnchor::Tail => match get_nodes_from_tail(&node_tree_snapshot, &hash, limit, speculate) {
-                Some(nodes) => http::Response::builder().status(StatusCode::OK).body(nodes.serialize()),
+            GetBlocksAnchor::Tail => match get_blocks_from_tail(&block_tree_snapshot, &hash, limit, speculate) {
+                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.serialize()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             }, 
             _ => unreachable!()
@@ -73,99 +73,99 @@ impl Server {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct GetNodesParams {
+struct GetBlocksParams {
     hash: String,
-    anchor: Option<GetNodesAnchor>,
+    anchor: Option<GetBlocksAnchor>,
     limit: Option<usize>,
     speculate: Option<bool>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-enum GetNodesAnchor {
+enum GetBlocksAnchor {
     Head,
     Tail,
 }
 
-fn get_nodes_from_tail(node_tree: &NodeTreeSnapshot, tail_node_hash: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
+fn get_blocks_from_tail(block_tree: &BlockTreeSnapshot, tail_block_hash: &BlockHash, limit: usize, speculate: bool) -> Option<Vec<Block>> {
     let mut res = Vec::with_capacity(limit);
 
-    // 1. Get tail node.
-    let tail_node = node_tree.get_node_by_hash(tail_node_hash)?;
-    let mut cursor = tail_node.hash;
-    res.push(tail_node);
+    // 1. Get tail block.
+    let tail_block = block_tree.get_block_by_hash(tail_block_hash)?;
+    let mut cursor = tail_block.hash;
+    res.push(tail_block);
 
-    // 2. Walk through tail node's descendants until limit is satisfied or we hit uncommitted nodes.
+    // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
     while res.len() < limit {
-        let child = match node_tree.get_child(&cursor) {
-            Ok(node) => node,
+        let child = match block_tree.get_child(&cursor) {
+            Ok(block) => block,
             Err(ChildrenNotYetCommittedError) => break,
         };
         cursor = child.hash;
         res.push(child);
     }
 
-    // 3. If limit is not yet satisfied and we are allowed to speculate, get speculative nodes.
+    // 3. If limit is not yet satisfied and we are allowed to speculate, get speculative blocks.
     if res.len() < limit && speculate {
-        let top_node = node_tree.get_top_node();
-        // 3.1. Reverse uncommitted nodes so that nodes with lower heights appear first.
-        let uncommitted_nodes: Vec<Node> = get_chain_between_speculative_node_and_highest_committed_node(&node_tree, &top_node.hash).into_iter().rev().collect();
-        res.extend_from_slice(&uncommitted_nodes[..min(limit - res.len(), uncommitted_nodes.len())]);
+        let top_block = block_tree.get_top_block();
+        // 3.1. Reverse uncommitted blocks so that blocks with lower heights appear first.
+        let uncommitted_blocks: Vec<Block> = get_chain_between_speculative_block_and_highest_committed_block(&block_tree, &top_block.hash).into_iter().rev().collect();
+        res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
     }
 
     Some(res)
 }
 
-fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash, limit: usize, speculate: bool) -> Option<Vec<Node>> {
+fn get_blocks_up_to_head(block_tree: &BlockTreeSnapshot, head_block_hash: &BlockHash, limit: usize, speculate: bool) -> Option<Vec<Block>> {
     let mut res = Vec::with_capacity(limit);
 
-    // 1. Get head node.
-    let head_node = node_tree.get_node_by_hash(head_node_hash)?;
-    let head_node_parent_hash = head_node.justify.node_hash;
-    let head_node_height = head_node.height;
-    res.push(head_node);
+    // 1. Get head block.
+    let head_block = block_tree.get_block_by_hash(head_block_hash)?;
+    let head_block_parent_hash = head_block.justify.block_hash;
+    let head_block_height = head_block.height;
+    res.push(head_block);
     if limit == 1 {
-        // 1.1. If only one node is requested, return immediately.
+        // 1.1. If only one block is requested, return immediately.
         return Some(res)
     }
 
-    // 2. Check whether head node is speculative.
-    let highest_committed_node = node_tree.get_highest_committed_node();
-    if head_node_height > highest_committed_node.height {
-        // Start node IS speculative. 
+    // 2. Check whether head block is speculative.
+    let highest_committed_block = block_tree.get_highest_committed_block();
+    if head_block_height > highest_committed_block.height {
+        // Start block IS speculative. 
         if !speculate {
             return None
         }
 
-        // 2.1. Get speculative ancestors of head node.
-        let speculative_ancestors: Vec<Node> = get_chain_between_speculative_node_and_highest_committed_node(node_tree, &head_node_hash).into_iter().rev().collect();
+        // 2.1. Get speculative ancestors of head block.
+        let speculative_ancestors: Vec<Block> = get_chain_between_speculative_block_and_highest_committed_block(block_tree, &head_block_hash).into_iter().rev().collect();
         res.extend_from_slice(&speculative_ancestors[..min(limit - res.len(), speculative_ancestors.len())]);
 
-        // 2.2. Get non-speculative ancestors of head node, up to the number necessary to satisfy limit.
-        let mut cursor = highest_committed_node;
+        // 2.2. Get non-speculative ancestors of head block, up to the number necessary to satisfy limit.
+        let mut cursor = highest_committed_block;
         while limit - res.len() > 0 {
-            let next_hash = cursor.justify.node_hash;
+            let next_hash = cursor.justify.block_hash;
             let cursor_height = cursor.height;
             res.push(cursor);
             if cursor_height == 0 {
                 break
             }
 
-            cursor = node_tree.get_node_by_hash(&next_hash).unwrap();
+            cursor = block_tree.get_block_by_hash(&next_hash).unwrap();
         }
     } else {
-        // Start node IS NOT speculative.
+        // Start block IS NOT speculative.
 
-        // 2.1. Get ancestors of head node, up to the number necessary to satisfy limit.
-        let mut cursor = node_tree.get_node_by_hash(&head_node_parent_hash).unwrap();
+        // 2.1. Get ancestors of head block, up to the number necessary to satisfy limit.
+        let mut cursor = block_tree.get_block_by_hash(&head_block_parent_hash).unwrap();
         while limit - res.len() > 0 {
-            let next_hash = cursor.justify.node_hash;
+            let next_hash = cursor.justify.block_hash;
             let cursor_height = cursor.height;
             res.push(cursor);
             if cursor_height == 0 {
                 break
             }
 
-            cursor = node_tree.get_node_by_hash(&next_hash).unwrap();
+            cursor = block_tree.get_block_by_hash(&next_hash).unwrap();
         }
 
     }
@@ -173,19 +173,19 @@ fn get_nodes_up_to_head(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash,
     Some(res)
 }
 
-// Possibly unintuitive behavior: The returned chain is ordered from GREATER node height to SMALLER node height.
-fn get_chain_between_speculative_node_and_highest_committed_node(node_tree: &NodeTreeSnapshot, head_node_hash: &NodeHash) -> Vec<Node> {
+// Possibly unintuitive behavior: The returned chain is ordered from GREATER block height to SMALLER block height.
+fn get_chain_between_speculative_block_and_highest_committed_block(block_tree: &BlockTreeSnapshot, head_block_hash: &BlockHash) -> Vec<Block> {
     let mut res = Vec::new();
 
-    let top_node = node_tree.get_top_node();
-    let highest_committed_node = node_tree.get_highest_committed_node();
-    let mut cursor = top_node.justify.node_hash;
-    res.push(top_node);
+    let top_block = block_tree.get_top_block();
+    let highest_committed_block = block_tree.get_highest_committed_block();
+    let mut cursor = top_block.justify.block_hash;
+    res.push(top_block);
 
-    while cursor != highest_committed_node.hash {
-        let node = node_tree.get_node_by_hash(&cursor).unwrap();
-        cursor = node.justify.node_hash;
-        res.push(node);
+    while cursor != highest_committed_block.hash {
+        let block = block_tree.get_block_by_hash(&cursor).unwrap();
+        cursor = block.justify.block_hash;
+        res.push(block);
     } 
 
     res
@@ -200,41 +200,41 @@ impl SyncModeClient {
         SyncModeClient(reqwest_client)
     }
 
-    pub fn get_nodes_from_tail(&self, tail_node_hash: &NodeHash, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Node>, GetNodesFromTailError> {
+    pub fn get_blocks_from_tail(&self, tail_block_hash: &BlockHash, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
-            "http://{}/nodes?hash={}&anchor=end&limit={}&speculate=true",
+            "http://{}/blocks?hash={}&anchor=end&limit={}&speculate=true",
             participant_ip_addr,
-            Base64URL::encode(tail_node_hash).deref(),
+            Base64URL::encode(tail_block_hash).deref(),
             limit,
         );
         let resp = self.0.get(url).send().map_err(Self::convert_request_error)?;
-        let resp_bytes = resp.bytes().map_err(|_| GetNodesFromTailError::BadResponse)?; 
-        let (_, nodes) = Vec::<Node>::deserialize(&resp_bytes).map_err(|_| GetNodesFromTailError::BadResponse)?;
+        let resp_bytes = resp.bytes().map_err(|_| GetBlocksFromTailError::BadResponse)?; 
+        let (_, blocks) = Vec::<Block>::deserialize(&resp_bytes).map_err(|_| GetBlocksFromTailError::BadResponse)?;
 
-        Ok(nodes)
+        Ok(blocks)
     }
 
-    fn convert_request_error(e: reqwest::Error) -> GetNodesFromTailError {
+    fn convert_request_error(e: reqwest::Error) -> GetBlocksFromTailError {
         if e.is_timeout() {
-            GetNodesFromTailError::RequestTimedOut
+            GetBlocksFromTailError::RequestTimedOut
         } else if e.is_connect() {
-            GetNodesFromTailError::FailToConnectToServer
+            GetBlocksFromTailError::FailToConnectToServer
         } else if let Some(status) = e.status() {
             if status == StatusCode::NOT_FOUND {
-                GetNodesFromTailError::TailNodeNotFound
+                GetBlocksFromTailError::TailBlockNotFound
             } else {
-                GetNodesFromTailError::BadResponse
+                GetBlocksFromTailError::BadResponse
             }
         } else {
-            GetNodesFromTailError::BadResponse
+            GetBlocksFromTailError::BadResponse
         }
     }
 }
 
-pub(crate) enum GetNodesFromTailError {
+pub(crate) enum GetBlocksFromTailError {
     FailToConnectToServer,
     RequestTimedOut,
-    TailNodeNotFound,
+    TailBlockNotFound,
     BadResponse,
 }
 

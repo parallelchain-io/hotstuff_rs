@@ -5,7 +5,7 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
-use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Node, QuorumCertificate, NodeHash, SignatureSet, Signature, NodeHeight};
+use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Block, QuorumCertificate, BlockHash, SignatureSet, Signature, BlockHeight};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
 pub struct Stream {
@@ -130,11 +130,11 @@ impl DeserializeFromStream for ConsensusMsg {
         
         match variant_prefix {
             Self::PREFIX_PROPOSE => {
-                let node = Node::deserialize_from_stream(tcp_stream)?;
-                Ok(Self::Propose(vn, node))
+                let block = Block::deserialize_from_stream(tcp_stream)?;
+                Ok(Self::Propose(vn, block))
             },
             Self::PREFIX_VOTE => {
-                let node_hash  = {
+                let block_hash  = {
                     let mut buf = [0u8; 32];
                     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
                     buf
@@ -146,7 +146,7 @@ impl DeserializeFromStream for ConsensusMsg {
                     buf.into()
                 };
 
-                Ok(Self::Vote(vn, node_hash, signature))
+                Ok(Self::Vote(vn, block_hash, signature))
 
             },
             Self::PREFIX_NEW_VIEW => {
@@ -158,18 +158,18 @@ impl DeserializeFromStream for ConsensusMsg {
     }
 }
 
-impl DeserializeFromStream for Node {
+impl DeserializeFromStream for Block {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         // Marked as todo pending changes related to turning `command` into `commands`.
         todo!()
         // let hash = {
-        //     let mut buf = [0u8; mem::size_of::<NodeHash>()];
+        //     let mut buf = [0u8; mem::size_of::<BlockHash>()];
         //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
         //     buf.into()
         // };
 
         // let height = {
-        //     let mut buf = [0u8; mem::size_of::<NodeHeight>()];
+        //     let mut buf = [0u8; mem::size_of::<BlockHeight>()];
         //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
         //     u64::from_le_bytes(buf)
         // };
@@ -188,7 +188,7 @@ impl DeserializeFromStream for Node {
 
         // let justify = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
 
-        // Ok(Node {
+        // Ok(Block {
         //     hash,
         //     height,
         //     command,
@@ -205,8 +205,8 @@ impl DeserializeFromStream for QuorumCertificate {
             u64::from_le_bytes(buf)
         };
 
-        let node_hash = {
-            let mut buf = [0u8; mem::size_of::<NodeHash>()];
+        let block_hash = {
+            let mut buf = [0u8; mem::size_of::<BlockHash>()];
             tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
             buf
         };
@@ -215,7 +215,7 @@ impl DeserializeFromStream for QuorumCertificate {
         
         Ok(QuorumCertificate {
             view_number: vn,
-            node_hash,
+            block_hash,
             sigs
         })
     }

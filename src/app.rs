@@ -1,38 +1,38 @@
 use std::convert::identity;
 use std::ops::Deref;
 use std::time::Instant;
-use crate::node_tree::NodeTreeWriter;
+use crate::block_tree::BlockTreeWriter;
 use crate::stored_types::{WriteSet, Key, Value};
-use crate::msg_types::{Commands, Node as MsgNode, NodeHash};
+use crate::msg_types::{CommandList, Block as MsgBlock, BlockHash};
 
 /// Besides implementing the functions specified in the trait, implementors of App are additionally expected to be *deterministic*. i.e., every
 /// function it implements as part of the App trait should evaluate to the same value every time it is called with the same arguments.
 pub trait App: Send + 'static {
-    /// Called by StateMachine when this Participant becomes the Leader and has to propose a new Node which extends a branch of the NodeTree.
+    /// Called by StateMachine when this Participant becomes the Leader and has to propose a new Block which extends a branch of the BlockTree.
     /// 
     /// # Parameters
-    /// 1. `parent_node`: the Node which the new Node directly descends from.
-    /// 2. `world_state`: a read-and-writable view of the World State after executing all Nodes in the branch headed by `parent_node`.
+    /// 1. `parent_block`: the Block which the new Block directly descends from.
+    /// 2. `world_state`: a read-and-writable view of the World State after executing all Blocks in the branch headed by `parent_block`.
     /// 3. `deadline`: this function call should return at the latest by this instant in time. Otherwise, this view in which the Participant
     /// is the Leader is likely to fail because of view timeout.
     /// 
     /// # Return value
     /// A two-tuple consisting of:
-    /// 1. Commands. This will occupy the `commands` field of the Node proposed by this Participant in this view. 
+    /// 1. Commands. This will occupy the `commands` field of the Block proposed by this Participant in this view. 
     /// 2. The instance of WorldStateHandle which was passed into this function. `set`s into this Handle will be applied into the World State
-    /// when the Node containing the returned Command becomes committed.
+    /// when the Block containing the returned Command becomes committed.
     fn create_leaf(
         &mut self, 
-        parent_node: &Node,
+        parent_block: &Block,
         world_state: WorldStateHandle,
         deadline: Instant
-    ) -> (Commands, WorldStateHandle);
+    ) -> (CommandList, WorldStateHandle);
 
-    /// Called by StateMachine when this Participant is a Replica and has to decide whether or not to vote on a Node which was proposed by
+    /// Called by StateMachine when this Participant is a Replica and has to decide whether or not to vote on a Block which was proposed by
     /// the Leader.
     /// 
     /// # Parameters
-    /// 1. `node`: the Node which was proposed by the Leader of this view.
+    /// 1. `block`: the Block which was proposed by the Leader of this view.
     /// 2. `world_state`: read the corresponding entry in the itemdoc for `create_leaf`.
     /// 3. `deadline`: this function call should return at the latest by this instant in time. If not, this Participant might not be able to 
     /// Vote in time for its signature to be included in this round's QuorumCertificate. 
@@ -43,86 +43,86 @@ pub trait App: Send + 'static {
     /// 2. An ExecuteError. Read the itemdoc for `ExecuteError`.
     fn execute(
         &mut self,
-        node: &Node,
+        block: &Block,
         world_state: WorldStateHandle,
         deadline: Instant
     ) -> Result<WorldStateHandle, ExecuteError>;
 }
 
-/// Circumstances in which an App could reject a proposed Node, causing this Participant to skip this round without voting.
+/// Circumstances in which an App could reject a proposed Block, causing this Participant to skip this round without voting.
 pub enum ExecuteError {
-    /// deadline was exceeded while processing the proposed Node.
+    /// deadline was exceeded while processing the proposed Block.
     RanOutOfTime,
 
-    /// The contents of the Node, in the context of its proposed position in the Node Tree, is invalid in the view of App-level validation rules.
-    InvalidNode,
+    /// The contents of the Block, in the context of its proposed position in the Block Tree, is invalid in the view of App-level validation rules.
+    InvalidBlock,
 }
 
-/// A wrapper around msg_types::Node which, besides allowing App's methods to look into the Node's fields, exposes methods for traversing the 
-/// branch that this Node heads.
-pub struct Node<'a> {
-    inner: MsgNode,
-    node_tree: &'a NodeTreeWriter,
+/// A wrapper around msg_types::Block which, besides allowing App's methods to look into the Block's fields, exposes methods for traversing the 
+/// branch that this Block heads.
+pub struct Block<'a> {
+    inner: MsgBlock,
+    block_tree: &'a BlockTreeWriter,
 }
 
-impl<'a> Node<'a> {
-    pub fn new(node: MsgNode, node_tree: &NodeTreeWriter) -> Node {
-        Node {
-            inner: node,
-            node_tree,
+impl<'a> Block<'a> {
+    pub fn new(block: MsgBlock, block_tree: &BlockTreeWriter) -> Block {
+        Block {
+            inner: block,
+            block_tree,
         }
     }
 
-    /// Gets the parent of this Node. This returns None if called on the Genesis Node.
-    pub fn get_parent(&self) -> Option<Node> {
+    /// Gets the parent of this Block. This returns None if called on the Genesis Block.
+    pub fn get_parent(&self) -> Option<Block> {
         if self.justify.view_number == 0 {
             return None
         }
 
-        let parent = self.node_tree.get_node(&self.inner.justify.node_hash)
-            .expect("Programming error: Non-Genesis node does not have a parent.");
+        let parent = self.block_tree.get_block(&self.inner.justify.block_hash)
+            .expect("Programming error: Non-Genesis block does not have a parent.");
 
-        let parent = Node {
+        let parent = Block {
             inner: parent,
-            node_tree: self.node_tree.clone(),
+            block_tree: self.block_tree.clone(),
         };
 
         Some(parent)
     }
 }
 
-impl<'a> Deref for Node<'a> {
-    type Target = MsgNode;
+impl<'a> Deref for Block<'a> {
+    type Target = MsgBlock;
 
     fn deref(&self) -> &Self::Target {
         &self.inner 
     }
 }
 
-/// A read-and-writable view of the World State after executing all the Nodes in some branch of the Node Tree. The writes (`set`s)
-/// applied into this WorldStateHandle only become permanent when the Node containing the Command that it corresponds to becomes committed. 
+/// A read-and-writable view of the World State after executing all the Blocks in some branch of the Block Tree. The writes (`set`s)
+/// applied into this WorldStateHandle only become permanent when the Block containing the Command that it corresponds to becomes committed. 
 /// 
 /// This structure should NOT be used in App code outside the context of `create_leaf` and `execute`.
 pub struct WorldStateHandle<'a> {
     writes: WriteSet,
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
-    node_tree: &'a NodeTreeWriter,
+    block_tree: &'a BlockTreeWriter,
 }
 
 impl<'a> WorldStateHandle<'a> {
-    pub(crate) fn open(node_tree: &'a NodeTreeWriter, parent_node_hash: &NodeHash) -> WorldStateHandle<'a> {
-        let parent_writes = node_tree.get_write_set(&parent_node_hash).map_or(WriteSet::new(), identity);
+    pub(crate) fn open(block_tree: &'a BlockTreeWriter, parent_block_hash: &BlockHash) -> WorldStateHandle<'a> {
+        let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(WriteSet::new(), identity);
         let grandparent_writes = {
-            let grandparent_node_hash = node_tree.get_node(parent_node_hash).unwrap().justify.node_hash;
-            node_tree.get_write_set(&grandparent_node_hash).map_or(WriteSet::new(), identity)
+            let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
+            block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
         };
 
         WorldStateHandle {
             writes: WriteSet::new(),
             parent_writes,
             grandparent_writes,
-            node_tree
+            block_tree
         }
     }
 
@@ -140,7 +140,7 @@ impl<'a> WorldStateHandle<'a> {
         } else if let Some(value) = self.grandparent_writes.get(key) {
             value.clone()
         } else {
-            self.node_tree.get_from_world_state(key)
+            self.block_tree.get_from_world_state(key)
         }
     }
 

@@ -1,16 +1,16 @@
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::collections::{hash_set, HashSet, HashMap};
-use crate::msg_types::{BytesRead, NodeHash, SerDe};
+use crate::msg_types::{BytesRead, BlockHash, SerDe};
 
-pub struct ChildrenList(HashSet<NodeHash>);
+pub struct ChildrenList(HashSet<BlockHash>);
 
 impl ChildrenList {
     pub fn new() -> ChildrenList {
         ChildrenList(HashSet::new())
     }
 
-    pub fn iter(&self) -> hash_set::Iter<NodeHash> {
+    pub fn iter(&self) -> hash_set::Iter<BlockHash> {
         self.0.iter()
     }
 }
@@ -20,10 +20,10 @@ impl SerDe for ChildrenList {
         let mut res = ChildrenList::new();
         let mut cursor = 0usize;
         while cursor < bs.len() {
-            let child_hash = bs[cursor..mem::size_of::<NodeHash>()].try_into().unwrap();
-            cursor += mem::size_of::<NodeHash>();
+            let child_hash = bs[cursor..mem::size_of::<BlockHash>()].try_into().unwrap();
+            cursor += mem::size_of::<BlockHash>();
             if res.0.insert(child_hash) {
-                // Safety: entering this block implies that we registered the same Node twice as a child. 
+                // Safety: entering this block implies that we registered the same Block twice as a child. 
                 unreachable!()
             }
         }

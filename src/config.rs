@@ -6,8 +6,8 @@ use crate::identity::{PublicAddr, ParticipantSet, KeyPair};
 /// before being passed to components.
 pub struct Configuration {
     pub identity: IdentityConfig,
-    pub node_tree: NodeTreeConfig,
-    pub node_tree_api: NodeTreeApiConfig,
+    pub block_tree: BlockTreeConfig,
+    pub block_tree_api: BlockTreeApiConfig,
     pub state_machine: StateMachineConfig,
     pub networking: NetworkingConfiguration,
 }
@@ -20,19 +20,19 @@ pub struct IdentityConfig {
     pub static_participant_set: ParticipantSet,
 }
 
-/// Configuration related to the local NodeTree, and its storage.
+/// Configuration related to the local BlockTree, and its storage.
 #[derive(Clone, Debug)]
-pub struct NodeTreeConfig {
-    /// The path, local to the binary's working directory, where NodeTree will store its persistent database files.
+pub struct BlockTreeConfig {
+    /// The path, local to the binary's working directory, where BlockTree will store its persistent database files.
     pub db_path: String, 
 }
 
-/// Configuration related to the NodeTree HTTP API.
-pub struct NodeTreeApiConfig {
-    /// The IP address that the NodeTree HTTP API will listen on.
+/// Configuration related to the BlockTree HTTP API.
+pub struct BlockTreeApiConfig {
+    /// The IP address that the BlockTree HTTP API will listen on.
     pub listening_addr: IpAddr,
 
-    /// The port that the NodeTree HTTP API will listen on.
+    /// The port that the BlockTree HTTP API will listen on.
     pub listening_port: u16,
 }
 
@@ -40,9 +40,9 @@ pub struct NodeTreeApiConfig {
 #[derive(Clone)]
 pub struct StateMachineConfig {
     /// How long should a view be at most.
-    pub target_node_time: Duration,
+    pub target_block_time: Duration,
 
-    /// How long should App execute and validate Nodes in Sync Mode.
+    /// How long should App execute and validate Blocks in Sync Mode.
     pub sync_mode_execution_timeout: Duration,
 }
 

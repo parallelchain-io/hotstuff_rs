@@ -6,13 +6,13 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 
 ## The HotStuff Consensus Protocol
 
-HotStuff works by building a 'NodeTree': a directed acyclic graph of Nodes. Node is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
+HotStuff works by building a 'BlockTree': a directed acyclic graph of Blocks. Block is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
 
-HotStuff guarantees that committed Nodes are *immutable*. That is, they can never be *un*-committed as long as at least a supermajority of voting power faithfully execute the protocol. This guarantee enables applications to make hard-to-reverse actions with confidence. 
+HotStuff guarantees that committed Blocks are *immutable*. That is, they can never be *un*-committed as long as at least a supermajority of voting power faithfully execute the protocol. This guarantee enables applications to make hard-to-reverse actions with confidence. 
 
-![A graphic depicting a Tree (DAG) of nodes. Nodes are colored depending on how many confirmations they have.](./readme_assets/NodeTree%20Structure%20Diagram.png)
+![A graphic depicting a Tree (DAG) of Blocks. Blocks are colored depending on how many confirmations they have.](./readme_assets/BlockTree%20Structure%20Diagram.png)
 
-A Node becomes *committed* the instant its third confirmation is written into the NodeTree. A confirmation for a Node `A` is another Node `B` such that there is path between `B` to `A`.
+A Block becomes *committed* the instant its third confirmation is written into the BlockTree. A confirmation for a Block `A` is another Block `B` such that there is path between `B` to `A`.
 
 The choice of third confirmation to define commitment--as opposed to first or second--is not arbitrary. HotStuff's safety and liveness properties actually hinge upon on this condition. If you really want to understand why this is the case, you should read the [paper](./readme_assets/HotStuff%20paper.pdf). To summarize:
 
