@@ -5,7 +5,9 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use std::mem;
-use crate::msg_types::{ConsensusMsg, SerDe, ViewNumber, Block, QuorumCertificate, BlockHash, SignatureSet, Signature, BlockHeight};
+use borsh::BorshSerialize;
+
+use crate::msg_types::{ConsensusMsg, Block, QuorumCertificate, BlockHash, SignatureSet, Signature};
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
 pub struct Stream {
@@ -73,7 +75,7 @@ impl Stream {
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             while let Ok(msg) = from_main.recv() {
-                let bs = msg.serialize();
+                let bs = msg.try_to_vec().unwrap();
                 if let Err(_) = tcp_stream.write_all(&bs) {
                     // This causes the main-to-writer channel to become unusable, marking the Stream as 'corrupt', marking
                     // the stream for reconnection.
@@ -116,45 +118,7 @@ trait DeserializeFromStream: Sized {
 
 impl DeserializeFromStream for ConsensusMsg {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<ConsensusMsg, DeserializeFromStreamError> {
-        let variant_prefix = {
-            let mut buf = [0u8; 1];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            buf
-        };
-
-        let vn = {
-            let mut buf = [0u8; 8];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            ViewNumber::from_le_bytes(buf.try_into().unwrap())
-        };
-        
-        match variant_prefix {
-            Self::PREFIX_PROPOSE => {
-                let block = Block::deserialize_from_stream(tcp_stream)?;
-                Ok(Self::Propose(vn, block))
-            },
-            Self::PREFIX_VOTE => {
-                let block_hash  = {
-                    let mut buf = [0u8; 32];
-                    tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                    buf
-                };
-
-                let signature = {
-                    let mut buf = [0u8; 64];
-                    tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                    buf.into()
-                };
-
-                Ok(Self::Vote(vn, block_hash, signature))
-
-            },
-            Self::PREFIX_NEW_VIEW => {
-                let qc = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
-                Ok(Self::NewView(vn, qc))
-            }
-            _ => Err(DeserializeFromStreamError::DeserializationError)
-        }
+        todo!()
     }
 }
 
@@ -162,38 +126,6 @@ impl DeserializeFromStream for Block {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
         // Marked as todo pending changes related to turning `command` into `commands`.
         todo!()
-        // let hash = {
-        //     let mut buf = [0u8; mem::size_of::<BlockHash>()];
-        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-        //     buf.into()
-        // };
-
-        // let height = {
-        //     let mut buf = [0u8; mem::size_of::<BlockHeight>()];
-        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-        //     u64::from_le_bytes(buf)
-        // };
-
-        // let command_len = {
-        //     let mut buf = [0u8; mem::size_of::<u64>()];
-        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-        //     u64::from_le_bytes(buf)
-        // };
-
-        // let command = {
-        //     let mut buf = vec![0u8; command_len as usize];
-        //     tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-        //     buf
-        // };
-
-        // let justify = QuorumCertificate::deserialize_from_stream(tcp_stream)?;
-
-        // Ok(Block {
-        //     hash,
-        //     height,
-        //     command,
-        //     justify
-        // })
     }
 }
 
@@ -223,42 +155,7 @@ impl DeserializeFromStream for QuorumCertificate {
 
 impl DeserializeFromStream for SignatureSet {
     fn deserialize_from_stream(mut tcp_stream: &net::TcpStream) -> Result<Self, DeserializeFromStreamError> {
-        let mut signatures = Vec::new();
-
-        let num_sigs = {
-            let mut buf = [0u8; mem::size_of::<u64>()];
-            tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-            u64::from_le_bytes(buf.try_into().unwrap())
-        };
-
-        let mut count = 0;
-        for _ in 0..num_sigs {
-            let variant_prefix = {
-                let mut buf = [0u8; mem::size_of::<u8>()];
-                tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                u8::from_le_bytes(buf.try_into().unwrap())
-            };
-            match variant_prefix {
-                Self::SOME_PREFIX => {
-                    let sig = {
-                        let mut buf = [0u8; mem::size_of::<Signature>()];
-                        tcp_stream.read_exact(&mut buf).map_err(Self::handle_err)?;
-                        buf.into()
-                    };
-                    signatures.push(Some(sig));
-                    count += 1;
-                },
-                Self::NONE_PREFIX => {
-                    signatures.push(None);
-                },
-                _ => return Err(DeserializeFromStreamError::DeserializationError)
-            }
-        }
-
-        Ok(SignatureSet { 
-            signatures,
-            count
-        })
+        todo!()
     }
 }
 

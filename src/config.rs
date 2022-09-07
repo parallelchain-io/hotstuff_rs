@@ -1,6 +1,6 @@
 use std::time::Duration;
 use std::net::IpAddr;
-use crate::identity::{PublicAddr, ParticipantSet, KeyPair};
+use crate::{identity::{PublicAddr, ParticipantSet, KeyPair}, msg_types::AppID};
 
 /// Configuration as specified by the operator. This is split up into smaller, subsystem specific config structs
 /// before being passed to components.
@@ -39,6 +39,8 @@ pub struct BlockTreeApiConfig {
 /// Configuration related to the Protocol State Machine.
 #[derive(Clone)]
 pub struct StateMachineConfig {
+    pub app_id: AppID,
+
     /// How long should a view be at most.
     pub target_block_time: Duration,
 

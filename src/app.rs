@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::time::Instant;
 use crate::block_tree::BlockTreeWriter;
 use crate::stored_types::{WriteSet, Key, Value};
-use crate::msg_types::{CommandList, Block as MsgBlock, BlockHash};
+use crate::msg_types::{Data, DataHash, Block as MsgBlock, BlockHash};
 
 /// Besides implementing the functions specified in the trait, implementors of App are additionally expected to be *deterministic*. i.e., every
 /// function it implements as part of the App trait should evaluate to the same value every time it is called with the same arguments.
@@ -12,54 +12,54 @@ pub trait App: Send + 'static {
     /// 
     /// # Parameters
     /// 1. `parent_block`: the Block which the new Block directly descends from.
-    /// 2. `world_state`: a read-and-writable view of the World State after executing all Blocks in the branch headed by `parent_block`.
+    /// 2. `storage_snapshot`: a read-and-writable view of Storage after executing all Blocks in the branch headed by `parent_block`.
     /// 3. `deadline`: this function call should return at the latest by this instant in time. Otherwise, this view in which the Participant
     /// is the Leader is likely to fail because of view timeout.
     /// 
     /// # Return value
-    /// A two-tuple consisting of:
-    /// 1. Commands. This will occupy the `commands` field of the Block proposed by this Participant in this view. 
-    /// 2. The instance of WorldStateHandle which was passed into this function. `set`s into this Handle will be applied into the World State
-    /// when the Block containing the returned Command becomes committed.
-    fn create_leaf(
+    /// A triple consisting of:
+    /// 1. A Data. This will occupy the `data` field of the Block proposed by this Participant in this view. 
+    /// 2. A DataHash. This will occupy the `data_hash` field of the Block proposed by the Participant in this view.
+    /// 3. A WriteSet resulting from executing the provided Block on the provided Storage. This will be applied into the Storage when the Block
+    /// containing the returned Data becomes committed. 
+    fn propose_block(
         &mut self, 
         parent_block: &Block,
-        world_state: WorldStateHandle,
+        storage_snapshot: SpeculativeStorageSnapshot,
         deadline: Instant
-    ) -> (CommandList, WorldStateHandle);
+    ) -> (Data, DataHash, WriteSet);
 
     /// Called by StateMachine when this Participant is a Replica and has to decide whether or not to vote on a Block which was proposed by
     /// the Leader.
     /// 
     /// # Parameters
     /// 1. `block`: the Block which was proposed by the Leader of this view.
-    /// 2. `world_state`: read the corresponding entry in the itemdoc for `create_leaf`.
+    /// 2. `storage_snapshot`: read the corresponding entry in the itemdoc for `propose_block`.
     /// 3. `deadline`: this function call should return at the latest by this instant in time. If not, this Participant might not be able to 
     /// Vote in time for its signature to be included in this round's QuorumCertificate. 
     /// 
     /// # Return value
-    /// A two-tuple consisting of:
-    /// 1. The instance of WorldStateHandle which was passed into this function. Read the corresponding entry in the itemdoc for `create_leaf`.
-    /// 2. An ExecuteError. Read the itemdoc for `ExecuteError`.
-    fn execute(
+    /// If the Block is valid, the WriteSet that results from executing the provided Block on the provided Storage. Else, the reason why the
+    /// Block is deemed invalid.
+    fn validate_block(
         &mut self,
         block: &Block,
-        world_state: WorldStateHandle,
+        storage_snapshot: SpeculativeStorageSnapshot,
         deadline: Instant
-    ) -> Result<WorldStateHandle, ExecuteError>;
+    ) -> Result<WriteSet, ExecuteError>;
 }
 
 /// Circumstances in which an App could reject a proposed Block, causing this Participant to skip this round without voting.
 pub enum ExecuteError {
-    /// deadline was exceeded while processing the proposed Block.
+    /// The Deadline was exceeded while processing the proposed Block.
     RanOutOfTime,
 
     /// The contents of the Block, in the context of its proposed position in the Block Tree, is invalid in the view of App-level validation rules.
     InvalidBlock,
 }
 
-/// A wrapper around msg_types::Block which, besides allowing App's methods to look into the Block's fields, exposes methods for traversing the 
-/// branch that this Block heads.
+/// A convenience wrapper around msg_types::Block which, besides allowing App's methods to look into the Block's fields, exposes methods for
+/// traversing the branch that this Block heads.
 pub struct Block<'a> {
     inner: MsgBlock,
     block_tree: &'a BlockTreeWriter,
@@ -103,51 +103,36 @@ impl<'a> Deref for Block<'a> {
 /// applied into this WorldStateHandle only become permanent when the Block containing the Command that it corresponds to becomes committed. 
 /// 
 /// This structure should NOT be used in App code outside the context of `create_leaf` and `execute`.
-pub struct WorldStateHandle<'a> {
-    writes: WriteSet,
+pub struct SpeculativeStorageSnapshot<'a> {
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
     block_tree: &'a BlockTreeWriter,
 }
 
-impl<'a> WorldStateHandle<'a> {
-    pub(crate) fn open(block_tree: &'a BlockTreeWriter, parent_block_hash: &BlockHash) -> WorldStateHandle<'a> {
+impl<'a> SpeculativeStorageSnapshot<'a> {
+    pub(crate) fn open(block_tree: &'a BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageSnapshot<'a> {
         let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(WriteSet::new(), identity);
         let grandparent_writes = {
             let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
             block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
         };
 
-        WorldStateHandle {
-            writes: WriteSet::new(),
+        SpeculativeStorageSnapshot {
             parent_writes,
             grandparent_writes,
             block_tree
         }
     }
 
-    /// set a key-value pair in the World State.
-    pub fn set(&mut self, key: Key, value: Value) {
-        self.writes.insert(key, value); 
-    }
-
     /// get a value in the World State.
     pub fn get(&self, key: &Key) -> Value {
-        if let Some(value) = self.writes.get(key) {
-            value.clone()
-        } else if let Some(value) = self.parent_writes.get(key) {
+        if let Some(value) = self.parent_writes.get(key) {
             value.clone()
         } else if let Some(value) = self.grandparent_writes.get(key) {
             value.clone()
         } else {
-            self.block_tree.get_from_world_state(key)
+            self.block_tree.get_from_storage(key)
         }
     }
 
-}
-
-impl<'a> Into<WriteSet> for WorldStateHandle<'a> {
-    fn into(self) -> WriteSet {
-        self.writes
-    }
 }

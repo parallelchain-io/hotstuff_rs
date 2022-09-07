@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::convert::identity;
+use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::BlockTreeConfig;
 use crate::stored_types::{WriteSet, ChildrenList, Key, Value};
-use crate::msg_types::{Block, BlockHash, ViewNumber, SerDe, BlockHeight, Command, CommandList, QuorumCertificate};
+use crate::msg_types::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate};
 
 pub fn open(block_tree_config: &BlockTreeConfig) -> (BlockTreeWriter, BlockTreeSnapshotFactory) {
     let db = DB::open_default(block_tree_config.db_path.clone())
@@ -129,11 +130,11 @@ impl BlockTreeWriter {
 // Getters and setters for Blocks and chains of Blocks.
 impl BlockTreeWriter {
     fn set_block(wb: &mut WriteBatch, block: &Block) {
-        wb.put(prefix(special_prefixes::NODES, &block.hash), block.serialize());
+        wb.put(prefix(special_prefixes::NODES, &block.hash), block.try_to_vec().unwrap());
     }
 
     pub fn get_block(&self, block_hash: &BlockHash) -> Option<Block> {
-        Some(Block::deserialize(&self.db.get(prefix(special_prefixes::NODES, block_hash)).unwrap()?).unwrap().1)
+        Some(Block::deserialize(&mut &self.db.get(prefix(special_prefixes::NODES, block_hash)).unwrap()?[..]).unwrap())
     }
 
     fn delete_branch(&self, wb: &mut WriteBatch, tail_block_hash: &BlockHash) {
@@ -158,11 +159,11 @@ impl BlockTreeWriter {
 // Getters and Setters for WriteSets.
 impl BlockTreeWriter {
     pub fn set_write_set(wb: &mut WriteBatch, block_hash: &BlockHash, write_set: &WriteSet) {
-        wb.put(prefix(special_prefixes::WRITE_SETS, block_hash), write_set.serialize());
+        wb.put(prefix(special_prefixes::WRITE_SETS, block_hash), write_set.try_to_vec().unwrap());
     }
 
     pub fn get_write_set(&self, block_hash: &BlockHash) -> Option<WriteSet> {
-        Some(WriteSet::deserialize(&self.db.get(&prefix(special_prefixes::WRITE_SETS, block_hash)).unwrap()?).unwrap().1)
+        Some(WriteSet::deserialize(&mut &self.db.get(&prefix(special_prefixes::WRITE_SETS, block_hash)).unwrap()?[..]).unwrap())
     }
 
     pub fn apply_write_set(wb: &mut WriteBatch, write_set: &WriteSet) {
@@ -171,7 +172,7 @@ impl BlockTreeWriter {
         }
     }
 
-    pub fn get_from_world_state(&self, key: &Key) -> Value {
+    pub fn get_from_storage(&self, key: &Key) -> Value {
         self.db.get(prefix(special_prefixes::WORLD_STATE, key)).unwrap().map_or(Value::new(), identity)
     }
 
@@ -183,11 +184,11 @@ impl BlockTreeWriter {
 // Getters and Setters for ChildrenLists.
 impl BlockTreeWriter {
     pub fn set_children_list(wb: &mut WriteBatch, block_hash: &BlockHash, children_list: &ChildrenList) {
-        wb.put(prefix(special_prefixes::CHILDREN_LISTS, block_hash), children_list.serialize())
+        wb.put(prefix(special_prefixes::CHILDREN_LISTS, block_hash), children_list.try_to_vec().unwrap())
     }
 
     pub fn get_children_list(&self, block_hash: &BlockHash) -> Option<ChildrenList> {
-        Some(ChildrenList::deserialize(&self.db.get(&prefix(special_prefixes::CHILDREN_LISTS, block_hash)).unwrap()?).unwrap().1)
+        Some(ChildrenList::deserialize(&mut &self.db.get(&prefix(special_prefixes::CHILDREN_LISTS, block_hash)).unwrap()?[..]).unwrap())
     }
 
     pub fn delete_children_list(wb: &mut WriteBatch, block_hash: &BlockHash) {
@@ -217,7 +218,7 @@ pub struct BlockTreeSnapshot<'a> {
 
 impl<'a> BlockTreeSnapshot<'a> {
     pub fn get_block_by_hash(&self, block_hash: &BlockHash) -> Option<Block> {
-        Some(Block::deserialize(&self.db_snapshot.get(prefix(special_prefixes::NODES, block_hash)).unwrap()?).unwrap().1)
+        Some(Block::deserialize(&mut &self.db_snapshot.get(prefix(special_prefixes::NODES, block_hash)).unwrap()?[..]).unwrap())
     }
 
     pub fn get_block_by_height(height: &BlockHeight) -> Option<Block> {
@@ -236,19 +237,19 @@ impl<'a> BlockTreeSnapshot<'a> {
         todo!()
     }
 
-    pub fn get_block_command_list_by_hash(hash: &BlockHash) -> Option<CommandList> {
+    pub fn get_block_command_list_by_hash(hash: &BlockHash) -> Option<Data> {
         todo!()
     }
 
-    pub fn get_block_command_list_by_height(height: &BlockHeight) -> Option<CommandList> {
+    pub fn get_block_command_list_by_height(height: &BlockHeight) -> Option<Data> {
         todo!()
     }
 
-    pub fn get_block_command_by_hash(hash: &BlockHash, index: usize) -> Option<Command> {
+    pub fn get_block_command_by_hash(hash: &BlockHash, index: usize) -> Option<Datum> {
         todo!()
     }
 
-    pub fn get_block_command_by_height(height: &BlockHeight) -> Option<Command> {
+    pub fn get_block_command_by_height(height: &BlockHeight) -> Option<Datum> {
         todo!()
     }
 
@@ -260,9 +261,9 @@ impl<'a> BlockTreeSnapshot<'a> {
             return Err(ChildrenNotYetCommittedError)
         }
 
-        let parent_children = ChildrenList::deserialize(&self.db_snapshot.get(&prefix(special_prefixes::CHILDREN_LISTS, parent_block_hash)).unwrap().unwrap()).unwrap();
+        let parent_children = ChildrenList::deserialize(&mut &self.db_snapshot.get(&prefix(special_prefixes::CHILDREN_LISTS, parent_block_hash)).unwrap().unwrap()[..]).unwrap();
         // Safety: parent_children.len() must be 1, since parent is an ancestor of a committed Block. 
-        let child_hash = parent_children.1.iter().next().unwrap();
+        let child_hash = parent_children.iter().next().unwrap();
         Ok(self.get_block_by_hash(child_hash).unwrap())
     }
 

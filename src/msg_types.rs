@@ -1,12 +1,67 @@
-use std::array;
-use std::mem;
+use std::ops::Deref;
+use std::io;
+use borsh::{BorshSerialize, BorshDeserialize};
 use sha2::Digest;
 use sha2::Sha256;
-use ed25519_dalek::Signature as DalekSignature;
+use ed25519_dalek::{Signature as DalekSignature, SIGNATURE_LENGTH};
 use crate::identity::{PublicAddr, ParticipantSet};
 
-/// Messages sent between Participants on IPC channels to drive BlockTree construction forward.
+pub type ViewNumber = u64;
+
+pub type AppID = u64;
+
+pub type BlockHeight = u64;
+
+pub const NODE_HASH_LEN: usize = 32;
+pub type BlockHash = [u8; NODE_HASH_LEN];
+
+/// A list of App-provided Datums. Datums are stored in Blocks as a delineated, indexable list so that
+/// applications can quickly get the Datum sitting a particular index in a Block using 
+/// `BlockTree::get_block_command_by_hash` or `get_block_command_by_height` instead of getting the entire list
+/// of Data at once, which might be an unacceptable expensive I/O operation.
+pub type Data = Vec<Datum>;
+
+/// Arbitrary data provided by an App as part of the return value of `create_leaf`. 
+pub type Datum = Vec<u8>;
+
+pub const DATA_HASH_LEN: usize = 32;
+pub type DataHash = [u8; DATA_HASH_LEN];
+
 #[derive(Clone)]
+pub struct Signature(pub DalekSignature);
+
+impl BorshSerialize for Signature {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.0.to_bytes())
+    }
+}
+
+impl BorshDeserialize for Signature {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        // BorshDeserialize requires that deserialize update the buffer to point at the remaining bytes.
+        if buf.len() < SIGNATURE_LENGTH {
+            *buf = &buf[buf.len()..];
+            Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer is too short to produce Signature"))
+        } else {
+            let sig_bytes = &buf[0..SIGNATURE_LENGTH];
+            let dalek_signature = DalekSignature::from_bytes(sig_bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Dalek rejects the Signature"))?;
+            *buf = &buf[SIGNATURE_LENGTH..];
+            Ok(Signature(dalek_signature))
+        } 
+    }
+}
+
+impl Deref for Signature {
+    type Target = DalekSignature;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Messages sent between Participants on IPC channels to drive BlockTree construction forward.
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub enum ConsensusMsg {
     /// Broadcasted by the Leader of a view to all other Replicas to propose a Block which extends the BlockTree.
     Propose(ViewNumber, Block),
@@ -22,148 +77,28 @@ pub enum ConsensusMsg {
     NewView(ViewNumber, QuorumCertificate),
 }
 
-/// The first byte of the wire-encoding of ConsensusMsg. Disambiguates whether the following message should be 
-/// deserialized into a Proposal, a Vote, or a NewView.
-type VariantPrefix = [u8; 1];
-
-impl ConsensusMsg {
-    pub const PREFIX_PROPOSE: VariantPrefix = [0u8];
-    pub const PREFIX_VOTE: VariantPrefix = [1u8];
-    pub const PREFIX_NEW_VIEW: VariantPrefix = [2u8]; 
-}
-
-impl SerDe for ConsensusMsg {
-    // # Encodings
-    //
-    // ## Propose
-    // PREFIX_PROPOSE 
-    // ++ vn.to_le_bytes()
-    // ++ block.serialize()
-    // 
-    // ## Vote
-    // PREFIX_VOTE
-    // ++ vn.to_le_bytes()
-    // ++ block_hash
-    // ++ signature
-    //
-    // ## NewView
-    // PREFIX_NEW_VIEW
-    // ++ vn.to_le_bytes()
-    // ++ qc.serialize()
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        match self {
-            Self::Propose(vn, block) => {
-                buf.extend_from_slice(&Self::PREFIX_PROPOSE);
-                buf.extend_from_slice(&vn.to_le_bytes());
-                buf.extend_from_slice(&block.serialize());
-            },
-            Self::Vote(vn, block_hash, signature) => {
-                buf.extend_from_slice(&Self::PREFIX_VOTE);
-                buf.extend_from_slice(&vn.to_le_bytes());
-                buf.extend_from_slice(block_hash);
-                buf.extend_from_slice(&signature.to_bytes());
-            },
-            Self::NewView(vn, qc) => {
-                buf.extend_from_slice(&Self::PREFIX_NEW_VIEW);
-                buf.extend_from_slice(&vn.to_le_bytes());
-                buf.extend_from_slice(&qc.serialize());
-            }
-        }
-
-        return buf
-    }
-
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
-        let mut cursor = 0usize;
-
-        let variant_prefix = bs[cursor..mem::size_of::<VariantPrefix>()].try_into()?;
-        cursor += mem::size_of::<VariantPrefix>();
-
-        let vn = u64::from_le_bytes(bs[cursor..mem::size_of::<ViewNumber>()].try_into()?); 
-        cursor += mem::size_of::<ViewNumber>();
-        match variant_prefix {
-            Self::PREFIX_PROPOSE => {
-                let (bytes_read, block) = Block::deserialize(&bs[cursor..])?;
-                cursor += bytes_read;
-                Ok((cursor, Self::Propose(vn, block)))
-            },
-            Self::PREFIX_VOTE => {
-                let block_hash = bs[cursor..mem::size_of::<BlockHash>()].try_into()?;
-                cursor += mem::size_of::<BlockHash>();
-
-                let signature = <[u8; 64]>::try_from(&bs[cursor..64]).unwrap().into();
-                cursor += mem::size_of::<Signature>();
-                Ok((cursor, Self::Vote(vn, block_hash, signature)))
-            },
-            Self::PREFIX_NEW_VIEW => {
-                let (bytes_read, qc) = QuorumCertificate::deserialize(&bs[cursor..])?;
-                cursor += bytes_read;
-                Ok((cursor, Self::NewView(vn, qc)))
-            },
-            _ => Err(DeserializationError) 
-        }
-
-
-    }
-}
-
 /// A bundle of data 'chained' onto another like bundle of data--referred to as its 'parent'--by containing a
 /// cryptographic certificate that attests to the parent having been accepted and stored by a quorum of Participants.
-#[derive(Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct Block {
-    /// A cryptographic hash over (height ++ justify ++ commands). Used as a unique identifier of a Block that is short
-    /// and therefore to cheap to send over the wire. 
+    pub app_id: AppID,
+
     pub hash: BlockHash,
 
     /// How many justify-links separate this Block from the Genesis Block.
     pub height: BlockHeight,
 
     pub justify: QuorumCertificate,
-    pub commands: CommandList,
+
+    pub data_hash: DataHash,
+    pub data: Data,
 }
 
 impl Block {
-    pub fn hash(height: BlockHeight, commands: &Vec<Vec<u8>>, justify: &QuorumCertificate) -> BlockHash {
-        Sha256::new()
-            .chain_update(height.to_le_bytes())
-            .chain_update(commands.serialize())
-            .chain_update(justify.serialize())
-            .finalize()
-            .into()
-    }
-}
-
-impl SerDe for Block {
-    fn serialize(&self) -> Vec<u8> {
-        let mut bs = Vec::new();
-        bs.extend_from_slice(&self.hash);
-        bs.extend_from_slice(&self.height.to_le_bytes());
-        bs.extend_from_slice(&self.commands.serialize());
-        bs.extend_from_slice(&self.justify.serialize());
-        bs
-    }
-
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
+    pub fn hash(height: BlockHeight, justify: &QuorumCertificate, data_hash: &DataHash) -> BlockHash {
         todo!()
     }
 }
-
-pub type ViewNumber = u64;
-
-pub type BlockHeight = u64;
-
-pub const NODE_HASH_LEN: usize = 32;
-pub type BlockHash = [u8; NODE_HASH_LEN];
-
-/// A list of App-provided Commands. Commands are stored in Blocks as a delineated, indexable list so that
-/// applications can quickly get the Command sitting a particular index in a Block using 
-/// `BlockTree::get_block_command_by_hash` or `get_block_command_by_height` instead of getting the entire list
-/// of Commands at once, which might be an unacceptable expensive I/O operation.
-pub type CommandList = Vec<Command>;
-
-/// Arbitrary data provided by an App as part of the return value of `create_leaf`. 
-pub type Command = Vec<u8>;
 
 /// An aggregate of multiple `ConsensusMsg::Vote`s. A valid QuorumCertificate is proof that a quorum of
 /// Participants has inserted the branch headed by the Block identified by the QuorumCertificate's `block
@@ -173,7 +108,7 @@ pub type Command = Vec<u8>;
 /// 
 /// A QuorumCertificate is 'valid', i.e., it can safely be inserted into the BlockTree, if its is_quorum
 /// and is_cryptographically_correct methods return true. 
-#[derive(Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct QuorumCertificate {
     /// The view number of the Votes that were combined to form this QuorumCertificate. 
     pub view_number: ViewNumber,
@@ -202,48 +137,6 @@ impl QuorumCertificate {
     /// by the SecretKey associated with a PublicAddr in the provided ParticipantSet.
     pub fn is_cryptographically_correct(&self, participant_set: &ParticipantSet) -> bool {
         todo!()
-    }
-}
-
-impl SerDe for QuorumCertificate {
-    fn serialize(&self) -> Vec<u8> {
-        let mut bs = Vec::new();
-        bs.extend_from_slice(&self.view_number.to_le_bytes());
-        bs.extend_from_slice(&self.block_hash);
-        bs.extend_from_slice(&self.sigs.serialize());
-
-        return bs
-    }
-
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, QuorumCertificate), DeserializationError> {
-        let mut cursor = 0;
-
-        let vn = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
-        cursor += mem::size_of::<u64>();
-
-        let block_hash = bs[cursor..mem::size_of::<BlockHash>()].try_into()?;
-        cursor += mem::size_of::<BlockHash>();
-
-        let (bytes_read, sigs) = SignatureSet::deserialize(&bs[40..])?;
-        cursor += bytes_read;
-
-        let qc = QuorumCertificate {
-            view_number: vn,
-            block_hash,
-            sigs,
-        };
-
-        Ok((cursor, qc))
-    }
-}
-
-impl SerDe for CommandList {
-    fn serialize(&self) -> Vec<u8> {
-        todo!() 
-    }
-
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
-        todo!() 
     }
 }
 
@@ -319,7 +212,7 @@ pub enum QCAggregatorInsertError {
 /// A list of Signatures, ordered according to the arithmetic order of the PublicAddr associated with the SecretKey that
 /// produced them. This special ordering makes it so that an explicit mapping between PublicAddr and Signature can be
 /// omitted from SignatureSet's bytes-encoding, saving message and storage size.
-#[derive(Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct SignatureSet {
     pub signatures: Vec<Option<Signature>>,
 
@@ -328,9 +221,6 @@ pub struct SignatureSet {
 } 
 
 impl SignatureSet {
-    pub const SOME_PREFIX: u8 = 1;
-    pub const NONE_PREFIX: u8 = 0; 
-
     pub fn new(length: usize) -> SignatureSet {
         let signatures = vec![None; length];
         SignatureSet {
@@ -364,122 +254,3 @@ impl SignatureSet {
 }
 
 pub struct AlreadyInsertedError;
-
-impl SerDe for SignatureSet {
-    // Encoding:
-    // `participant_set.len()` as u64
-    // ++
-    // for each signature in signatures:
-    //     if Some:
-    //         1 ++ signature
-    //     if None: 
-    //         0 
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-
-        // Number counts both Some and None signatures.
-        let num_sigs = self.signatures.len().to_le_bytes();
-        buf.extend_from_slice(&num_sigs);
-
-        for signature in &self.signatures {
-            match signature {
-                Some(sig) => { 
-                    buf.push(Self::SOME_PREFIX);
-                    buf.extend_from_slice(&sig.to_bytes());
-                },
-                None => {
-                    buf.push(Self::NONE_PREFIX);
-                }
-            }
-        }
-        buf
-    }
-
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
-        let mut signatures = Vec::new();
-
-        let mut cursor = 0usize;
-        let num_sigs = u64::from_le_bytes(bs[0..mem::size_of::<u64>()].try_into().unwrap());
-        cursor += mem::size_of::<u64>();
-
-        let mut count = 0;
-        for _ in 0..num_sigs {
-            let variant_prefix = u8::from_le_bytes(bs[cursor..mem::size_of::<u8>()].try_into().unwrap());
-            cursor += mem::size_of::<u8>();
-            match variant_prefix {
-                Self::SOME_PREFIX => {
-                    let sig = <Signature>::try_from(&bs[cursor..64]).unwrap().into();
-                    cursor += mem::size_of::<Signature>();
-                    signatures.push(Some(sig));
-                    count += 1;
-                }, 
-                Self::NONE_PREFIX => {
-                    signatures.push(None);
-                },
-                _ => return Err(DeserializationError)
-            }
-        }
-        
-        let sig_set = SignatureSet {
-            signatures,
-            count,
-        };
-
-        Ok((cursor, sig_set))
-    }
-}
-
-pub type Signature = DalekSignature;
-
-/// Methods that convert to and from bytes-encodings.
-pub trait SerDe: Sized {
-    fn serialize(&self) -> Vec<u8>;
-
-
-    /// Reads from the beginning of the provided buffer to try and produce an instance of the implementor type.
-    /// 
-    /// The fact that deserialize returns the number of bytes read from the provided buffer to produce an instance of the implementor
-    /// simplifies SerDe implementation on types that are products of types that also implement SerDe.
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError>;
-}
-
-pub type BytesRead = usize;
-
-#[derive(Debug)]
-pub struct DeserializationError;
-
-impl From<array::TryFromSliceError> for DeserializationError {
-    fn from(_: array::TryFromSliceError) -> Self {
-        DeserializationError
-    }
-}
-
-impl<T: SerDe> SerDe for Vec<T> {
-    fn deserialize(bs: &[u8]) -> Result<(BytesRead, Self), DeserializationError> {
-        let mut cursor = 0;
-
-        let num_elems = u64::from_le_bytes(bs[cursor..mem::size_of::<u64>()].try_into()?);
-        let mut res = Vec::with_capacity(num_elems as usize);
-
-        for _ in 0..num_elems {
-            let (bytes_read, elem) = T::deserialize(&bs[cursor..])?;  
-            cursor += bytes_read;
-            res.push(elem);
-        }
-
-        Ok((cursor, res))
-    }
-
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-
-        let num_elems = self.len() as u64;
-        buf.extend_from_slice(&num_elems.to_le_bytes());
-
-        for elem in self {
-            buf.append(&mut elem.serialize())
-        }
-
-        buf
-    }
-}

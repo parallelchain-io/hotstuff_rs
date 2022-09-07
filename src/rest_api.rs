@@ -2,13 +2,14 @@ use std::net::{SocketAddr, IpAddr};
 use std::cmp::min;
 use std::ops::Deref;
 use std::time::Duration;
+use borsh::{BorshSerialize, BorshDeserialize};
 use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use reqwest;
 use pchain_types::Base64URL;
-use crate::msg_types::{Block, BlockHash, SerDe};
+use crate::msg_types::{Block, BlockHash};
 use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
 use crate::config::BlockTreeApiConfig;
 
@@ -60,11 +61,11 @@ impl Server {
 
         match anchor {
             GetBlocksAnchor::Head => match get_blocks_up_to_head(&block_tree_snapshot, &hash, limit, speculate) {
-                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.serialize()),
+                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.try_to_vec().unwrap()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             },
             GetBlocksAnchor::Tail => match get_blocks_from_tail(&block_tree_snapshot, &hash, limit, speculate) {
-                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.serialize()),
+                Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.try_to_vec().unwrap()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             }, 
             _ => unreachable!()
@@ -209,7 +210,7 @@ impl SyncModeClient {
         );
         let resp = self.0.get(url).send().map_err(Self::convert_request_error)?;
         let resp_bytes = resp.bytes().map_err(|_| GetBlocksFromTailError::BadResponse)?; 
-        let (_, blocks) = Vec::<Block>::deserialize(&resp_bytes).map_err(|_| GetBlocksFromTailError::BadResponse)?;
+        let blocks = Vec::<Block>::deserialize(&mut &resp_bytes[..]).map_err(|_| GetBlocksFromTailError::BadResponse)?;
 
         Ok(blocks)
     }

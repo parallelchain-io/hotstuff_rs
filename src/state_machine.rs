@@ -3,8 +3,8 @@ use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
 use ed25519_dalek::Signer;
-use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
-use crate::app::{App, Block as AppBlock, WorldStateHandle, ExecuteError};
+use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash, Signature};
+use crate::app::{App, Block as AppBlock, SpeculativeStorageSnapshot, ExecuteError};
 use crate::config::{StateMachineConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicAddr, ParticipantSet};
@@ -102,15 +102,17 @@ impl<A: App> StateMachine<A> {
         // 1. Call App to produce a new leaf Block.
         let (leaf, writes) = {
             let parent_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
-            let (commands, state) = {
+            let (data, data_hash, state) = {
                 let app_block = AppBlock::new(parent_block.clone(), &self.block_tree);
-                let world_state = WorldStateHandle::open(&self.block_tree, &parent_block.hash);
-                self.app.create_leaf(&app_block, world_state, deadline)
+                let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &parent_block.hash);
+                self.app.propose_block(&app_block, storage, deadline)
             };
             let block = MsgBlock {
-                hash: MsgBlock::hash(parent_block.height, &commands, &self.top_qc),
+                app_id: self.state_machine_config.app_id,
+                hash: MsgBlock::hash(parent_block.height, &self.top_qc, &data_hash),
                 height: parent_block.height + 1,
-                commands,
+                data,
+                data_hash,
                 justify: self.top_qc.clone(),
             };
 
@@ -128,7 +130,7 @@ impl<A: App> StateMachine<A> {
         self.ipc_handle.broadcast(&proposal);
 
         // 2. Send a VOTE for our own proposal to the next leader.
-        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, self.identity_config.my_keypair.sign(&leaf_hash));
+        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, Signature(self.identity_config.my_keypair.sign(&leaf_hash)));
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         self.ipc_handle.send_to(&next_leader, &vote);
 
@@ -190,9 +192,9 @@ impl<A: App> StateMachine<A> {
 
         // 1. Call App to execute the proposed Block.
         let app_block = AppBlock::new(proposed_block.clone(), &self.block_tree);
-        let world_state = WorldStateHandle::open(&self.block_tree, &proposed_block.justify.block_hash);   
+        let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &proposed_block.justify.block_hash);   
         let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
-        let execution_result = self.app.execute(&app_block, world_state, deadline);
+        let execution_result = self.app.validate_block(&app_block, storage, deadline);
  
         // 2. If App accepts the Block, write it and its writes into the BlockTree.
         let writes = match execution_result {
@@ -205,7 +207,7 @@ impl<A: App> StateMachine<A> {
 
         // 1. Send a VOTE message to the next leader.
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
-        let vote = ConsensusMsg::Vote(self.cur_view, proposed_block.hash, self.identity_config.my_keypair.sign(&proposed_block.hash));
+        let vote = ConsensusMsg::Vote(self.cur_view, proposed_block.hash, Signature(self.identity_config.my_keypair.sign(&proposed_block.hash)));
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 2. If next leader == me, change to State::NextLeader.
@@ -317,9 +319,9 @@ impl<A: App> StateMachine<A> {
 
                     // 5. Call App to validate block.
                     let app_block = AppBlock::new(block.clone(), &self.block_tree);
-                    let world_state = WorldStateHandle::open(&self.block_tree, &block.justify.block_hash);
+                    let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &block.justify.block_hash);
                     let deadline = Instant::now() + self.state_machine_config.sync_mode_execution_timeout;
-                    let execution_result = self.app.execute(&app_block, world_state, deadline);
+                    let execution_result = self.app.validate_block(&app_block, storage, deadline);
 
                     // 6. If App accepts the Block, write it and its write into the BlockTree.
                     let writes = match execution_result {
