@@ -35,9 +35,9 @@ pub(crate) mod rest_api;
 /// Defines types that give a cryptographic identity to every Participant. This chiefly includes secret keys, public keys, and signatures.
 pub(crate) mod identity;
 
-/// Defines HotStuff-rs' Consensus State Machine, the component which actually drives the growth of the Block Tree through Byzantine Fault
+/// Defines HotStuff-rs' Algorithm State Machine, the component which actually drives the growth of the Block Tree through Byzantine Fault
 /// Tolerant consensus. 
-pub(crate) mod state_machine;
+pub(crate) mod algorithm;
 
 /// Defines types and routines that interact with network I/O to enable this Participant to contact other Participants in Progress Mode.
 /// Sync Mode networking involves types defined in the rest_api module.

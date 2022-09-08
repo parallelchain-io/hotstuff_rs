@@ -1,38 +1,75 @@
-use std::thread;
+use std::{thread, fs};
 use crate::app::App;
 use crate::config::Configuration;
 use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
-use crate::state_machine::{State, StateMachine};
+use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate};
+use crate::algorithm::{State, Algorithm};
+use crate::stored_types::WriteSet;
 
-struct HotStuff {
+pub struct HotStuff {
     block_tree_snapshot_factory: BlockTreeSnapshotFactory,
-    engine_thread: thread::JoinHandle<()>,
+    _engine_thread: thread::JoinHandle<()>,
 }
 
 impl HotStuff {
-    /// Starts the HotStuff Protocol State Machine and the Block Tree REST API in the background.
+    /// Starts the HotStuff Protocol State Machine and the Block Tree REST API in the background. HotStuff-rs will begin
+    /// building the BlockTree through consensus using the provided parameters. Make sure that you have called `initialize`
+    /// at least once or that you have an initialized BlockTree at `configuration.block_tree_storage.db_path`.
     pub fn start(app: impl App, configuration: Configuration) -> HotStuff {
-        let (block_tree_writer, block_tree_snapshot_factory) = block_tree::open(&configuration.block_tree);
+        let (
+            block_tree_writer, 
+            block_tree_snapshot_factory
+        ) = block_tree::open(&configuration.block_tree_storage);
 
         HotStuff {
             block_tree_snapshot_factory,
-            engine_thread: Self::start_state_machine_thread(app, block_tree_writer, configuration),
+            _engine_thread: Self::start_state_machine_thread(app, block_tree_writer, configuration),
         }
     } 
 
-    /// Get a factory for BlockTreeSnapshots. This can be used in user-written code to get snapshotted read-access into the
+    /// *Deletes* all persistent storage maintained by HotStuff-rs, then inserts a Genesis Block with the provided parameters.
+    pub fn initialize(
+        configuration: Configuration,
+        genesis_block_data_hash: DataHash,
+        genesis_block_data: Data,
+        genesis_block_write_set: WriteSet
+    ) {
+        // Clear BlockTree database if exists.
+        if configuration.block_tree_storage.db_path.is_dir() {
+            fs::remove_dir_all(&configuration.block_tree_storage.db_path)
+                .expect("Configuration error: fail to delete Block Tree DB directory.")
+        }
+
+        // Insert genesis block.
+        let genesis_qc = QuorumCertificate::genesis_qc(configuration.identity.static_participant_set.len());
+        let genesis_block = MsgBlock {
+            app_id: configuration.algorithm.app_id,
+            hash: MsgBlock::hash(0, &genesis_qc, &genesis_block_data_hash),
+            height: 0,
+            justify: genesis_qc,
+            data_hash: genesis_block_data_hash,
+            data: genesis_block_data
+        };
+
+        let (block_tree_writer, _) = block_tree::open(&configuration.block_tree_storage);
+        block_tree_writer.initialize(&genesis_block, &genesis_block_write_set);
+    }
+
+    /// Get a factory for `BlockTreeSnapshot`s. This can be used in user-written code to get snapshotted read-access into the
     /// Block Tree. 
     pub fn get_block_tree_snapshot_factory(&self) -> &BlockTreeSnapshotFactory {
         &self.block_tree_snapshot_factory
-    }
+    } 
 
-    pub fn genesis_initialize() {
-        todo!()
-    }
-
-    fn start_state_machine_thread(app: impl App, mut block_tree_writer: BlockTreeWriter, configuration: Configuration) -> thread::JoinHandle<()> {
+    fn start_state_machine_thread(app: impl App, block_tree_writer: BlockTreeWriter, configuration: Configuration) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let mut state_machine = StateMachine::initialize(block_tree_writer, app, configuration.state_machine, configuration.identity, configuration.networking);
+            let mut state_machine = Algorithm::initialize(
+                block_tree_writer, 
+                app, 
+                configuration.algorithm, 
+                configuration.identity,
+                configuration.networking
+            );
             state_machine.enter(State::Sync);
         })
     }

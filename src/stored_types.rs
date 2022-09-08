@@ -18,7 +18,6 @@ impl ChildrenList {
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct WriteSet(HashMap<Key, Value>);
-
 pub type Key = Vec<u8>;
 pub type Value = Vec<u8>;
 
@@ -41,3 +40,5 @@ impl DerefMut for WriteSet {
         &mut self.0
     }
 }
+
+pub(crate) type DataLen = u64;

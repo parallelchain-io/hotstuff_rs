@@ -5,13 +5,13 @@ use std::thread;
 use ed25519_dalek::Signer;
 use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash, Signature};
 use crate::app::{App, Block as AppBlock, SpeculativeStorageSnapshot, ExecuteError};
-use crate::config::{StateMachineConfig, NetworkingConfiguration, IdentityConfig};
+use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicAddr, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
 use crate::rest_api::SyncModeClient;
 
-pub(crate) struct StateMachine<A: App> {
+pub(crate) struct Algorithm<A: App> {
     // # Mutable state variables.
     cur_view: ViewNumber,
     // top_qc is the cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
@@ -28,7 +28,7 @@ pub(crate) struct StateMachine<A: App> {
     // # Configuration variables.
     networking_config: NetworkingConfiguration,
     identity_config: IdentityConfig,
-    state_machine_config: StateMachineConfig,
+    state_machine_config: AlgorithmConfig,
 }
 
 pub(crate) enum State {
@@ -43,21 +43,21 @@ pub(crate) enum State {
     Sync,
 }
 
-impl<A: App> StateMachine<A> {
+impl<A: App> Algorithm<A> {
     // Implements the Initialize state as it is described in the top-level README.
-    pub fn initialize(
+    pub(crate) fn initialize(
         block_tree: BlockTreeWriter,
         app: A,
-        progress_mode_config: StateMachineConfig,
+        progress_mode_config: AlgorithmConfig,
         identity_config: IdentityConfig,
         ipc_config: NetworkingConfiguration
-    ) -> StateMachine<A> {
+    ) -> Algorithm<A> {
         let top_block = block_tree.get_top_block();
         let top_qc = top_block.justify.clone();
         let cur_view = top_block.justify.view_number;
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_addr, ipc_config.clone());
 
-        StateMachine {
+        Algorithm {
             top_qc,
             cur_view,
             block_tree,
@@ -70,7 +70,7 @@ impl<A: App> StateMachine<A> {
         }
     }
 
-    pub fn enter(&mut self, state: State) {
+    pub(crate) fn enter(&mut self, state: State) {
         let mut next_state = state;
         loop {
             next_state = match next_state {
@@ -291,10 +291,14 @@ impl<A: App> StateMachine<A> {
             let participant_ip_addr = self.identity_config.static_participant_set.values().nth(participant_idx).unwrap();
 
             loop {
-                // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block.
-                let highest_committed_block = self.block_tree.get_highest_committed_block();
+                // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
+                // or the Genesis Block, if the former is still None.
+                let start_hash = match self.block_tree.get_highest_committed_block() {
+                    Some(block) => block.hash,
+                    None => self.block_tree.get_genesis_block().hash,
+                };
                 let request_result = client.get_blocks_from_tail(
-                    &highest_committed_block.hash, 
+                    &start_hash, 
                     self.networking_config.sync_mode.request_jump_size,
                     participant_ip_addr,
                 );
@@ -324,7 +328,7 @@ impl<A: App> StateMachine<A> {
                     let deadline = Instant::now() + self.state_machine_config.sync_mode_execution_timeout;
                     let execution_result = self.app.validate_block(&app_block, storage, deadline);
 
-                    // 6. If App accepts the Block, write it and its write into the BlockTree.
+                    // 6. If App accepts the Block, write it and its WriteSet into the BlockTree.
                     let writes = match execution_result {
                         Ok(writes) => writes.into(),
                         Err(ExecuteError::RanOutOfTime) => panic!("Configuration Error: ran out of time executing a Block during Sync"), 
@@ -337,12 +341,12 @@ impl<A: App> StateMachine<A> {
     }
 }
 
-pub fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
+fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
     let idx = cur_view as usize % participant_set.len();
     participant_set.keys().nth(idx).unwrap().clone()
 }
 
-pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
+fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
     let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
     tnt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
 }

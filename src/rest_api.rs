@@ -97,7 +97,7 @@ fn get_blocks_from_tail(block_tree: &BlockTreeSnapshot, tail_block_hash: &BlockH
 
     // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
     while res.len() < limit {
-        let child = match block_tree.get_child(&cursor) {
+        let child = match block_tree.get_committed_block_child(&cursor) {
             Ok(block) => block,
             Err(ChildrenNotYetCommittedError) => break,
         };

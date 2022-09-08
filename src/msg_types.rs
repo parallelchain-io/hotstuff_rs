@@ -12,8 +12,8 @@ pub type AppID = u64;
 
 pub type BlockHeight = u64;
 
-pub const NODE_HASH_LEN: usize = 32;
-pub type BlockHash = [u8; NODE_HASH_LEN];
+pub const BLOCK_HASH_LEN: usize = 32;
+pub type BlockHash = [u8; BLOCK_HASH_LEN];
 
 /// A list of App-provided Datums. Datums are stored in Blocks as a delineated, indexable list so that
 /// applications can quickly get the Datum sitting a particular index in a Block using 
@@ -82,14 +82,10 @@ pub enum ConsensusMsg {
 #[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct Block {
     pub app_id: AppID,
-
     pub hash: BlockHash,
-
     /// How many justify-links separate this Block from the Genesis Block.
     pub height: BlockHeight,
-
     pub justify: QuorumCertificate,
-
     pub data_hash: DataHash,
     pub data: Data,
 }
@@ -137,6 +133,14 @@ impl QuorumCertificate {
     /// by the SecretKey associated with a PublicAddr in the provided ParticipantSet.
     pub fn is_cryptographically_correct(&self, participant_set: &ParticipantSet) -> bool {
         todo!()
+    }
+
+    pub(crate) fn genesis_qc(num_participants: usize) -> QuorumCertificate {
+        QuorumCertificate {
+            view_number: 0,
+            block_hash: [0u8; BLOCK_HASH_LEN],
+            sigs: SignatureSet::new(num_participants),
+        }
     }
 }
 
@@ -221,8 +225,8 @@ pub struct SignatureSet {
 } 
 
 impl SignatureSet {
-    pub fn new(length: usize) -> SignatureSet {
-        let signatures = vec![None; length];
+    pub fn new(size: usize) -> SignatureSet {
+        let signatures = vec![None; size];
         SignatureSet {
             signatures,
             count: 0,

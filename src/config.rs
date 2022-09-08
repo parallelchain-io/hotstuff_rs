@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{time::Duration, path::PathBuf};
 use std::net::IpAddr;
 use crate::{identity::{PublicAddr, ParticipantSet, KeyPair}, msg_types::AppID};
 
@@ -6,9 +6,9 @@ use crate::{identity::{PublicAddr, ParticipantSet, KeyPair}, msg_types::AppID};
 /// before being passed to components.
 pub struct Configuration {
     pub identity: IdentityConfig,
-    pub block_tree: BlockTreeConfig,
+    pub block_tree_storage: BlockTreeStorageConfig,
     pub block_tree_api: BlockTreeApiConfig,
-    pub state_machine: StateMachineConfig,
+    pub algorithm: AlgorithmConfig,
     pub networking: NetworkingConfiguration,
 }
 
@@ -20,11 +20,11 @@ pub struct IdentityConfig {
     pub static_participant_set: ParticipantSet,
 }
 
-/// Configuration related to the local BlockTree, and its storage.
+/// Configuration related to the storage of the local BlockTree.
 #[derive(Clone, Debug)]
-pub struct BlockTreeConfig {
+pub struct BlockTreeStorageConfig {
     /// The path, local to the binary's working directory, where BlockTree will store its persistent database files.
-    pub db_path: String, 
+    pub db_path: PathBuf, 
 }
 
 /// Configuration related to the BlockTree HTTP API.
@@ -36,9 +36,9 @@ pub struct BlockTreeApiConfig {
     pub listening_port: u16,
 }
 
-/// Configuration related to the Protocol State Machine.
+/// Configuration related to the Algorithm State Machine.
 #[derive(Clone)]
-pub struct StateMachineConfig {
+pub struct AlgorithmConfig {
     /// A number which uniquely identifies the specific HotStuff-rs network that this Participant operates in.
     pub app_id: AppID,
 
