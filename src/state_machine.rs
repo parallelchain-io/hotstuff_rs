@@ -14,7 +14,8 @@ use crate::rest_api::SyncModeClient;
 pub(crate) struct StateMachine<A: App> {
     // # Mutable state variables.
     cur_view: ViewNumber,
-    top_qc: QuorumCertificate, // The cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
+    // top_qc is the cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
+    top_qc: QuorumCertificate, 
     block_tree: BlockTreeWriter,
 
     // # World State transition function.
@@ -30,7 +31,7 @@ pub(crate) struct StateMachine<A: App> {
     state_machine_config: StateMachineConfig,
 }
 
-pub enum State {
+pub(crate) enum State {
     BeginView,
     Leader(Instant),
     Replica(Instant),

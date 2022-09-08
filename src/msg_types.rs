@@ -6,7 +6,7 @@ use sha2::Sha256;
 use ed25519_dalek::{Signature as DalekSignature, SIGNATURE_LENGTH};
 use crate::identity::{PublicAddr, ParticipantSet};
 
-pub type ViewNumber = u64;
+pub(crate) type ViewNumber = u64;
 
 pub type AppID = u64;
 

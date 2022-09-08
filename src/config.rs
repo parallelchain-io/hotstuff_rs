@@ -15,7 +15,7 @@ pub struct Configuration {
 /// Configuration related to the cryptographic identities of consensus Participants.
 pub struct IdentityConfig {
     pub my_keypair: KeyPair,
-    /// Must be the equivalent to the PublicKey component of my_keypair.
+    /// my_public_addr must be the equivalent to the PublicKey component of my_keypair.
     pub my_public_addr: PublicAddr,
     pub static_participant_set: ParticipantSet,
 }
@@ -39,6 +39,7 @@ pub struct BlockTreeApiConfig {
 /// Configuration related to the Protocol State Machine.
 #[derive(Clone)]
 pub struct StateMachineConfig {
+    /// A number which uniquely identifies the specific HotStuff-rs network that this Participant operates in.
     pub app_id: AppID,
 
     /// How long should a view be at most.

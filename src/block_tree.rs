@@ -4,7 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::BlockTreeConfig;
 use crate::stored_types::{WriteSet, ChildrenList, Key, Value};
-use crate::msg_types::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate};
+use crate::msg_types::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate, AppID};
 
 /// Create an instance of BlockTreeWriter and BlockTreeSnapshotFactory. This function should only be called once in the process's lifetime.
 pub(crate) fn open(block_tree_config: &BlockTreeConfig) -> (BlockTreeWriter, BlockTreeSnapshotFactory) {
@@ -104,8 +104,8 @@ impl BlockTreeWriter {
     }
 }
 
-// This impl block defines getters and setters for 'Special Keys'. What Special Keys are, and the purpose of each Special Key, is explained in the
-// itemdoc for `mod special_keys`.
+// This impl block defines getters and setters for 'Special Keys'. The purpose of each Special Key, as well as what 'Special Keys' in general
+// are, is explained in the itemdoc for `mod special_keys`.
 impl BlockTreeWriter {
     pub(crate) fn get_locked_view(&self) -> u64 {
         u64::from_le_bytes(self.db.get(special_keys::LOCKED_VIEW).unwrap().unwrap().try_into().unwrap())
@@ -136,8 +136,15 @@ impl BlockTreeWriter {
 
 // This impl block defines getters and setters for Blocks and chains of Blocks.
 impl BlockTreeWriter {
+    const APP_ID_SUFFIX: [u8; 1] = [00];
+    const HASH_SUFFIX: [u8; 1] = [01];
+    const HEIGHT_SUFFIX: [u8; 1] = [02];
+    const JUSTIFY_SUFFIX: [u8; 1] = [03];
+    const DATA_HASH_SUFFIX: [u8; 1] = [04];
+    const DATA_SUFFIX: [u8; 1] = [05];
+
     pub(crate) fn get_block(&self, block_hash: &BlockHash) -> Option<Block> {
-        Some(Block::deserialize(&mut &self.db.get(prefix(special_prefixes::NODES, block_hash)).unwrap()?[..]).unwrap())
+        todo!()
     }
 
     fn set_block(wb: &mut WriteBatch, block: &Block) {
@@ -159,7 +166,7 @@ impl BlockTreeWriter {
     }
 
     fn delete_block(wb: &mut WriteBatch, block_hash: &BlockHash) {
-        wb.delete(prefix(special_prefixes::NODES, block_hash))
+        todo!()
     }
 }
 
@@ -239,6 +246,14 @@ impl<'a> BlockTreeSnapshot<'a> {
         todo!()
     }
 
+    pub fn get_block_app_id_by_hash(hash: &BlockHash) -> Option<AppID> {
+        todo!()
+    }
+
+    pub fn get_block_app_id_by_height(height: &BlockHeight) -> Option<AppID> {
+        todo!()
+    }
+
     pub fn get_block_justify_by_hash(hash: &BlockHash) -> Option<QuorumCertificate> {
         todo!()
     }
@@ -247,24 +262,22 @@ impl<'a> BlockTreeSnapshot<'a> {
         todo!()
     }
 
-    pub fn get_block_command_list_by_hash(hash: &BlockHash) -> Option<Data> {
+    pub fn get_block_data_by_hash(hash: &BlockHash) -> Option<Data> {
         todo!()
     }
 
-    pub fn get_block_command_list_by_height(height: &BlockHeight) -> Option<Data> {
+    pub fn get_block_data_by_height(height: &BlockHeight) -> Option<Data> {
         todo!()
     }
 
-    pub fn get_block_command_by_hash(hash: &BlockHash, index: usize) -> Option<Datum> {
+    pub fn get_block_datum_by_hash(hash: &BlockHash, index: usize) -> Option<Datum> {
         todo!()
     }
 
-    pub fn get_block_command_by_height(height: &BlockHeight) -> Option<Datum> {
+    pub fn get_block_datum_by_height(height: &BlockHeight) -> Option<Datum> {
         todo!()
     }
-}
 
-impl<'a> BlockTreeSnapshot<'a> {
     pub fn get_child(&self, parent_block_hash: &BlockHash) -> Result<Block, ChildrenNotYetCommittedError> {
         let highest_committed_block_hash = BlockHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
         let highest_committed_block = self.get_block_by_hash(&highest_committed_block_hash).unwrap();
@@ -287,6 +300,10 @@ impl<'a> BlockTreeSnapshot<'a> {
     pub fn get_highest_committed_block(&self) -> Block {
         let highest_committed_block_hash = BlockHash::try_from(self.db_snapshot.get(special_keys::HASH_OF_HIGHEST_COMMITTED_NODE).unwrap().unwrap()).unwrap();
         self.get_block_by_hash(&highest_committed_block_hash).unwrap()
+    }
+
+    pub fn get_from_storage(&self, key: &Key) -> Value {
+        self.db_snapshot.get(prefix(special_prefixes::WORLD_STATE, key)).unwrap().map_or(Value::new(), identity)
     }
 }
 
