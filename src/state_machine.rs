@@ -346,7 +346,7 @@ pub fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertific
     tnt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
 }
 
-pub fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
+fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
     let locked_view = block_tree.get_locked_view();
     block.justify.view_number >= locked_view
 }

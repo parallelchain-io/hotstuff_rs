@@ -18,12 +18,16 @@ impl HotStuff {
             block_tree_snapshot_factory,
             engine_thread: Self::start_state_machine_thread(app, block_tree_writer, configuration),
         }
-    }
+    } 
 
     /// Get a factory for BlockTreeSnapshots. This can be used in user-written code to get snapshotted read-access into the
     /// Block Tree. 
     pub fn get_block_tree_snapshot_factory(&self) -> &BlockTreeSnapshotFactory {
         &self.block_tree_snapshot_factory
+    }
+
+    pub fn genesis_initialize() {
+        todo!()
     }
 
     fn start_state_machine_thread(app: impl App, mut block_tree_writer: BlockTreeWriter, configuration: Configuration) -> thread::JoinHandle<()> {

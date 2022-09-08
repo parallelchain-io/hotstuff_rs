@@ -13,7 +13,7 @@ pub mod app;
 pub mod config;
 
 /// Defines the 'Block Tree', the object of state machine replication. Consensus works to extend the Block Tree with new Blocks, causing
-/// the distributed state machine's World State to evolve over time. The 'Block Tree' is a generalization of the concept of a 'blockchain'.
+/// the distributed state machine's Storage to evolve over time. The 'Block Tree' is a generalization of the concept of a 'blockchain'.
 pub mod block_tree;
 
 /// Defines types and encodings that are used in messages exchanged between Participants. The wire-encodings of these types are an

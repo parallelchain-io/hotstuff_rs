@@ -66,7 +66,7 @@ pub struct Block<'a> {
 }
 
 impl<'a> Block<'a> {
-    pub fn new(block: MsgBlock, block_tree: &BlockTreeWriter) -> Block {
+    pub(crate) fn new(block: MsgBlock, block_tree: &BlockTreeWriter) -> Block {
         Block {
             inner: block,
             block_tree,
