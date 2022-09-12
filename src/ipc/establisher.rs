@@ -40,7 +40,7 @@ impl Establisher {
 
     pub fn connect_later(&self, target: (PublicAddr, IpAddr)) {
         match target.0 {
-            target_public_addr if target_public_addr > self.my_public_addr => { 
+            target_public_addr if target_public_addr >= self.my_public_addr => { 
                 self.to_initiator.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between main thread and Initiator thread lost.") 
             },
             target_public_addr if target_public_addr <= self.my_public_addr => {
@@ -52,7 +52,7 @@ impl Establisher {
 
     pub fn cancel_later(&self, target: (PublicAddr, IpAddr)) {
         match target.0 {
-            target_public_addr if target_public_addr > self.my_public_addr => {
+            target_public_addr if target_public_addr >= self.my_public_addr => {
                 self.to_initiator.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between main thread and Initiator thread lost.")
             },
             target_public_addr if target_public_addr <= self.my_public_addr => { 
