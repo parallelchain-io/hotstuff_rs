@@ -12,9 +12,9 @@ pub struct HotStuff {
 }
 
 impl HotStuff {
-    /// Starts the HotStuff Protocol State Machine and the Block Tree REST API in the background. HotStuff-rs will begin
-    /// building the BlockTree through consensus using the provided parameters. Make sure that you have called `initialize`
-    /// at least once or that you have an initialized BlockTree at `configuration.block_tree_storage.db_path`.
+    /// Starts the HotStuff Protocol State Machine and the Block Tree REST API in the background. HotStuff-rs immediately 
+    /// begins building the BlockTree through consensus using the provided parameters. Make sure that you have called
+    /// `initialize` at least once or that you have an initialized BlockTree at `configuration.block_tree_storage.db_path`.
     pub fn start(app: impl App, configuration: Configuration) -> HotStuff {
         let (
             block_tree_writer, 
@@ -36,16 +36,23 @@ impl HotStuff {
     ) {
         const GENESIS_BLOCK_HEIGHT: BlockHeight = 0;
 
-        // Clear BlockTree database if exists.
+        // Clear BlockTree database if it exists.
         if configuration.block_tree_storage.db_path.is_dir() {
             fs::remove_dir_all(&configuration.block_tree_storage.db_path)
                 .expect("Configuration error: fail to delete Block Tree DB directory.")
         }
 
-        // Insert genesis block.
+        // Form genesis Block.
         let genesis_qc = QuorumCertificate::genesis_qc(configuration.identity.static_participant_set.len());
-        let genesis_block = MsgBlock::new(configuration.algorithm.app_id, 0, genesis_qc, genesis_block_data_hash, genesis_block_data);
+        let genesis_block = MsgBlock::new(
+            configuration.algorithm.app_id,
+            GENESIS_BLOCK_HEIGHT, 
+            genesis_qc, 
+            genesis_block_data_hash, 
+            genesis_block_data
+        );
 
+        // Insert genesis Block.
         let (block_tree_writer, _) = block_tree::open(&configuration.block_tree_storage);
         block_tree_writer.initialize(&genesis_block, &genesis_block_write_set);
     }

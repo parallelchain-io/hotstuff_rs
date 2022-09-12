@@ -56,7 +56,7 @@ pub struct NetworkingConfiguration {
     pub sync_mode: SyncModeNetworkingConfig,
 }
 
-/// Configuration related to networking in the Progress Mode of the Protocol State Machine.
+/// Configuration related to networking in the Progress Mode of the Algorithm State Machine.
 #[derive(Clone)]
 pub struct ProgressModeNetworkingConfig {
     /// The IP address that Progress Mode's IPC will wait on for new TCP connections initiated by other Participants.
@@ -85,7 +85,7 @@ pub struct ProgressModeNetworkingConfig {
     pub writer_channel_buffer_len: usize,
 }
 
-// Configuration related to networking in the Sync Mode of the Protocol State Machine.
+/// Configuration related to networking in the Sync Mode of the Algorithm State Machine.
 #[derive(Clone)]
 pub struct SyncModeNetworkingConfig {
     pub request_jump_size: usize,

@@ -28,7 +28,7 @@ pub(crate) struct Algorithm<A: App> {
     // # Configuration variables.
     networking_config: NetworkingConfiguration,
     identity_config: IdentityConfig,
-    state_machine_config: AlgorithmConfig,
+    algorithm_config: AlgorithmConfig,
 }
 
 pub(crate) enum State {
@@ -64,7 +64,7 @@ impl<A: App> Algorithm<A> {
             round_robin_idx: 0,
             networking_config: ipc_config,
             identity_config,
-            state_machine_config: progress_mode_config,
+            algorithm_config: progress_mode_config,
             app
         }
     }
@@ -85,7 +85,7 @@ impl<A: App> Algorithm<A> {
 
     fn do_begin_view(&mut self) -> State {
         self.cur_view = max(self.cur_view, self.top_qc.view_number + 1);
-        let timeout = view_timeout(self.state_machine_config.target_block_time, self.cur_view, &self.top_qc);
+        let timeout = view_timeout(self.algorithm_config.target_block_time, self.cur_view, &self.top_qc);
         let deadline = Instant::now() + timeout;
 
         if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
@@ -107,7 +107,7 @@ impl<A: App> Algorithm<A> {
                 let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &parent_block.hash);
                 self.app.propose_block(&app_block, storage, deadline)
             };
-            let block = MsgBlock::new(self.state_machine_config.app_id, parent_block.height+1, self.top_qc.clone(), data_hash, data);
+            let block = MsgBlock::new(self.algorithm_config.app_id, parent_block.height+1, self.top_qc.clone(), data_hash, data);
 
             (block, state.into())
         };
@@ -317,7 +317,7 @@ impl<A: App> Algorithm<A> {
                     // 5. Call App to validate block.
                     let app_block = AppBlock::new(block.clone(), &self.block_tree);
                     let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &block.justify.block_hash);
-                    let deadline = Instant::now() + self.state_machine_config.sync_mode_execution_timeout;
+                    let deadline = Instant::now() + self.algorithm_config.sync_mode_execution_timeout;
                     let execution_result = self.app.validate_block(&app_block, storage, deadline);
 
                     // 6. If App accepts the Block, write it and its WriteSet into the BlockTree.

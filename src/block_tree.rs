@@ -362,7 +362,7 @@ impl BlockTreeSnapshotFactory {
 
 /// BlockTreeSnapshot exposes methods for reading a consistent, immutable snapshot of the BlockTree. This includes getting from committed Storage.
 /// 
-/// ## 'get block' vs 'get committed block'
+/// # 'get block' vs 'get committed block'
 /// Because the BlockTree contains speculative Blocks, several Blocks may occupy the same height. As such, methods that get a Block (or one of its fields)
 /// from the BlockTree that take in a height can only return committed Blocks. 
 /// 

@@ -8,13 +8,13 @@
 /// associated function starts up HotStuff-rs's Consensus State Machine.
 pub mod hotstuff;
 
-/// Defines the App trait, which your types are required to implement in order to serve as HotStuff-rs' deterministic state transition
-/// function. The Ethereum Virtual Machine (EVM), for example, is a classic example of a deterministic state transition function which
-/// could implement the App trait.
+/// Defines the [App](app::App) trait, which your types are required to implement in order to serve as HotStuff-rs' deterministic state 
+/// transition function. The Ethereum Virtual Machine (EVM), for example, is a classic example of a deterministic state transition function
+/// which could implement the App trait.
 pub mod app;
 
 /// Defines structures whose fields configure the behavior of the protocol Participant. This includes the pace at which consensus should
-/// proceed, how Participants should contact each other, etc. If you are building a distributed system using HotStuff-rs, you'd want to
+/// proceed, how Participants should contact each other, etc. If you are building a distributed system using HotStuff-rs, you would want to
 /// tweak these knobs to modify the system's behavior to meet your needs.
 pub mod config;
 

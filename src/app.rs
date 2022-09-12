@@ -5,24 +5,23 @@ use crate::block_tree::BlockTreeWriter;
 use crate::stored_types::{WriteSet, Key, Value};
 use crate::msg_types::{Data, DataHash, Block as MsgBlock, BlockHash};
 
+/// Methods that a type needs to implement to serve as a HotStuff-rs network's deterministic state transition function.
+/// 
 /// Besides implementing the functions specified in the trait, implementors of App are additionally expected to be *deterministic*. i.e., every
 /// function it implements as part of the App trait should evaluate to the same value every time it is called with the same arguments.
 pub trait App: Send + 'static {
-    /// Called by the Algorithm state machine when this Participant becomes the Leader and has to propose a new Block which extends a branch of
-    /// the BlockTree.
+    /// Called by the Algorithm state machine when this Participant becomes the Leader and has to propose a new Block which extends the branch
+    /// of the BlockTree headed by `parent_block`. A view of Storage after executing `parent_block` is provided in `storage`. 
     /// 
-    /// # Parameters
-    /// 1. `parent_block`: the Block which the new Block directly descends from.
-    /// 2. `storage_snapshot`: a read-and-writable view of Storage after executing all Blocks in the branch headed by `parent_block`.
-    /// 3. `deadline`: this function call should return at the latest by this instant in time. Otherwise, this view in which the Participant
-    /// is the Leader is likely to fail because of view timeout.
+    /// This function call should return at the latest by `deadline`. Otherwise, this view in which the Participant is the Leader is likely
+    /// to fail because of view timeout.
     /// 
     /// # Return value
     /// A triple consisting of:
     /// 1. A Data. This will occupy the `data` field of the Block proposed by this Participant in this view. 
     /// 2. A DataHash. This will occupy the `data_hash` field of the Block proposed by the Participant in this view.
-    /// 3. A WriteSet resulting from executing the provided Block on the provided Storage. This will be applied into the Storage when the Block
-    /// containing the returned Data becomes committed. 
+    /// 3. A WriteSet resulting from executing the provided Block on the provided Storage. This will be atomically applied into the Storage
+    /// when the Block containing the returned Data becomes committed. 
     fn propose_block(
         &mut self, 
         parent_block: &Block,
@@ -30,14 +29,11 @@ pub trait App: Send + 'static {
         deadline: Instant
     ) -> (Data, DataHash, WriteSet);
 
-    /// Called by the Algorithm state machine when this Participant is a Replica and has to decide whether or not to vote on a Block which was
-    /// proposed by the Leader.
+    /// Called by the Algorithm state machine when this Participant is a Replica and has to decide whether or not to vote on a Block (`block`)
+    /// which was proposed by the Leader.
     /// 
-    /// # Parameters
-    /// 1. `block`: the Block which was proposed by the Leader of this view.
-    /// 2. `storage_snapshot`: read the corresponding entry in the itemdoc for `propose_block`.
-    /// 3. `deadline`: this function call should return at the latest by this instant in time. If not, this Participant might not be able to 
-    /// Vote in time for its signature to be included in this round's QuorumCertificate. 
+    /// This function call should return at the latest by `deadline`. Otherwise, this Participant's Vote in this View may not be received in
+    /// time by the next Leader.
     /// 
     /// # Return value
     /// If the Block is valid, the WriteSet that results from executing the provided Block on the provided Storage. Else, the reason why the
@@ -50,7 +46,7 @@ pub trait App: Send + 'static {
     ) -> Result<WriteSet, ExecuteError>;
 }
 
-/// Circumstances in which an App could reject a proposed Block, causing this Participant to skip this round without voting.
+/// Enumerates the circumstances in which an App could reject a proposed Block, causing this Participant to skip this round without voting.
 pub enum ExecuteError {
     /// The Deadline was exceeded while processing the proposed Block.
     RanOutOfTime,
@@ -104,32 +100,74 @@ impl<'a> Deref for Block<'a> {
 /// applied into this WorldStateHandle only become permanent when the Block containing the Command that it corresponds to becomes committed. 
 /// 
 /// This structure should NOT be used in App code outside the context of `create_leaf` and `execute`.
+/// 
+/// # 'Speculative' Storage vs 'non-speculative' Storage
+/// Blocks that have less than three justifications (i.e., that do not head a 3-Chain) are not yet committed, and as such are not guaranteed
+/// to remain part of the BlockTree. We call Blocks in the BlockTree that are not yet committed 'speculative' Blocks.
+/// 
+/// BlockTreeSnapshot's [get_from_storage](crate::block_tree::BlockTreeSnapshot::get_from_storage) method provides a non-speculative view of
+/// Storage, one that does not reflect the mutations that come about from executing speculative Blocks.
+/// 
+/// On the other hand, SpeculativeStorageSnapshot provides a view of Storage, that, as its name suggests, reflect the mutations that come
+/// about from executing speculative Blocks, in particular, the writes of the Block-to-be-proposed's parent, grandparent, and great-grandparent.
 pub struct SpeculativeStorageSnapshot<'a> {
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
+    great_grandparent_writes: WriteSet,
     block_tree: &'a BlockTreeWriter,
 }
 
 impl<'a> SpeculativeStorageSnapshot<'a> {
+    /// # Boundary scenarios
+    /// 1. If parent_block_hash points to the Genesis Block, then there is no grandparent or great-grandparent and their writes are set to
+    /// the empty WriteSet.
+    /// 2. If parent_block_hash points to a child of the Genesis Block, then there is no great-grandparent and its writes are the set to the
+    /// empty WriteSet. 
     pub(crate) fn open(block_tree: &'a BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageSnapshot<'a> {
+        let parent = block_tree.get_block(&parent_block_hash).unwrap();
         let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(WriteSet::new(), identity);
-        let grandparent_writes = {
+
+        if parent.height == 0 {
+            SpeculativeStorageSnapshot {
+                parent_writes,
+                grandparent_writes: WriteSet::new(),
+                great_grandparent_writes: WriteSet::new(),
+                block_tree
+            }
+        } else if parent.height == 1 {
+            let grandparent_writes = { 
+                let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
+                block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
+            };
+
+            SpeculativeStorageSnapshot {
+                parent_writes,
+                grandparent_writes,
+                great_grandparent_writes: WriteSet::new(),
+                block_tree
+            }
+        } else { // parent.height >= 2
             let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
-            block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
-        };
+            let grandparent_writes = block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity);
+            let great_grandparent_block_hash = block_tree.get_block(&grandparent_block_hash).unwrap().justify.block_hash; 
+            let great_grandparent_writes = block_tree.get_write_set(&great_grandparent_block_hash).map_or(WriteSet::new(), identity);
 
         SpeculativeStorageSnapshot {
             parent_writes,
             grandparent_writes,
+            great_grandparent_writes,
             block_tree
+        }
         }
     }
 
-    /// get a value in the World State.
+    /// Get a value in Storage.
     pub fn get(&self, key: &Key) -> Value {
         if let Some(value) = self.parent_writes.get(key) {
             value.clone()
         } else if let Some(value) = self.grandparent_writes.get(key) {
+            value.clone()
+        } else if let Some(value) = self.great_grandparent_writes.get(key) {
             value.clone()
         } else {
             self.block_tree.get_from_storage(key)
