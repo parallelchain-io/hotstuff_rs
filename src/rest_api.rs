@@ -26,7 +26,7 @@ impl Server {
 
         let server = warp::serve(get_blocks);
         let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
-        let task = server.run(listening_socket_addr);
+        let task = server.bind(listening_socket_addr);
 
         let runtime = tokio::runtime::Runtime::new()
             .expect("Programming or Configuration error: fail to create Tokio runtime.");
@@ -35,7 +35,7 @@ impl Server {
         Server(runtime)
     }
 
-    async fn handle_get_blocks<'a>(block_tree_snapshot_factory: BlockTreeSnapshotFactory, mut params: GetBlocksParams) -> impl warp::Reply {
+    async fn handle_get_blocks<'a>(block_tree_snapshot_factory: BlockTreeSnapshotFactory, params: GetBlocksParams) -> impl warp::Reply {
         // Interpret query parameters
         let hash = match Base64URL::decode(&params.hash) {
             Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),

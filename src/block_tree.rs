@@ -176,7 +176,7 @@ impl BlockTreeWriter {
     } 
 
     fn set_genesis_block(wb: &mut WriteBatch, genesis_block_hash: &BlockHash) {
-
+        wb.put(special_paths::GENESIS_BLOCK_HASH, genesis_block_hash)
     }
 }
 

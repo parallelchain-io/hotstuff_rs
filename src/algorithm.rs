@@ -275,7 +275,7 @@ impl<A: App> Algorithm<A> {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
             let participant_idx = { 
                 self.round_robin_idx += 1; 
-                if self.identity_config.static_participant_set.len() > self.round_robin_idx {
+                if self.round_robin_idx >= self.identity_config.static_participant_set.len() {
                     self.round_robin_idx = 0;
                 }
                 self.round_robin_idx
