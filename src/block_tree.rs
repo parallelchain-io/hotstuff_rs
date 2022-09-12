@@ -363,9 +363,10 @@ impl BlockTreeSnapshotFactory {
 /// BlockTreeSnapshot exposes methods for reading a consistent, immutable snapshot of the BlockTree. This includes getting from committed Storage.
 /// 
 /// ## 'get block' vs 'get committed block'
-/// Because the BlockTree contains speculative Blocks, some Blocks may occupy the same height. As such, methods that get a Block (or one of its fields)
-/// from the BlockTree that take in a height can only return committed Blocks. If you really need to get a speculative Block from the BlockTree from
-/// some reason, then you need to get it by its BlockHash. 
+/// Because the BlockTree contains speculative Blocks, several Blocks may occupy the same height. As such, methods that get a Block (or one of its fields)
+/// from the BlockTree that take in a height can only return committed Blocks. 
+/// 
+/// If you really need to get a speculative Block from the BlockTree from some reason, then you need to get it by its BlockHash. 
 pub struct BlockTreeSnapshot<'a> {
     db_snapshot: Snapshot<'a>,
 }

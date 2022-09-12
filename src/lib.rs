@@ -1,3 +1,9 @@
+//! HotStuff-rs is a Rust Programming Language implementation of the HotStuff consensus protocol. It offers:
+//! 1. Guaranteed Safety and Liveness in the face of up to 1/3rd of Voting Power being Byzantine at any given moment,
+//! 2. A small API (`App`) for plugging in arbitrary state machine-based applications like blockchains, and
+//! 3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
+
+
 /// Defines the HotStuff struct, your Apps' point of entry into HotStuff-rs' threads and business logic. Calling the struct's `start`
 /// associated function starts up HotStuff-rs's Consensus State Machine.
 pub mod hotstuff;

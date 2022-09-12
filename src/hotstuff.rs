@@ -2,7 +2,7 @@ use std::{thread, fs};
 use crate::app::App;
 use crate::config::Configuration;
 use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
-use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate};
+use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate, BlockHeight};
 use crate::algorithm::{State, Algorithm};
 use crate::stored_types::WriteSet;
 
@@ -34,6 +34,8 @@ impl HotStuff {
         genesis_block_data: Data,
         genesis_block_write_set: WriteSet
     ) {
+        const GENESIS_BLOCK_HEIGHT: BlockHeight = 0;
+
         // Clear BlockTree database if exists.
         if configuration.block_tree_storage.db_path.is_dir() {
             fs::remove_dir_all(&configuration.block_tree_storage.db_path)
@@ -42,14 +44,7 @@ impl HotStuff {
 
         // Insert genesis block.
         let genesis_qc = QuorumCertificate::genesis_qc(configuration.identity.static_participant_set.len());
-        let genesis_block = MsgBlock {
-            app_id: configuration.algorithm.app_id,
-            hash: MsgBlock::hash(0, &genesis_qc, &genesis_block_data_hash),
-            height: 0,
-            justify: genesis_qc,
-            data_hash: genesis_block_data_hash,
-            data: genesis_block_data
-        };
+        let genesis_block = MsgBlock::new(configuration.algorithm.app_id, 0, genesis_qc, genesis_block_data_hash, genesis_block_data);
 
         let (block_tree_writer, _) = block_tree::open(&configuration.block_tree_storage);
         block_tree_writer.initialize(&genesis_block, &genesis_block_write_set);

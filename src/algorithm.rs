@@ -44,7 +44,6 @@ pub(crate) enum State {
 }
 
 impl<A: App> Algorithm<A> {
-    // Implements the Initialize state as it is described in the top-level README.
     pub(crate) fn initialize(
         block_tree: BlockTreeWriter,
         app: A,
@@ -101,33 +100,26 @@ impl<A: App> Algorithm<A> {
         // Phase 1: Produce a new Block.
 
         // 1. Call App to produce a new leaf Block.
-        let (leaf, writes) = {
+        let (new_leaf, writes) = {
             let parent_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
             let (data, data_hash, state) = {
                 let app_block = AppBlock::new(parent_block.clone(), &self.block_tree);
                 let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &parent_block.hash);
                 self.app.propose_block(&app_block, storage, deadline)
             };
-            let block = MsgBlock {
-                app_id: self.state_machine_config.app_id,
-                hash: MsgBlock::hash(parent_block.height, &self.top_qc, &data_hash),
-                height: parent_block.height + 1,
-                data,
-                data_hash,
-                justify: self.top_qc.clone(),
-            };
+            let block = MsgBlock::new(self.state_machine_config.app_id, parent_block.height+1, self.top_qc.clone(), data_hash, data);
 
             (block, state.into())
         };
         
         // 2. Write new leaf into BlockTree.
-        self.block_tree.insert_block(&leaf, &writes);
+        self.block_tree.insert_block(&new_leaf, &writes);
 
         // Phase 2: Propose the new Block.
 
         // 1. Broadcast a PROPOSE message containing the Block to every participant.
-        let leaf_hash = leaf.hash;
-        let proposal = ConsensusMsg::Propose(self.cur_view, leaf);
+        let leaf_hash = new_leaf.hash;
+        let proposal = ConsensusMsg::Propose(self.cur_view, new_leaf);
         self.ipc_handle.broadcast(&proposal);
 
         // 2. Send a VOTE for our own proposal to the next leader.

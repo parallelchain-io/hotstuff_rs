@@ -8,57 +8,25 @@ use crate::identity::{PublicAddr, ParticipantSet};
 
 pub(crate) type ViewNumber = u64;
 
+/// Documented as a field of [Block].
 pub type AppID = u64;
 
+/// Documented as a field of [Block].
 pub type BlockHeight = u64;
 
-pub const BLOCK_HASH_LEN: usize = 32;
+/// Documented as a field of [Block].
 pub type BlockHash = [u8; BLOCK_HASH_LEN];
+pub const BLOCK_HASH_LEN: usize = 32;
 
-/// A list of App-provided Datums. Datums are stored in Blocks as a delineated, indexable list so that
-/// applications can quickly get the Datum sitting a particular index in a Block using 
-/// `BlockTree::get_block_command_by_hash` or `get_block_command_by_height` instead of getting the entire list
-/// of Data at once, which might be an unacceptable expensive I/O operation.
+/// Documented as a field of [Block].
 pub type Data = Vec<Datum>;
 
-/// Arbitrary data provided by an App as part of the return value of `create_leaf`. 
+/// Documented as a field of [Block].
 pub type Datum = Vec<u8>;
 
-pub const DATA_HASH_LEN: usize = 32;
+/// Documented as a field of [Block].
 pub type DataHash = [u8; DATA_HASH_LEN];
-
-#[derive(Clone)]
-pub struct Signature(pub DalekSignature);
-
-impl BorshSerialize for Signature {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_all(&self.0.to_bytes())
-    }
-}
-
-impl BorshDeserialize for Signature {
-    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
-        // BorshDeserialize requires that deserialize update the buffer to point at the remaining bytes.
-        if buf.len() < SIGNATURE_LENGTH {
-            *buf = &buf[buf.len()..];
-            Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer is too short to produce Signature"))
-        } else {
-            let sig_bytes = &buf[0..SIGNATURE_LENGTH];
-            let dalek_signature = DalekSignature::from_bytes(sig_bytes)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Dalek rejects the Signature"))?;
-            *buf = &buf[SIGNATURE_LENGTH..];
-            Ok(Signature(dalek_signature))
-        } 
-    }
-}
-
-impl Deref for Signature {
-    type Target = DalekSignature;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub const DATA_HASH_LEN: usize = 32;
 
 /// Messages sent between Participants on IPC channels to drive BlockTree construction forward.
 #[derive(BorshSerialize, BorshDeserialize, Clone)]
@@ -79,24 +47,75 @@ pub enum ConsensusMsg {
 
 /// A bundle of data 'chained' onto another like bundle of data--referred to as its 'parent'--by containing a
 /// cryptographic certificate that attests to the parent having been accepted and stored by a quorum of Participants.
+/// 
+/// # [Data] vs [Datum]
+/// [App](crate::app::App)s return a Data as part of the return value of their [propose_block](crate::app::App::propose_block)
+/// method. These are included verbatim in the `data` field of Blocks, and can contain arbitrary sequence of bytes
+/// with application-specific meaning.
+///  
+/// But Data can be arbitrarily large, and applications may want to get only small chunks of Data at a time from the
+/// BlockTree. For example, a Blockchain App may want to get a single Transaction from a Block to serve an HTTP request
+/// for that particular Transaction. 
+/// 
+/// To support this use case without having to load and deserialize an entire, arbitrarily large Data from the BlockTree,
+/// Data is a `Vec<Datum>`. Applications can get *only* a particular Datum from the BlockTree using BlockTreeSnapshot's  
+/// [get_block_datum](crate::block_tree::BlockTreeSnapshot::get_block_datum_by_hash) method.
+/// 
+/// # Why must App provide [DataHash]?
+/// Some hash functions have properties that can be useful, sometimes even essential, for some applications. 
+///
+/// For example, Blockchains rely on [Merkle Tree](https://en.wikipedia.org/wiki/Merkle_tree) hashing to support succinct
+/// cryptographic proofs that a Transaction is included in a Block *without* having to send an entire Block over the wire.
+/// For the curious, the way this works is explained [here](https://en.bitcoinwiki.org/wiki/Simplified_Payment_Verification).
+/// 
+/// Having Apps return a DataHash as part of the return value of `propose_block` allows applications to choose the hash 
+/// function or construction that fits their needs best.
 #[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct Block {
+    /// A number which distinguishes between the Blocks of different HotStuff-rs networks.
     pub app_id: AppID,
+
+    /// A SHA-256 Hash over a Block's (`app_id` ++ `height` ++ `justify` ++ `data_hash`).
     pub hash: BlockHash,
-    /// How many justify-links separate this Block from the Genesis Block.
+
+    /// The number of justify-links that separate this Block from the Genesis Block.
     pub height: BlockHeight,
+    
+    /// A cryptographic certificate which links a Block with its direct ancestor.
     pub justify: QuorumCertificate,
+
+    /// A cryptographic hash over the Block's Data, provided by the App as part of the return value of its methods.
     pub data_hash: DataHash,
+
+    /// A list of App-provided Datums.
     pub data: Data,
 }
 
 impl Block {
-    pub fn hash(height: BlockHeight, justify: &QuorumCertificate, data_hash: &DataHash) -> BlockHash {
-        todo!()
+    pub fn new(app_id: AppID, height: BlockHeight, justify: QuorumCertificate, data_hash: DataHash, data: Data) -> Block {
+        let hash = Self::hash(app_id, height, &justify, &data_hash);
+        Block {
+            app_id,
+            hash,
+            height,
+            justify,
+            data_hash,
+            data,
+        }
+    }
+
+    pub fn hash(app_id: AppID, height: BlockHeight, justify: &QuorumCertificate, data_hash: &DataHash) -> BlockHash {
+        Sha256::new()
+            .chain_update(app_id.try_to_vec().unwrap())
+            .chain_update(height.try_to_vec().unwrap())
+            .chain_update(justify.try_to_vec().unwrap())
+            .chain_update(data_hash.try_to_vec().unwrap())
+            .finalize()
+            .into()
     }
 }
 
-/// An aggregate of multiple `ConsensusMsg::Vote`s. A valid QuorumCertificate is proof that a quorum of
+/// An aggregate of multiple [ConsensusMsg::Vote]s. A valid QuorumCertificate is proof that a quorum of
 /// Participants has inserted the branch headed by the Block identified by the QuorumCertificate's `block
 /// _hash` into its local BlockTree. The more QuorumCertificates 'justifies' a Block, the closer the Block
 /// to being considered committed. If you are familiar with Bitcoin, 'justification' via QuorumCertificate
@@ -170,7 +189,7 @@ impl QuorumCertificateAggregator {
     /// 
     /// Note that this DOES NOT check whether the provided Signature is cryptographically correct.
     /// 
-    /// # Errors
+    /// ## Errors
     /// Read the documentation of QCAggregatorInsertError. If an error is returned, this function was a no-op.
     pub fn insert(&mut self, signature: Signature, of_public_addr: PublicAddr) -> Result<bool, QCAggregatorInsertError> {
         if self.signature_set.count() > QuorumCertificate::quorum_size(self.participant_set.len()) {
@@ -258,3 +277,36 @@ impl SignatureSet {
 }
 
 pub struct AlreadyInsertedError;
+
+#[derive(Clone)]
+pub struct Signature(pub DalekSignature);
+
+impl BorshSerialize for Signature {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.0.to_bytes())
+    }
+}
+
+impl BorshDeserialize for Signature {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        // BorshDeserialize requires that deserialize update the buffer to point at the remaining bytes.
+        if buf.len() < SIGNATURE_LENGTH {
+            *buf = &buf[buf.len()..];
+            Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer is too short to produce Signature"))
+        } else {
+            let sig_bytes = &buf[0..SIGNATURE_LENGTH];
+            let dalek_signature = DalekSignature::from_bytes(sig_bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Dalek rejects the Signature"))?;
+            *buf = &buf[SIGNATURE_LENGTH..];
+            Ok(Signature(dalek_signature))
+        } 
+    }
+}
+
+impl Deref for Signature {
+    type Target = DalekSignature;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
