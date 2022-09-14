@@ -7,7 +7,7 @@ use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, Consens
 use crate::app::{App, Block as AppBlock, SpeculativeStorageSnapshot, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::{PublicKeyBytes, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
 use crate::rest_api::SyncModeClient;
 
@@ -54,7 +54,7 @@ impl<A: App> Algorithm<A> {
         let top_block = block_tree.get_top_block();
         let top_qc = top_block.justify.clone();
         let cur_view = top_block.justify.view_number;
-        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_addr, ipc_config.clone());
+        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, ipc_config.clone());
 
         Algorithm {
             top_qc,
@@ -88,7 +88,7 @@ impl<A: App> Algorithm<A> {
         let timeout = view_timeout(self.algorithm_config.target_block_time, self.cur_view, &self.top_qc);
         let deadline = Instant::now() + timeout;
 
-        if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_addr {
+        if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_key.to_bytes() {
             State::Leader(deadline)
         } else {
             State::Replica(deadline)
@@ -123,12 +123,12 @@ impl<A: App> Algorithm<A> {
         self.ipc_handle.broadcast(&proposal);
 
         // 2. Send a VOTE for our own proposal to the next leader.
-        let vote = ConsensusMsg::Vote(self.cur_view, leaf_hash, Signature(self.identity_config.my_keypair.sign(&leaf_hash)));
+        let vote = ConsensusMsg::new_vote(self.cur_view, leaf_hash,&self.identity_config.my_keypair);
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 3. If next_leader == me, change to State::NextLeader.
-        if next_leader == self.identity_config.my_public_addr {
+        if next_leader == self.identity_config.my_public_key.to_bytes() {
             return State::NextLeader(deadline, leaf_hash)
         }
 
@@ -172,7 +172,12 @@ impl<A: App> Algorithm<A> {
                         return State::Sync
                     } else if vn > self.cur_view {
                         continue
-                    } else { // (if vn == cur_view):
+                    } else { // (if vn == cur_view);
+                        // 1. Validate the proposed block's QuorumCertificate
+                        if !block.justify.is_valid(&self.identity_config.static_participant_set) {
+                            return State::NewView // if the Block's QC is invalid, change to NewView.
+                        }
+
                         proposed_block = block;
                         self.top_qc = proposed_block.justify.clone();
                         break
@@ -181,7 +186,7 @@ impl<A: App> Algorithm<A> {
             } 
         }
 
-        // Phase 2: Validate the proposed Block.
+        // Phase 2: Validate the proposed Block. 
 
         // 1. Call App to execute the proposed Block.
         let app_block = AppBlock::new(proposed_block.clone(), &self.block_tree);
@@ -200,11 +205,11 @@ impl<A: App> Algorithm<A> {
 
         // 1. Send a VOTE message to the next leader.
         let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
-        let vote = ConsensusMsg::Vote(self.cur_view, proposed_block.hash, Signature(self.identity_config.my_keypair.sign(&proposed_block.hash)));
+        let vote = ConsensusMsg::new_vote(self.cur_view, proposed_block.hash, &self.identity_config.my_keypair);
         self.ipc_handle.send_to(&next_leader, &vote);
 
         // 2. If next leader == me, change to State::NextLeader.
-        if next_leader == self.identity_config.my_public_addr {
+        if next_leader == self.identity_config.my_public_key.to_bytes() {
             return State::NextLeader(deadline, proposed_block.hash)
         }
 
@@ -307,11 +312,9 @@ impl<A: App> Algorithm<A> {
                 }
     
                 for block in extension_chain {
-                    // 4. Validate block cryptographically. 
-                    if !block.justify.is_quorum(self.identity_config.static_participant_set.len())
-                        || !block.justify.is_cryptographically_correct(&self.identity_config.static_participant_set) {
-                            // Jump back to 1.: pick another participant to sync with.
-                            break
+                    // 4. Structurally validate Block. 
+                    if !block.justify.is_valid(&self.identity_config.static_participant_set) {
+                        break
                     }
 
                     // 5. Call App to validate block.
@@ -333,7 +336,7 @@ impl<A: App> Algorithm<A> {
     }
 }
 
-fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicAddr {
+fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicKeyBytes {
     let idx = cur_view as usize % participant_set.len();
     participant_set.keys().nth(idx).unwrap().clone()
 }

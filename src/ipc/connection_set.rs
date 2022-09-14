@@ -7,13 +7,13 @@ use rand::Rng;
 use rand::rngs::ThreadRng;
 use crate::config::NetworkingConfiguration;
 use crate::ipc::{self, Establisher, EstablisherResult};
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::{PublicKeyBytes, ParticipantSet};
 
 pub struct ConnectionSet {
     // To avoid deadlocks and to guarantee consistency, lock participant_set first, then connections, and finally pending_connections.
     participant_set: Arc<Mutex<ParticipantSet>>, 
-    pending_connections: Arc<Mutex<BTreeMap<PublicAddr, IpAddr>>>,
-    connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
+    pending_connections: Arc<Mutex<BTreeMap<PublicKeyBytes, IpAddr>>>,
+    connections: Arc<Mutex<IndexMap<PublicKeyBytes, Arc<ipc::Stream>>>>,
 
     // Randomness source for `get_random`.
     rng: Mutex<ThreadRng>,
@@ -25,7 +25,7 @@ pub struct ConnectionSet {
 type ParticipantSetVersion = usize;
 
 impl ConnectionSet {
-    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicAddr, ipc_config: NetworkingConfiguration) -> ConnectionSet { 
+    pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicKeyBytes, ipc_config: NetworkingConfiguration) -> ConnectionSet { 
         // 1. Create Establisher.
         let (establisher, from_establisher) = Establisher::new(ipc_config, my_public_addr);
         
@@ -106,7 +106,7 @@ impl ConnectionSet {
     }
 
     // Removes the connection identified by public_addr immediately, and schedules it for establishment later.
-    pub fn reconnect(&self, target: (PublicAddr, IpAddr)) { 
+    pub fn reconnect(&self, target: (PublicKeyBytes, IpAddr)) { 
         let mut connections = self.connections.lock().unwrap();
         let pending_connections = self.pending_connections.lock().unwrap();
 
@@ -116,12 +116,12 @@ impl ConnectionSet {
         }
     }
 
-    pub fn get(&self, public_addr: &PublicAddr) -> Option<Arc<ipc::Stream>> { 
+    pub fn get(&self, public_addr: &PublicKeyBytes) -> Option<Arc<ipc::Stream>> { 
         Some(Arc::clone(self.connections.lock().unwrap().get(public_addr)?))
     }
 
     // Returns None if ConnectionSet is empty.
-    pub fn get_random(&self) -> Option<(PublicAddr, Arc<ipc::Stream>)> { 
+    pub fn get_random(&self) -> Option<(PublicKeyBytes, Arc<ipc::Stream>)> { 
         let connections = self.connections.lock().unwrap();
         if connections.len() > 1 {
             let random_idx = self.rng.lock().unwrap().gen_range(0..connections.len());
@@ -141,8 +141,8 @@ impl ConnectionSet {
     fn start_establisher_receiver(
         from_establisher: mpsc::Receiver<EstablisherResult>, 
         participant_set: Arc<Mutex<ParticipantSet>>,
-        connections: Arc<Mutex<IndexMap<PublicAddr, Arc<ipc::Stream>>>>,
-        pending_connections: Arc<Mutex<BTreeMap<PublicAddr, IpAddr>>>,
+        connections: Arc<Mutex<IndexMap<PublicKeyBytes, Arc<ipc::Stream>>>>,
+        pending_connections: Arc<Mutex<BTreeMap<PublicKeyBytes, IpAddr>>>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             loop {
@@ -162,11 +162,11 @@ impl ConnectionSet {
     }
 }
 
-pub struct IterGuard<'a>(MutexGuard<'a, IndexMap<PublicAddr, Arc<ipc::Stream>>>);
+pub struct IterGuard<'a>(MutexGuard<'a, IndexMap<PublicKeyBytes, Arc<ipc::Stream>>>);
 
 impl<'a> IntoIterator for &'a IterGuard<'a> {
-    type Item = (&'a PublicAddr, &'a Arc<ipc::Stream>);
-    type IntoIter = map::Iter<'a, PublicAddr, Arc<ipc::Stream>>;
+    type Item = (&'a PublicKeyBytes, &'a Arc<ipc::Stream>);
+    type IntoIter = map::Iter<'a, PublicKeyBytes, Arc<ipc::Stream>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()    

@@ -1,10 +1,16 @@
 use std::ops::Deref;
 use std::io;
+use std::slice;
+use std::mem;
 use borsh::{BorshSerialize, BorshDeserialize};
+use ed25519_dalek::Signer;
+use ed25519_dalek::Verifier;
 use sha2::Digest;
 use sha2::Sha256;
 use ed25519_dalek::{Signature as DalekSignature, SIGNATURE_LENGTH};
-use crate::identity::{PublicAddr, ParticipantSet};
+use crate::identity::KeyPair;
+use crate::identity::PublicKey;
+use crate::identity::{PublicKeyBytes, ParticipantSet};
 
 pub(crate) type ViewNumber = u64;
 
@@ -43,6 +49,19 @@ pub enum ConsensusMsg {
     /// enough QC that its proposal is guaranteed to pass the SafeBlock predicate and be accepted by the Replicas
     /// of the next round.
     NewView(ViewNumber, QuorumCertificate),
+}
+
+impl ConsensusMsg {
+    pub(crate) fn new_vote(view_number: ViewNumber, block_hash: BlockHash, keypair: &KeyPair) -> ConsensusMsg {
+        let signature = {
+            let mut msg = Vec::with_capacity(mem::size_of::<ViewNumber>() + mem::size_of::<BlockHash>());
+            msg.extend_from_slice(&view_number.to_le_bytes());
+            msg.extend_from_slice(&block_hash);
+            Signature(keypair.sign(&msg))
+        };
+
+        ConsensusMsg::Vote(view_number, block_hash, signature)
+    }
 }
 
 /// A bundle of data 'chained' onto another like bundle of data--referred to as its 'parent'--by containing a
@@ -121,8 +140,8 @@ impl Block {
 /// to being considered committed. If you are familiar with Bitcoin, 'justification' via QuorumCertificate
 /// is similar to 'confirmation' by Blocks.
 /// 
-/// A QuorumCertificate is 'valid', i.e., it can safely be inserted into the BlockTree, if its is_quorum
-/// and is_cryptographically_correct methods return true. 
+/// A QuorumCertificate is 'valid', i.e., it can safely be inserted into the BlockTree, if its \
+/// [is_correct_len](QuorumCertificate::is_correct_len), is_quorum, and is_cryptographically_correct methods return true. 
 #[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct QuorumCertificate {
     /// The view number of the Votes that were combined to form this QuorumCertificate. 
@@ -138,29 +157,56 @@ pub struct QuorumCertificate {
 
 impl QuorumCertificate {
     /// Computes the size of a quorum given the number of participants in the ParticipantSet.
-    pub fn quorum_size(num_participants: usize) -> usize {
+    pub(crate) fn quorum_size(num_participants: usize) -> usize {
         // '/' here is integer (floor) division. 
         (num_participants * 2) / 3 + 1
     }
 
-    /// Returns whether this QuorumCertificate contains at least a quorum of signatures, correct or incorrect. 
-    pub fn is_quorum(&self, num_participants: usize) -> bool {
-        self.sigs.count() > Self::quorum_size(num_participants) 
+    pub(crate) fn is_valid(&self, participant_set: &ParticipantSet) -> bool {
+        self.is_correct_len(participant_set.len())
+            && self.is_quorum(participant_set.len())
+            && self.is_cryptographically_correct(participant_set)
     }
 
-    /// Returns whether all Signatures in this QuorumCertificate were produced over (view_number ++ block_hash)
-    /// by the SecretKey associated with a PublicAddr in the provided ParticipantSet.
-    pub fn is_cryptographically_correct(&self, participant_set: &ParticipantSet) -> bool {
-        todo!()
-    }
-
-    pub(crate) fn genesis_qc(num_participants: usize) -> QuorumCertificate {
+    pub(crate) fn new_genesis_qc(num_participants: usize) -> QuorumCertificate {
         QuorumCertificate {
             view_number: 0,
             block_hash: [0u8; BLOCK_HASH_LEN],
             sigs: SignatureSet::new(num_participants),
         }
     }
+
+    pub(crate) fn is_correct_len(&self, num_participants: usize) -> bool {
+        self.sigs.len() > num_participants
+    }
+
+    /// Returns whether this QuorumCertificate contains at least a quorum of signatures, correct or incorrect. 
+    fn is_quorum(&self, num_participants: usize) -> bool {
+        self.sigs.count_some() > Self::quorum_size(num_participants) 
+    }
+
+    /// Returns whether all Signatures in this QuorumCertificate were produced over (view_number ++ block_hash)
+    /// by the SecretKey associated with a PublicAddr in the provided ParticipantSet.
+    fn is_cryptographically_correct(&self, participant_set: &ParticipantSet) -> bool {
+        let msg = {
+            let mut buf = Vec::with_capacity(mem::size_of::<ViewNumber>() + mem::size_of::<BlockHash>()); 
+            buf.extend_from_slice(&self.view_number.to_le_bytes());
+            buf.extend_from_slice(&self.block_hash);
+            buf
+        };
+
+        self.sigs.iter()
+            .zip(participant_set.iter())
+            .all(|(signature, (public_key_bs, _))| match signature {
+                Some(signature) => {
+                        let public_key = PublicKey::from_bytes(public_key_bs)
+                            .expect("Configuration error: static ParticipantSet contains invalid PublicKey");
+                        public_key.verify(&msg, signature).is_ok()
+                    },
+                    None => true,
+
+            })
+    } 
 }
 
 /// Helps Leaders incrementally form QuorumCertificates by combining Signatures on some view_number and block_hash.
@@ -191,8 +237,8 @@ impl QuorumCertificateAggregator {
     /// 
     /// ## Errors
     /// Read the documentation of QCAggregatorInsertError. If an error is returned, this function was a no-op.
-    pub fn insert(&mut self, signature: Signature, of_public_addr: PublicAddr) -> Result<bool, QCAggregatorInsertError> {
-        if self.signature_set.count() > QuorumCertificate::quorum_size(self.participant_set.len()) {
+    pub fn insert(&mut self, signature: Signature, of_public_addr: PublicKeyBytes) -> Result<bool, QCAggregatorInsertError> {
+        if self.signature_set.count_some() > QuorumCertificate::quorum_size(self.participant_set.len()) {
             return Err(QCAggregatorInsertError::AlreadyAQuorum)
         }
         if let Some(position) = self.participant_set.keys().position(|pk| *pk == of_public_addr) {
@@ -201,7 +247,7 @@ impl QuorumCertificateAggregator {
             }
             let _ = self.signature_set.insert(position, signature);
     
-            Ok(self.signature_set.count() > QuorumCertificate::quorum_size(self.participant_set.len()))
+            Ok(self.signature_set.count_some() > QuorumCertificate::quorum_size(self.participant_set.len()))
             } else {
                 Err(QCAggregatorInsertError::PublicAddrNotInParticipantSet)
             }
@@ -224,7 +270,6 @@ pub enum QCAggregatorInsertError {
     AlreadyAQuorum,
 
     /// A signature associated with the provided PublicAddr was already inserted into this QuorumCertificateAggregator.
-    /// was a no-op.
     PublicAddrAlreadyProvidedSignature,
 
     /// The provided PublicAddr is not in the ParticipantSet provided during the construction of this
@@ -240,39 +285,48 @@ pub struct SignatureSet {
     pub signatures: Vec<Option<Signature>>,
 
     /// How many `Some`s are in signatures.
-    pub count: usize,
+    pub count_some: usize,
 } 
 
 impl SignatureSet {
-    pub fn new(size: usize) -> SignatureSet {
-        let signatures = vec![None; size];
+    pub fn new(len: usize) -> SignatureSet {
+        let signatures = vec![None; len];
         SignatureSet {
             signatures,
-            count: 0,
+            count_some: 0,
         }
     }
 
     /// The caller has the responsibility to ensure that Signatures in the SignatureSet are sorted in ascending order of the
-    /// PublicAddr that produced them, i.e., the n-th item in SignatureSet, if Some, was produced by the SecretKey corresponding
-    /// to the 'length - n' numerically largest Participant in a ParticipantSet. By imposing an order on SignatureSet, mappings
-    /// between PublicAddr and Signature can be omitted from SignatureSet's bytes-encoding, saving message and storage size.
+    /// PublicAddr that produced them.
     pub fn insert(&mut self, index: usize, signature: Signature) -> Result<(), AlreadyInsertedError> {
         if self.signatures[index].is_some() {
             Err(AlreadyInsertedError)
         } else {
             self.signatures[index] = Some(signature);
-            self.count += 1;
+            self.count_some += 1;
             Ok(())
         }
+    }
+
+    /// Get an iterator through this SignatureSet's `signatures` vector.
+    pub fn iter(&self) -> slice::Iter<Option<Signature>> {
+        self.signatures.iter()     
+    }
+
+    /// Returns the length of this SignatureSet's `signatures` vector. 
+    pub fn len(&self) -> usize {
+        self.signatures.len()
+    }
+
+    /// Returns how many `Some(Signature)` are in this SignatureSet's `signatures` vector.
+    pub fn count_some(&self) -> usize {
+        self.count_some
     }
 
     /// Returns whether the signature at the provided index is Some. 
     pub fn contains(&mut self, index: usize) -> bool {
         self.signatures[index].is_some()
-    }
-
-    pub fn count(&self) -> usize {
-        self.count
     }
 }
 

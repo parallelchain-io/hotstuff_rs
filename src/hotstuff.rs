@@ -43,7 +43,7 @@ impl HotStuff {
         }
 
         // Form genesis Block.
-        let genesis_qc = QuorumCertificate::genesis_qc(configuration.identity.static_participant_set.len());
+        let genesis_qc = QuorumCertificate::new_genesis_qc(configuration.identity.static_participant_set.len());
         let genesis_block = MsgBlock::new(
             configuration.algorithm.app_id,
             GENESIS_BLOCK_HEIGHT, 

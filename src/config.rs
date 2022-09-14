@@ -1,6 +1,7 @@
 use std::{time::Duration, path::PathBuf};
 use std::net::IpAddr;
-use crate::{identity::{PublicAddr, ParticipantSet, KeyPair}, msg_types::AppID};
+use crate::identity::PublicKey;
+use crate::{identity::{ParticipantSet, KeyPair}, msg_types::AppID};
 
 /// Configuration as specified by the operator. This is split up into smaller, subsystem specific config structs
 /// before being passed to components.
@@ -16,7 +17,7 @@ pub struct Configuration {
 pub struct IdentityConfig {
     pub my_keypair: KeyPair,
     /// my_public_addr must be the equivalent to the PublicKey component of my_keypair.
-    pub my_public_addr: PublicAddr,
+    pub my_public_key: PublicKey,
     pub static_participant_set: ParticipantSet,
 }
 
