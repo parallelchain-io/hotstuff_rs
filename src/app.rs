@@ -10,7 +10,7 @@ use crate::msg_types::{Data, DataHash, Block as MsgBlock, BlockHash};
 /// Besides implementing the functions specified in the trait, implementors of App are additionally expected to be *deterministic*. i.e., every
 /// function it implements as part of the App trait should evaluate to the same value every time it is called with the same arguments.
 pub trait App: Send + 'static {
-    /// Called by the Algorithm state machine when this Participant becomes the Leader and has to propose a new Block which extends the branch
+    /// Called by the Algorithm state machine when this Participant becomes the Leader and has to propose a new Block that extends the branch
     /// of the BlockTree headed by `parent_block`. A view of Storage after executing `parent_block` is provided in `storage`. 
     /// 
     /// This function call should return at the latest by `deadline`. Otherwise, this view in which the Participant is the Leader is likely

@@ -371,6 +371,7 @@ pub struct BlockTreeSnapshot<'a> {
     db_snapshot: Snapshot<'a>,
 }
 
+// Defines functions that get a Block, or one of its fields, from the BlockTree provided a **BlockHash**.
 impl<'a> BlockTreeSnapshot<'a> {
     pub fn get_block_by_hash(&self, block_hash: &BlockHash) -> Option<Block> {
         let block_prefix = combine(&special_paths::BLOCK_HASH_TO_BLOCK, block_hash);
@@ -423,21 +424,6 @@ impl<'a> BlockTreeSnapshot<'a> {
             data_hash,
             data
         })
-    }
-
-    pub fn get_committed_block_by_height(&self, height: &BlockHeight) -> Option<Block> {
-        let block_hash = self.get_committed_block_hash(height)?;
-        self.get_block_by_hash(&block_hash)
-    }
-
-    pub fn get_committed_block_hash(&self, height: &BlockHeight) -> Option<BlockHash> {
-        let block_hash_key = combine(&special_paths::COMMITTED_BLOCK_HEIGHT_TO_BLOCK_HASH, &height.to_le_bytes());
-        let block_hash = {
-            let bs = self.db_snapshot.get(block_hash_key).unwrap()?;
-            BlockHash::deserialize(&mut bs.as_slice()).unwrap()
-        };
-
-        Some(block_hash)
     } 
 
     pub fn get_block_height(&self, hash: &BlockHash) -> Option<BlockHeight> {
@@ -458,12 +444,14 @@ impl<'a> BlockTreeSnapshot<'a> {
             QuorumCertificate::deserialize(&mut bs.as_slice()).unwrap()
         };
         Some(block_justify)
-    }
+    } 
 
-    pub fn get_committed_block_justify_by_height(&self, height: &BlockHeight) -> Option<QuorumCertificate> {
-        let block_hash = self.get_committed_block_hash(height)?;
-        self.get_block_justify_by_hash(&block_hash)
-    }
+    pub fn get_block_data_len_by_hash(&self, hash: &BlockHash) -> Option<DataLen> {
+        let block_key = combine(&special_paths::BLOCK_HASH_TO_BLOCK, hash);
+        let data_len_key = combine(&block_key, &special_paths::DATA);
+        let data_len = self.db_snapshot.get(&data_len_key).unwrap()?;
+        Some(DataLen::deserialize(&mut data_len.as_slice()).unwrap())
+    } 
 
     pub fn get_block_data_by_hash(&self, hash: &BlockHash) -> Option<Data> {
         let block_key = combine(&special_paths::BLOCK_HASH_TO_BLOCK, hash);
@@ -485,12 +473,7 @@ impl<'a> BlockTreeSnapshot<'a> {
             data
         };
         Some(block_data)
-    }
-
-    pub fn get_committed_block_data_by_height(&self, height: &BlockHeight) -> Option<Data> {
-        let block_hash = self.get_committed_block_hash(height)?;
-        self.get_block_data_by_hash(&block_hash)
-    }
+    } 
 
     pub fn get_block_datum_by_hash(&self, hash: &BlockHash, index: usize) -> Result<Option<Datum>, BlockNotFoundError> {
         let block_key = combine(&special_paths::BLOCK_HASH_TO_BLOCK, hash);
@@ -503,6 +486,39 @@ impl<'a> BlockTreeSnapshot<'a> {
             let datum_key = combine(&block_data_prefix, &index.to_le_bytes());
             Ok(self.db_snapshot.get(datum_key).unwrap())
         }
+    } 
+}
+
+// Defines functions that get a Block, or one of its fields, from the BlockTree provided a **BlockHeight**.
+impl<'a> BlockTreeSnapshot<'a> {
+    pub fn get_committed_block_by_height(&self, height: &BlockHeight) -> Option<Block> {
+        let block_hash = self.get_committed_block_hash(height)?;
+        self.get_block_by_hash(&block_hash)
+    }
+
+    pub fn get_committed_block_hash(&self, height: &BlockHeight) -> Option<BlockHash> {
+        let block_hash_key = combine(&special_paths::COMMITTED_BLOCK_HEIGHT_TO_BLOCK_HASH, &height.to_le_bytes());
+        let block_hash = {
+            let bs = self.db_snapshot.get(block_hash_key).unwrap()?;
+            BlockHash::deserialize(&mut bs.as_slice()).unwrap()
+        };
+
+        Some(block_hash)
+    }
+
+    pub fn get_committed_block_justify_by_height(&self, height: &BlockHeight) -> Option<QuorumCertificate> {
+        let block_hash = self.get_committed_block_hash(height)?;
+        self.get_block_justify_by_hash(&block_hash)
+    }
+
+    pub fn get_commited_block_data_len_by_height(&self, height: &BlockHeight) -> Option<DataLen> {
+        let block_hash = self.get_committed_block_hash(height)?;
+        self.get_block_data_len_by_hash(&block_hash)
+    }
+
+    pub fn get_committed_block_data_by_height(&self, height: &BlockHeight) -> Option<Data> {
+        let block_hash = self.get_committed_block_hash(height)?;
+        self.get_block_data_by_hash(&block_hash)
     }
 
     pub fn get_committed_block_datum_by_height(&self, height: &BlockHeight, index: usize) -> Result<Option<Datum>, BlockNotFoundError> {
@@ -512,7 +528,10 @@ impl<'a> BlockTreeSnapshot<'a> {
             Err(BlockNotFoundError)
         }
     }
+}
 
+// Defines other BlockTreeSnapshot methods.
+impl<'a> BlockTreeSnapshot<'a> {
     pub fn get_committed_block_child(&self, parent_block_hash: &BlockHash) -> Result<Block, ChildrenNotYetCommittedError> {
         let highest_committed_block_hash = BlockHash::try_from(self.db_snapshot.get(special_paths::HIGHEST_COMMITTED_BLOCK_HASH).unwrap().unwrap()).unwrap();
         let highest_committed_block = self.get_block_by_hash(&highest_committed_block_hash).unwrap();
