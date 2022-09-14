@@ -1,6 +1,5 @@
+use std::collections::{hash_set, HashSet, HashMap, hash_map};
 use borsh::{BorshSerialize, BorshDeserialize};
-use std::ops::{Deref, DerefMut};
-use std::collections::{hash_set, HashSet, HashMap};
 use crate::msg_types::BlockHash;
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -17,28 +16,48 @@ impl ChildrenList {
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct WriteSet(HashMap<Key, Value>);
+pub struct WriteSet {
+    inserts: HashMap<Key, Value>,
+    deletes: HashSet<Key>, 
+}
 pub type Key = Vec<u8>;
 pub type Value = Vec<u8>;
 
 impl WriteSet {
     pub fn new() -> WriteSet {
-        WriteSet(HashMap::new())
+        WriteSet {
+            inserts: HashMap::new(),
+            deletes: HashSet::new(),
+        }
     }
-}
 
-impl Deref for WriteSet {
-    type Target = HashMap<Key, Value>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    pub fn insert(&mut self, key: Key, value: Value) {
+        self.deletes.remove(&key);
+        self.inserts.insert(key, value);
     }
-}
 
-impl DerefMut for WriteSet {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    pub fn delete(&mut self, key: Key) {
+        self.inserts.remove(&key);
+        self.deletes.insert(key);
     }
+
+    pub fn get_insert(&self, key: &Key) -> Option<&Value> {
+        self.inserts.get(key)
+    } 
+
+    pub fn contains_delete(&self, key: &Key) -> bool {
+        self.deletes.contains(key)
+    }
+
+    /// Get an iterator over all of the key, value pairs in this WriteSet.
+    pub fn inserts(&self) -> hash_map::Iter<Key, Value> {
+        self.inserts.iter()
+    } 
+
+    /// Get an iterator over all of the keys that are deleted by this WriteSet.
+    pub fn deletes(&self) -> hash_set::Iter<Key> {
+        self.deletes.iter()
+    } 
 }
 
 pub(crate) type DataLen = u64;

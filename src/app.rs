@@ -162,14 +162,30 @@ impl<'a> SpeculativeStorageSnapshot<'a> {
     }
 
     /// Get a value in Storage.
-    pub fn get(&self, key: &Key) -> Value {
-        if let Some(value) = self.parent_writes.get(key) {
-            value.clone()
-        } else if let Some(value) = self.grandparent_writes.get(key) {
-            value.clone()
-        } else if let Some(value) = self.great_grandparent_writes.get(key) {
-            value.clone()
-        } else {
+    pub fn get(&self, key: &Key) -> Option<Value> {
+        // Check if key was touched in parent_writes.
+        if self.parent_writes.contains_delete(key) {
+            return None
+        } else if let Some(value) = self.parent_writes.get_insert(key) {
+            return Some(value.clone())
+        }
+
+        // Check if key was touched in grandparent_writes.
+        else if self.grandparent_writes.contains_delete(key) {
+            return None
+        } else if let Some(value) = self.grandparent_writes.get_insert(key) {
+            return Some(value.clone())
+        }
+
+        // Check if key was touched in great_grandparent_writes.
+        else if self.great_grandparent_writes.contains_delete(key) {
+            return None
+        } else if let Some(value) = self.great_grandparent_writes.get_insert(key) {
+            return Some(value.clone())
+        }
+
+        // Get from storage.
+        else {
             self.block_tree.get_from_storage(key)
         }
     }

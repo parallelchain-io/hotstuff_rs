@@ -306,9 +306,14 @@ impl BlockTreeWriter {
     } 
 
     fn apply_write_set(wb: &mut WriteBatch, write_set: &WriteSet) {
-        for (storage_key, value) in write_set.iter() {
+        for (storage_key, value) in write_set.inserts() {
             let key = combine(&special_paths::APP_STORAGE, storage_key);
-            wb.put(key, value)
+            wb.put(key, value);
+        } 
+
+        for storage_key in write_set.deletes() {
+            let key = combine(&special_paths::APP_STORAGE, storage_key);
+            wb.delete(key);
         }
     }
 
@@ -320,9 +325,9 @@ impl BlockTreeWriter {
 
 // This impl block defines a lone method for getting a KV pair out of *persistent* (i.e., non-speculative) storage.
 impl BlockTreeWriter {
-    pub(crate) fn get_from_storage(&self, key: &Key) -> Value {
+    pub(crate) fn get_from_storage(&self, key: &Key) -> Option<Value> {
         let key = combine(&special_paths::APP_STORAGE, key);
-        self.db.get(key).unwrap().map_or(Value::new(), identity)
+        self.db.get(key).unwrap()
     }
 }
 
@@ -561,8 +566,8 @@ impl<'a> BlockTreeSnapshot<'a> {
         self.get_block_by_hash(&genesis_block_hash).unwrap()
     }
 
-    pub fn get_from_storage(&self, key: &Key) -> Value {
-        self.db_snapshot.get(combine(&special_paths::APP_STORAGE, key)).unwrap().map_or(Value::new(), identity)
+    pub fn get_from_storage(&self, key: &Key) -> Option<Value> {
+        self.db_snapshot.get(combine(&special_paths::APP_STORAGE, key)).unwrap()
     }
 }
 
