@@ -203,7 +203,7 @@ impl SyncModeClient {
 
     pub fn get_blocks_from_tail(&self, tail_block_hash: &BlockHash, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
-            "http://{}/blocks?hash={}&anchor=end&limit={}&speculate=true",
+            "http://{}/blocks?hash={}&anchor=tail&limit={}&speculate=true",
             participant_ip_addr,
             Base64URL::encode(tail_block_hash).deref(),
             limit,
