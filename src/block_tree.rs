@@ -23,8 +23,9 @@ pub(crate) fn open(block_tree_config: &BlockTreeStorageConfig) -> (BlockTreeWrit
     (block_tree_writer, block_tree_snapshot_factory)
 }
 
-/// The singleton writer into BlockTree in a HotStuff-rs process. Only Algorithm (also a singleton) should own, or hold a reference to
-/// an instance of this struct. Also exposes specific methods for reading from the BlockTree which is tailored to Algorithm's needs.
+/// The exclusive writer into the BlockTree in a HotStuff-rs process. Only Algorithm (also a singleton) should call the writing methods of
+/// this struct. It also exposes specific methods for reading from the BlockTree which are tailored to Algorithm's needs.
+#[derive(Clone)]
 pub(crate) struct BlockTreeWriter {
     db: Arc<DB>,
 }

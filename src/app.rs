@@ -25,7 +25,7 @@ pub trait App: Send + 'static {
     fn propose_block(
         &mut self, 
         parent_block: &Block,
-        storage_snapshot: SpeculativeStorageSnapshot,
+        storage_snapshot: SpeculativeStorageReader,
         deadline: Instant
     ) -> (Data, DataHash, WriteSet);
 
@@ -41,7 +41,7 @@ pub trait App: Send + 'static {
     fn validate_block(
         &mut self,
         block: &Block,
-        storage_snapshot: SpeculativeStorageSnapshot,
+        storage_snapshot: SpeculativeStorageReader,
         deadline: Instant
     ) -> Result<WriteSet, ExecuteError>;
 }
@@ -57,13 +57,13 @@ pub enum ExecuteError {
 
 /// A convenience wrapper around msg_types::Block which, besides allowing App's methods to look into the Block's fields, exposes methods for
 /// traversing the branch that this Block heads.
-pub struct Block<'a> {
+pub struct Block {
     inner: MsgBlock,
-    block_tree: &'a BlockTreeWriter,
+    block_tree: BlockTreeWriter,
 }
 
-impl<'a> Block<'a> {
-    pub(crate) fn new(block: MsgBlock, block_tree: &BlockTreeWriter) -> Block {
+impl Block {
+    pub(crate) fn new(block: MsgBlock, block_tree: BlockTreeWriter) -> Block {
         Block {
             inner: block,
             block_tree,
@@ -88,7 +88,7 @@ impl<'a> Block<'a> {
     }
 }
 
-impl<'a> Deref for Block<'a> {
+impl Deref for Block {
     type Target = MsgBlock;
 
     fn deref(&self) -> &Self::Target {
@@ -108,27 +108,27 @@ impl<'a> Deref for Block<'a> {
 /// BlockTreeSnapshot's [get_from_storage](crate::block_tree::BlockTreeSnapshot::get_from_storage) method provides a non-speculative view of
 /// Storage, one that does not reflect the mutations that come about from executing speculative Blocks.
 /// 
-/// On the other hand, SpeculativeStorageSnapshot provides a view of Storage, that, as its name suggests, reflect the mutations that come
+/// On the other hand, SpeculativeStorageReader provides a view of Storage, that, as its name suggests, reflect the mutations that come
 /// about from executing speculative Blocks, in particular, the writes of the Block-to-be-proposed's parent, grandparent, and great-grandparent.
-pub struct SpeculativeStorageSnapshot<'a> {
+pub struct SpeculativeStorageReader {
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
     great_grandparent_writes: WriteSet,
-    block_tree: &'a BlockTreeWriter,
+    block_tree: BlockTreeWriter,
 }
 
-impl<'a> SpeculativeStorageSnapshot<'a> {
+impl SpeculativeStorageReader {
     /// # Boundary scenarios
     /// 1. If parent_block_hash points to the Genesis Block, then there is no grandparent or great-grandparent and their writes are set to
     /// the empty WriteSet.
     /// 2. If parent_block_hash points to a child of the Genesis Block, then there is no great-grandparent and its writes are the set to the
     /// empty WriteSet. 
-    pub(crate) fn open(block_tree: &'a BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageSnapshot<'a> {
+    pub(crate) fn open(block_tree: BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageReader {
         let parent = block_tree.get_block(&parent_block_hash).unwrap();
         let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(WriteSet::new(), identity);
 
         if parent.height == 0 {
-            SpeculativeStorageSnapshot {
+            SpeculativeStorageReader {
                 parent_writes,
                 grandparent_writes: WriteSet::new(),
                 great_grandparent_writes: WriteSet::new(),
@@ -140,7 +140,7 @@ impl<'a> SpeculativeStorageSnapshot<'a> {
                 block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
             };
 
-            SpeculativeStorageSnapshot {
+            SpeculativeStorageReader {
                 parent_writes,
                 grandparent_writes,
                 great_grandparent_writes: WriteSet::new(),
@@ -152,7 +152,7 @@ impl<'a> SpeculativeStorageSnapshot<'a> {
             let great_grandparent_block_hash = block_tree.get_block(&grandparent_block_hash).unwrap().justify.block_hash; 
             let great_grandparent_writes = block_tree.get_write_set(&great_grandparent_block_hash).map_or(WriteSet::new(), identity);
 
-        SpeculativeStorageSnapshot {
+        SpeculativeStorageReader {
             parent_writes,
             grandparent_writes,
             great_grandparent_writes,

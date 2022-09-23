@@ -4,7 +4,7 @@ use std::cmp::{min, max};
 use std::thread;
 use ed25519_dalek::Signer;
 use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash, Signature};
-use crate::app::{App, Block as AppBlock, SpeculativeStorageSnapshot, ExecuteError};
+use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicKeyBytes, ParticipantSet};
@@ -103,8 +103,8 @@ impl<A: App> Algorithm<A> {
         let (new_leaf, writes) = {
             let parent_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
             let (data, data_hash, state) = {
-                let app_block = AppBlock::new(parent_block.clone(), &self.block_tree);
-                let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &parent_block.hash);
+                let app_block = AppBlock::new(parent_block.clone(), self.block_tree.clone());
+                let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &parent_block.hash);
                 self.app.propose_block(&app_block, storage, deadline)
             };
             let block = MsgBlock::new(self.algorithm_config.app_id, parent_block.height+1, self.top_qc.clone(), data_hash, data);
@@ -189,8 +189,8 @@ impl<A: App> Algorithm<A> {
         // Phase 2: Validate the proposed Block. 
 
         // 1. Call App to execute the proposed Block.
-        let app_block = AppBlock::new(proposed_block.clone(), &self.block_tree);
-        let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &proposed_block.justify.block_hash);   
+        let app_block = AppBlock::new(proposed_block.clone(), self.block_tree.clone());
+        let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash);   
         let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
         let execution_result = self.app.validate_block(&app_block, storage, deadline);
  
@@ -318,8 +318,8 @@ impl<A: App> Algorithm<A> {
                     }
 
                     // 5. Call App to validate block.
-                    let app_block = AppBlock::new(block.clone(), &self.block_tree);
-                    let storage = SpeculativeStorageSnapshot::open(&self.block_tree, &block.justify.block_hash);
+                    let app_block = AppBlock::new(block.clone(), self.block_tree.clone());
+                    let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &block.justify.block_hash);
                     let deadline = Instant::now() + self.algorithm_config.sync_mode_execution_timeout;
                     let execution_result = self.app.validate_block(&app_block, storage, deadline);
 
