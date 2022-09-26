@@ -1,3 +1,4 @@
+use std::convert::identity;
 use std::net::{SocketAddr, IpAddr};
 use std::cmp::min;
 use std::ops::Deref;
@@ -12,19 +13,24 @@ use pchain_types::Base64URL;
 use crate::msg_types::{Block, BlockHash};
 use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
 use crate::config::BlockTreeApiConfig;
+use crate::stored_types::Key;
 
 pub(crate) struct Server(tokio::runtime::Runtime);
 
 impl Server {
     pub(crate) fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: BlockTreeApiConfig) -> Server {
-        // Endpoints and their behavior are documented in block_tree/rest_api.md
-
         // GET /blocks
+        let block_tree_snapshot_factory1 = block_tree_snapshot_factory.clone();
         let get_blocks = warp::path("blocks")
             .and(warp::query::<GetBlocksParams>())
-            .then(move |blocks_params| Self::handle_get_blocks(block_tree_snapshot_factory.clone(), blocks_params));
+            .then(move |params| Self::handle_get_blocks(block_tree_snapshot_factory1.clone(), params));
 
-        let server = warp::serve(get_blocks);
+        // GET /storage
+        let get_storage = warp::path("storage")
+            .and(warp::query::<GetStorageParams>())
+            .then(move |params| Self::handle_get_storage(block_tree_snapshot_factory.clone(), params));
+
+        let server = warp::serve(get_blocks.or(get_storage));
         let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
         let task = server.bind(listening_socket_addr);
 
@@ -35,7 +41,7 @@ impl Server {
         Server(runtime)
     }
 
-    async fn handle_get_blocks<'a>(block_tree_snapshot_factory: BlockTreeSnapshotFactory, params: GetBlocksParams) -> impl warp::Reply {
+    async fn handle_get_blocks(block_tree_snapshot_factory: BlockTreeSnapshotFactory, params: GetBlocksParams) -> impl warp::Reply {
         // Interpret query parameters
         let hash = match Base64URL::decode(&params.hash) {
             Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
@@ -44,18 +50,9 @@ impl Server {
                 Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
             }
         };
-        let anchor = match params.anchor {
-            None => GetBlocksAnchor::Head,
-            Some(anchor) => anchor,
-        };
-        let limit = match params.limit {
-            None => 1,
-            Some(limit) => limit,
-        };
-        let speculate = match params.speculate {
-            None => false,
-            Some(speculate) => speculate,
-        };
+        let anchor = params.anchor.map_or(GetBlocksAnchor::Head, identity);
+        let limit = params.limit.map_or(1, identity);
+        let speculate = params.speculate.map_or(false, identity);
 
         let block_tree_snapshot = block_tree_snapshot_factory.snapshot();
 
@@ -68,7 +65,20 @@ impl Server {
                 Some(blocks) => http::Response::builder().status(StatusCode::OK).body(blocks.try_to_vec().unwrap()),
                 None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
             }, 
-            _ => unreachable!()
+        }
+    }
+
+    async fn handle_get_storage(block_tree_snapshot_factory: BlockTreeSnapshotFactory, params: GetStorageParams) -> impl warp::Reply {
+        let block_tree_snapshot = block_tree_snapshot_factory.snapshot();
+        
+        let key = match Base64URL::decode(&params.key) {
+            Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
+            Ok(key) => key,
+        };
+
+        match block_tree_snapshot.get_from_storage(&key) {
+            Some(value) => http::Response::builder().status(StatusCode::OK).body(value.try_to_vec().unwrap()),
+            None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
         }
     }
 }
@@ -79,6 +89,11 @@ struct GetBlocksParams {
     anchor: Option<GetBlocksAnchor>,
     limit: Option<usize>,
     speculate: Option<bool>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct GetStorageParams {
+    key: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

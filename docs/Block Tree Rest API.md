@@ -8,21 +8,40 @@ Quotes ("") are used in this document for clarity, but are not interpreted speci
 ### Query parameters
 
 |Key |Value |Default value |Description |
-|--- |---   |---         |--- |
-|hash|`BlockHash` as `Base64Url` |N/A |Incompatible with `height`. Identifies the first Block in the chain returned by this endpoint. |
-|height |number|N/A |Incompatible with `hash`. Identifies the first Block in the chain returned by this endpoint. |
-|direction |"forward" or "backward" |"backward" |If "forward", the chain will extend forward in time, i.e. the first block will have the lowest block height. The converse if "backward". |
+|--- |---   |---           |---         |
+|hash|`BlockHash` as `Base64Url` |n/a (mandatory) |Identifies the 'anchor' Block in the returned chain. |
+|anchor |"head" or "tail" |"head" |Whether `hash` identifies the head (highest Block) of the returned chain, or the tail (lowest Block) of the returned chain. |
 |limit |number|1 |*Maximum* length of the chain returned. Depending on the availability of Blocks, less than `limit` may be returned.|
-|include\_not\_committed |"true" or "false" |"false" |Whether or not to include Blocks that have been inserted into the BlockTree but are not yet committed. If set to true, Blocks returned by this endpoint are not guaranteed to remain a part of the BlockTree. |
+|speculate |"true" or "false" |"false" |Whether or not to include Blocks that have been inserted into the BlockTree but are not yet committed. If set to true, Blocks returned by this endpoint are not guaranteed to remain a part of the BlockTree. |
 
-### Possible response status codes
+### Response status codes
 
 |Status code |Interpretation |
 |---         |---            |
 |200         |OK.            |
-|400         |Invalid query string.               |
-|404         |The Block identified by `hash` or `height` is not in this Participant's local database. Or, if `include_not_committed` is "false", not committed yet. |
+|400         |Invalid query string.  |
+|404         |The Block identified by `hash` is not in this Participant's local database. Or, if `speculate` is "false", not committed yet. |
 
 ### Response body
 
-`Vec<Block>`, serialized using the encoding specified in `crates::msg_types`.
+A borsh-serialized `Vec<Block>`, lowest-height Block first.
+
+## GET /storage
+
+### Query parameters
+
+|Key |Value |Default value |Description |
+|--- |---   |---           |---         |
+|key |`Base64URL` |n/a (mandatory) |Identifies the key in *committed* Storage whose value the response will return. |
+
+### Response status codes
+
+|Status code |Interpretation |
+|---         |---            |
+|200         |OK.            |
+|400         |Invalid query string. |
+|404         |The provided key is not associated with any value in Storage (not even an empty value). |
+
+### Response body
+
+A borsh-serialized `Vec<u8>`.
