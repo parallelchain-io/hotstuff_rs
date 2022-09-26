@@ -557,8 +557,12 @@ impl<'a> BlockTreeSnapshot<'a> {
         self.get_block_by_hash(&top_block_hash).unwrap()
     }
 
+    pub fn get_highest_commited_block_hash(&self) -> BlockHash {
+        BlockHash::try_from(self.db_snapshot.get(special_paths::HIGHEST_COMMITTED_BLOCK_HASH).unwrap().unwrap()).unwrap()
+    }
+
     pub fn get_highest_committed_block(&self) -> Block {
-        let highest_committed_block_hash = BlockHash::try_from(self.db_snapshot.get(special_paths::HIGHEST_COMMITTED_BLOCK_HASH).unwrap().unwrap()).unwrap();
+        let highest_committed_block_hash = self.get_highest_commited_block_hash();
         self.get_block_by_hash(&highest_committed_block_hash).unwrap()
     }
 

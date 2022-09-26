@@ -15,7 +15,7 @@ impl ChildrenList {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct WriteSet {
     inserts: HashMap<Key, Value>,
     deletes: HashSet<Key>, 

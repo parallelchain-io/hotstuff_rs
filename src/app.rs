@@ -96,7 +96,7 @@ impl Deref for Block {
     }
 }
 
-/// A read-and-writable view of the World State after executing all the Blocks in some branch of the Block Tree. The writes (`set`s)
+/// A view of the World State after executing all the Blocks in some branch of the Block Tree. The writes (`set`s)
 /// applied into this WorldStateHandle only become permanent when the Block containing the Command that it corresponds to becomes committed. 
 /// 
 /// This structure should NOT be used in App code outside the context of `create_leaf` and `execute`.
@@ -110,6 +110,7 @@ impl Deref for Block {
 /// 
 /// On the other hand, SpeculativeStorageReader provides a view of Storage, that, as its name suggests, reflect the mutations that come
 /// about from executing speculative Blocks, in particular, the writes of the Block-to-be-proposed's parent, grandparent, and great-grandparent.
+#[derive(Clone)]
 pub struct SpeculativeStorageReader {
     parent_writes: WriteSet,
     grandparent_writes: WriteSet,
