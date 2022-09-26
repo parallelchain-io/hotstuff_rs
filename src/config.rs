@@ -22,13 +22,14 @@ pub struct IdentityConfig {
 }
 
 /// Configuration related to the storage of the local BlockTree.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BlockTreeStorageConfig {
     /// The path, local to the binary's working directory, where BlockTree will store its persistent database files.
     pub db_path: PathBuf, 
 }
 
 /// Configuration related to the BlockTree HTTP API.
+#[derive(Clone)]
 pub struct BlockTreeApiConfig {
     /// The IP address that the BlockTree HTTP API will listen on.
     pub listening_addr: IpAddr,

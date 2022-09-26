@@ -13,10 +13,10 @@ use crate::msg_types::{Block, BlockHash};
 use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
 use crate::config::BlockTreeApiConfig;
 
-struct Server(tokio::runtime::Runtime);
+pub(crate) struct Server(tokio::runtime::Runtime);
 
 impl Server {
-    fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: BlockTreeApiConfig) -> Server {
+    pub(crate) fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: BlockTreeApiConfig) -> Server {
         // Endpoints and their behavior are documented in block_tree/rest_api.md
 
         // GET /blocks
