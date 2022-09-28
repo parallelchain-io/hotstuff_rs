@@ -3,7 +3,7 @@ use std::convert::{identity, TryFrom};
 use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::BlockTreeStorageConfig;
-use crate::stored_types::{WriteSet, ChildrenList, Key, Value, DataLen};
+use crate::stored_types::{StorageMutations, ChildrenList, Key, Value, DataLen};
 use crate::msg_types::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate, AppID, DataHash};
 
 /// Create an instance of BlockTreeWriter and BlockTreeSnapshotFactory. This function should only be called once in the process's lifetime.
@@ -46,7 +46,7 @@ impl BlockTreeWriter {
     /// ### If block.height == 3
     /// The block with height == 0 becomes committed by this insertion. But because block does not have a great-great-grandparent, step 7 
     /// is skipped.
-    pub(crate) fn insert_block(&self, block: &Block, write_set: &WriteSet) {
+    pub(crate) fn insert_block(&self, block: &Block, write_set: &StorageMutations) {
         let mut wb = WriteBatch::default();
 
         let parent_block = self.get_block(&block.justify.block_hash).unwrap();
@@ -111,7 +111,7 @@ impl BlockTreeWriter {
 
     /// Assuming that the backing database has been cleared beforehand, inserts the Genesis Block and its Write Set into the BlockTree and initializes
     /// special keys.
-    pub(crate) fn initialize(&self, genesis_block: &Block, write_set: &WriteSet) {
+    pub(crate) fn initialize(&self, genesis_block: &Block, write_set: &StorageMutations) {
         let mut wb = WriteBatch::default();
 
         // 1. Insert the Genesis Block to the NODES keyspace. 
@@ -296,17 +296,17 @@ impl BlockTreeWriter {
 
 // This impl block defines getters and getters for WriteSets.
 impl BlockTreeWriter {
-    pub(crate) fn get_write_set(&self, block_hash: &BlockHash) -> Option<WriteSet> {
+    pub(crate) fn get_write_set(&self, block_hash: &BlockHash) -> Option<StorageMutations> {
         let key = combine(&special_paths::BLOCK_HASH_TO_WRITE_SET, block_hash);
-        Some(WriteSet::deserialize(&mut self.db.get(key).unwrap()?.as_slice()).unwrap())
+        Some(StorageMutations::deserialize(&mut self.db.get(key).unwrap()?.as_slice()).unwrap())
     }
 
-    fn set_write_set(wb: &mut WriteBatch, block_hash: &BlockHash, write_set: &WriteSet) {
+    fn set_write_set(wb: &mut WriteBatch, block_hash: &BlockHash, write_set: &StorageMutations) {
         let key = combine(&special_paths::BLOCK_HASH_TO_WRITE_SET, block_hash);
         wb.put(key, write_set.try_to_vec().unwrap());
     } 
 
-    fn apply_write_set(wb: &mut WriteBatch, write_set: &WriteSet) {
+    fn apply_write_set(wb: &mut WriteBatch, write_set: &StorageMutations) {
         for (storage_key, value) in write_set.inserts() {
             let key = combine(&special_paths::APP_STORAGE, storage_key);
             wb.put(key, value);

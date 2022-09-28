@@ -4,7 +4,7 @@ use crate::config::Configuration;
 use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
 use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate, BlockHeight};
 use crate::algorithm::{State, Algorithm};
-use crate::stored_types::WriteSet;
+use crate::stored_types::StorageMutations;
 
 pub struct HotStuff {
     block_tree_snapshot_factory: BlockTreeSnapshotFactory,
@@ -32,7 +32,7 @@ impl HotStuff {
         configuration: Configuration,
         genesis_block_data_hash: DataHash,
         genesis_block_data: Data,
-        genesis_block_write_set: WriteSet
+        genesis_block_write_set: StorageMutations
     ) {
         const GENESIS_BLOCK_HEIGHT: BlockHeight = 0;
 

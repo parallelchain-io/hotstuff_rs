@@ -16,16 +16,16 @@ impl ChildrenList {
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct WriteSet {
+pub struct StorageMutations {
     inserts: HashMap<Key, Value>,
     deletes: HashSet<Key>, 
 }
 pub type Key = Vec<u8>;
 pub type Value = Vec<u8>;
 
-impl WriteSet {
-    pub fn new() -> WriteSet {
-        WriteSet {
+impl StorageMutations {
+    pub fn new() -> StorageMutations {
+        StorageMutations {
             inserts: HashMap::new(),
             deletes: HashSet::new(),
         }

@@ -2,7 +2,7 @@ use std::convert::identity;
 use std::ops::Deref;
 use std::time::Instant;
 use crate::block_tree::BlockTreeWriter;
-use crate::stored_types::{WriteSet, Key, Value};
+use crate::stored_types::{StorageMutations, Key, Value};
 use crate::msg_types::{Data, DataHash, Block as MsgBlock, BlockHash};
 
 /// Methods that a type needs to implement to serve as a HotStuff-rs network's deterministic state transition function.
@@ -27,7 +27,7 @@ pub trait App: Send + 'static {
         parent_block: &Block,
         storage_snapshot: SpeculativeStorageReader,
         deadline: Instant
-    ) -> (Data, DataHash, WriteSet);
+    ) -> (Data, DataHash, StorageMutations);
 
     /// Called by the Algorithm state machine when this Participant is a Replica and has to decide whether or not to vote on a Block (`block`)
     /// which was proposed by the Leader.
@@ -43,7 +43,7 @@ pub trait App: Send + 'static {
         block: &Block,
         storage_snapshot: SpeculativeStorageReader,
         deadline: Instant
-    ) -> Result<WriteSet, ExecuteError>;
+    ) -> Result<StorageMutations, ExecuteError>;
 }
 
 /// Enumerates the circumstances in which an App could reject a proposed Block, causing this Participant to skip this round without voting.
@@ -111,9 +111,9 @@ impl Deref for Block {
 /// On the other hand, SpeculativeStorageReader provides a view of Storage, that, as its name suggests, reflect the mutations that come
 /// about from executing speculative Blocks, in particular, the writes of the Block-to-be-proposed's parent, grandparent, and great-grandparent.
 pub struct SpeculativeStorageReader {
-    parent_writes: WriteSet,
-    grandparent_writes: WriteSet,
-    great_grandparent_writes: WriteSet,
+    parent_writes: StorageMutations,
+    grandparent_writes: StorageMutations,
+    great_grandparent_writes: StorageMutations,
     block_tree: BlockTreeWriter,
 }
 
@@ -125,32 +125,32 @@ impl SpeculativeStorageReader {
     /// empty WriteSet. 
     pub(crate) fn open(block_tree: BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageReader {
         let parent = block_tree.get_block(&parent_block_hash).unwrap();
-        let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(WriteSet::new(), identity);
+        let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(StorageMutations::new(), identity);
 
         if parent.height == 0 {
             SpeculativeStorageReader {
                 parent_writes,
-                grandparent_writes: WriteSet::new(),
-                great_grandparent_writes: WriteSet::new(),
+                grandparent_writes: StorageMutations::new(),
+                great_grandparent_writes: StorageMutations::new(),
                 block_tree
             }
         } else if parent.height == 1 {
             let grandparent_writes = { 
                 let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
-                block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity)
+                block_tree.get_write_set(&grandparent_block_hash).map_or(StorageMutations::new(), identity)
             };
 
             SpeculativeStorageReader {
                 parent_writes,
                 grandparent_writes,
-                great_grandparent_writes: WriteSet::new(),
+                great_grandparent_writes: StorageMutations::new(),
                 block_tree
             }
         } else { // parent.height >= 2
             let grandparent_block_hash = block_tree.get_block(parent_block_hash).unwrap().justify.block_hash;
-            let grandparent_writes = block_tree.get_write_set(&grandparent_block_hash).map_or(WriteSet::new(), identity);
+            let grandparent_writes = block_tree.get_write_set(&grandparent_block_hash).map_or(StorageMutations::new(), identity);
             let great_grandparent_block_hash = block_tree.get_block(&grandparent_block_hash).unwrap().justify.block_hash; 
-            let great_grandparent_writes = block_tree.get_write_set(&great_grandparent_block_hash).map_or(WriteSet::new(), identity);
+            let great_grandparent_writes = block_tree.get_write_set(&great_grandparent_block_hash).map_or(StorageMutations::new(), identity);
 
         SpeculativeStorageReader {
             parent_writes,
