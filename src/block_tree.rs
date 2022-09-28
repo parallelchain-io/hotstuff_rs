@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 use std::convert::{identity, TryFrom};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -361,7 +362,7 @@ pub struct BlockTreeSnapshotFactory {
 impl BlockTreeSnapshotFactory {
     pub fn snapshot(&self) -> BlockTreeSnapshot {
         BlockTreeSnapshot {
-            db_snapshot: self.db.snapshot()
+            db_snapshot: Rc::new(self.db.snapshot())
         }
     }
 }
@@ -373,8 +374,9 @@ impl BlockTreeSnapshotFactory {
 /// from the BlockTree that take in a height can only return committed Blocks. 
 /// 
 /// If you really need to get a speculative Block from the BlockTree from some reason, then you need to get it by its BlockHash. 
+#[derive(Clone)]
 pub struct BlockTreeSnapshot<'a> {
-    db_snapshot: Snapshot<'a>,
+    db_snapshot: Rc<Snapshot<'a>>,
 }
 
 // Defines functions that get a Block, or one of its fields, from the BlockTree provided a **BlockHash**.
