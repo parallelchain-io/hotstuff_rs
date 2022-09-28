@@ -1,13 +1,15 @@
 use std::{thread, fs};
 use crate::app::App;
 use crate::config::Configuration;
-use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
 use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate, BlockHeight};
 use crate::algorithm::{State, Algorithm};
 use crate::stored_types::StorageMutations;
+use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
+use crate::rest_api;
 
 pub struct HotStuff {
     block_tree_snapshot_factory: BlockTreeSnapshotFactory,
+    _rest_api_server: rest_api::Server,
     _engine_thread: thread::JoinHandle<()>,
 }
 
@@ -21,8 +23,10 @@ impl HotStuff {
             block_tree_snapshot_factory
         ) = block_tree::open(&configuration.block_tree_storage);
 
+
         HotStuff {
-            block_tree_snapshot_factory,
+            block_tree_snapshot_factory: block_tree_snapshot_factory.clone(),
+            _rest_api_server: rest_api::Server::start(block_tree_snapshot_factory.clone(), configuration.block_tree_api.clone()),
             _engine_thread: Self::start_state_machine_thread(app, block_tree_writer, configuration),
         }
     } 

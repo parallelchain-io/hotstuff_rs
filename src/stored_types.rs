@@ -15,7 +15,7 @@ impl ChildrenList {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct StorageMutations {
     inserts: HashMap<Key, Value>,
     deletes: HashSet<Key>, 
