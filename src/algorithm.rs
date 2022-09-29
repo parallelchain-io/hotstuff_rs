@@ -276,7 +276,7 @@ impl<A: App> Algorithm<A> {
     }
 
     fn do_sync(&mut self) -> State {
-        let client = SyncModeClient::new(self.networking_config.sync_mode.request_timeout);
+        let client = SyncModeClient::new(self.networking_config.sync_mode.clone());
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
             let participant_idx = { 

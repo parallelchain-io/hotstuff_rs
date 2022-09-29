@@ -1,9 +1,7 @@
 use std::{thread, fs};
 use crate::app::App;
 use crate::config::Configuration;
-use crate::msg_types::{Data, DataHash, Block as MsgBlock, QuorumCertificate, BlockHeight};
 use crate::algorithm::{State, Algorithm};
-use crate::stored_types::StorageMutations;
 use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
 use crate::rest_api;
 
@@ -33,7 +31,7 @@ impl HotStuff {
 
         HotStuff {
             block_tree_snapshot_factory: block_tree_snapshot_factory.clone(),
-            _rest_api_server: rest_api::Server::start(block_tree_snapshot_factory.clone(), configuration.block_tree_api.clone()),
+            _rest_api_server: rest_api::Server::start(block_tree_snapshot_factory.clone(), configuration.networking.sync_mode.clone()),
             _engine_thread: Self::start_state_machine_thread(app, block_tree_writer, configuration),
         }
     } 

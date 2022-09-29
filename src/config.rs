@@ -8,7 +8,6 @@ use crate::{identity::{ParticipantSet, KeyPair}, msg_types::AppID};
 pub struct Configuration {
     pub identity: IdentityConfig,
     pub block_tree_storage: BlockTreeStorageConfig,
-    pub block_tree_api: BlockTreeApiConfig,
     pub algorithm: AlgorithmConfig,
     pub networking: NetworkingConfiguration,
 }
@@ -26,16 +25,6 @@ pub struct IdentityConfig {
 pub struct BlockTreeStorageConfig {
     /// The path, local to the binary's working directory, where BlockTree will store its persistent database files.
     pub db_path: PathBuf, 
-}
-
-/// Configuration related to the BlockTree HTTP API.
-#[derive(Clone)]
-pub struct BlockTreeApiConfig {
-    /// The IP address that the BlockTree HTTP API will listen on.
-    pub listening_addr: IpAddr,
-
-    /// The port that the BlockTree HTTP API will listen on.
-    pub listening_port: u16,
 }
 
 /// Configuration related to the Algorithm State Machine.
@@ -92,4 +81,10 @@ pub struct ProgressModeNetworkingConfig {
 pub struct SyncModeNetworkingConfig {
     pub request_jump_size: usize,
     pub request_timeout: Duration,
+
+    /// The IP address that the BlockTree HTTP API will listen on.
+    pub block_tree_api_listening_addr: IpAddr,
+
+    /// The port that the BlockTree HTTP API will listen on.
+    pub block_tree_api_listening_port: u16,
 }

@@ -1,7 +1,6 @@
 use std::convert::identity;
 use std::net::{SocketAddr, IpAddr};
 use std::cmp::min;
-use std::ops::Deref;
 use std::time::Duration;
 use borsh::{BorshSerialize, BorshDeserialize};
 use tokio;
@@ -12,13 +11,12 @@ use reqwest;
 use pchain_types::Base64URL;
 use crate::msg_types::{Block, BlockHash, BlockHeight};
 use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
-use crate::config::BlockTreeApiConfig;
-use crate::stored_types::Key;
+use crate::config::SyncModeNetworkingConfig;
 
 pub(crate) struct Server(tokio::runtime::Runtime);
 
 impl Server {
-    pub(crate) fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: BlockTreeApiConfig) -> Server {
+    pub(crate) fn start(block_tree_snapshot_factory: BlockTreeSnapshotFactory, config: SyncModeNetworkingConfig) -> Server {
         // GET /blocks
         let block_tree_snapshot_factory1 = block_tree_snapshot_factory.clone();
         let get_blocks = warp::path("blocks")
@@ -31,8 +29,8 @@ impl Server {
             .then(move |params| Self::handle_get_storage(block_tree_snapshot_factory.clone(), params));
 
         let server = warp::serve(get_blocks.or(get_storage));
-        let listening_socket_addr = SocketAddr::new(config.listening_addr, config.listening_port); 
-        let task = server.bind(listening_socket_addr);
+        let listening_socket_addr = SocketAddr::new(config.block_tree_api_listening_addr, config.block_tree_api_listening_port); 
+        let task = server.run(listening_socket_addr);
 
         let runtime = tokio::runtime::Runtime::new()
             .expect("Programming or Configuration error: fail to create Tokio runtime.");
@@ -226,23 +224,30 @@ fn get_chain_between_speculative_block_and_highest_committed_block(block_tree: &
     res
 }
 
-pub(crate) struct SyncModeClient(reqwest::blocking::Client);
+pub(crate) struct SyncModeClient {
+    reqwest_client: reqwest::blocking::Client,
+    config: SyncModeNetworkingConfig,
+}
 
 impl SyncModeClient {
-    pub fn new(request_timeout: Duration) -> SyncModeClient {
-        let reqwest_client = reqwest::blocking::Client::builder().timeout(request_timeout).build()
+    pub fn new(config: SyncModeNetworkingConfig) -> SyncModeClient {
+        let reqwest_client = reqwest::blocking::Client::builder().timeout(config.request_timeout).build()
             .expect("Programming or Configuration error: failed to open a HTTP client for SyncModeClient.");
-        SyncModeClient(reqwest_client)
+        SyncModeClient {
+            reqwest_client,
+            config,
+        }
     }
 
     pub fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
-            "http://{}/blocks?height={}&anchor=tail&limit={}&speculate=true",
+            "http://{}:{}/blocks?height={}&anchor=tail&limit={}&speculate=true",
             participant_ip_addr,
+            self.config.block_tree_api_listening_port,
             tail_block_height,
             limit,
         );
-        let resp = self.0.get(url).send().map_err(Self::convert_request_error)?;
+        let resp = self.reqwest_client.get(url).send().map_err(Self::convert_request_error)?;
         let resp_bytes = resp.bytes().map_err(|_| GetBlocksFromTailError::BadResponse)?; 
         let blocks = Vec::<Block>::deserialize(&mut &resp_bytes[..]).map_err(|_| GetBlocksFromTailError::BadResponse)?;
 
