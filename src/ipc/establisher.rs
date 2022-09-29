@@ -95,6 +95,7 @@ impl Establisher {
                     Ok(stream) => stream,
                     Err(e) => match e.kind() {
                         ErrorKind::TimedOut => continue,
+                        ErrorKind::ConnectionRefused => continue,
                         _ => panic!("Programming error: unmatched io::ErrorKind."),
                     }
                 };

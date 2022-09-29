@@ -83,7 +83,7 @@ impl Server {
         };
 
         match block_tree_snapshot.get_from_storage(&key) {
-            Some(value) => http::Response::builder().status(StatusCode::OK).body(value.try_to_vec().unwrap()),
+            Some(value) => http::Response::builder().status(StatusCode::OK).body(value),
             None => http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()),
         }
     }

@@ -185,7 +185,7 @@ impl QuorumCertificate {
 
     /// Returns whether this QuorumCertificate contains at least a quorum of signatures, correct or incorrect. 
     fn is_quorum(&self, num_participants: usize) -> bool {
-        self.sigs.count_some() > Self::quorum_size(num_participants) 
+        self.sigs.count_some() >= Self::quorum_size(num_participants) 
     }
 
     /// Returns whether all Signatures in this QuorumCertificate were produced over (view_number ++ block_hash)
@@ -241,7 +241,7 @@ impl QuorumCertificateAggregator {
     /// ## Errors
     /// Read the documentation of QCAggregatorInsertError. If an error is returned, this function was a no-op.
     pub fn insert(&mut self, signature: Signature, of_public_addr: PublicKeyBytes) -> Result<bool, QCAggregatorInsertError> {
-        if self.signature_set.count_some() > QuorumCertificate::quorum_size(self.participant_set.len()) {
+        if self.signature_set.count_some() >= QuorumCertificate::quorum_size(self.participant_set.len()) {
             return Err(QCAggregatorInsertError::AlreadyAQuorum)
         }
         if let Some(position) = self.participant_set.keys().position(|pk| *pk == of_public_addr) {
@@ -250,7 +250,7 @@ impl QuorumCertificateAggregator {
             }
             let _ = self.signature_set.insert(position, signature);
     
-            Ok(self.signature_set.count_some() > QuorumCertificate::quorum_size(self.participant_set.len()))
+            Ok(self.signature_set.count_some() >= QuorumCertificate::quorum_size(self.participant_set.len()))
             } else {
                 Err(QCAggregatorInsertError::PublicAddrNotInParticipantSet)
             }

@@ -115,8 +115,10 @@ impl<A: App> Algorithm<A> {
                     Some(parent_state) => parent_state.0.height + 1,
                     None => MsgBlock::GENESIS_BLOCK_HEIGHT
                 };
-                let (data, data_hash, writes) = self.app.propose_block(parent_state, deadline);
-                
+
+                let timeout = deadline - Instant::now();
+                let execute_deadline = Instant::now() + (timeout - 2*self.networking_config.progress_mode.expected_worst_case_net_latency) / 2;
+                let (data, data_hash, writes) = self.app.propose_block(parent_state, execute_deadline);
 
                 (block_height, data, data_hash, writes)
             };
