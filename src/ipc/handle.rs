@@ -4,6 +4,8 @@ use crate::msg_types::ConsensusMsg;
 use crate::identity::{PublicKeyBytes, ParticipantSet, PublicKey};
 use crate::ipc::{ConnectionSet, StreamReadError};
 
+use super::stream::StreamCorruptedError;
+
 /// Handle exposes methods for sending ConsensusMsgs to, and receiving ConsensusMsgs from other Participants. All of Handle's methods
 /// transparently handle errored streams by calling `ConnectionSet::reconnect` on them. 
 pub struct Handle {
@@ -27,8 +29,8 @@ impl Handle {
             Some(stream) => {
                 match stream.write(&msg) {
                     Ok(_) => true,
-                    Err(_) => {
-                        let _ = self.connections.reconnect((*public_addr, stream.peer_addr().ip()));
+                    Err(StreamCorruptedError) => {
+                        self.connections.reconnect((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
                         false
                     },
                 }
@@ -41,8 +43,8 @@ impl Handle {
     pub fn broadcast(&self, msg: &ConsensusMsg) {
         let mut errored_conns = vec![];
         for (public_addr, stream) in &self.connections.iter() {
-            if stream.write(msg).is_err() {
-                errored_conns.push((*public_addr, stream.peer_addr().ip()));
+            if let Err(StreamCorruptedError) = stream.write(msg) {
+                errored_conns.push((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
             }
         }
 
@@ -57,10 +59,11 @@ impl Handle {
             Some(stream) => {
                 stream.read(timeout).map_err(|e| match e {
                     StreamReadError::Corrupted => {
-                        self.connections.reconnect((*public_addr, stream.peer_addr().ip()));
+                        self.connections.reconnect((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
                        RecvFromError::NotConnected
                     },
                     StreamReadError::Timeout => RecvFromError::Timeout,
+                    StreamReadError::LoopbackEmpty => RecvFromError::Timeout,
                 })
             },
             None => Err(RecvFromError::NotConnected)
@@ -76,10 +79,11 @@ impl Handle {
                     Ok(msg) => return Ok((public_addr, msg)),
                     Err(e) => match e {
                         StreamReadError::Corrupted => {
-                            self.connections.reconnect((public_addr, stream.peer_addr().ip()));
+                            self.connections.reconnect((public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
                             continue
                         },
-                        StreamReadError::Timeout => continue
+                        StreamReadError::Timeout => continue,
+                        StreamReadError::LoopbackEmpty => continue
                     }
                 }
                 None => continue,

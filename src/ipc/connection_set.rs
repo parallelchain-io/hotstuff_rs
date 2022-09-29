@@ -9,6 +9,8 @@ use crate::config::NetworkingConfiguration;
 use crate::ipc::{self, Establisher, EstablisherResult};
 use crate::identity::{PublicKeyBytes, ParticipantSet};
 
+use super::stream::IsLoopbackError;
+
 pub struct ConnectionSet {
     // To avoid deadlocks and to guarantee consistency, lock participant_set first, then connections, and finally pending_connections.
     participant_set: Arc<Mutex<ParticipantSet>>, 
@@ -49,6 +51,7 @@ impl ConnectionSet {
     }
 
     // Removes connections not appearing in new_participant_set immediately, and schedules new connections for establishment later.
+    // Assumes that the new_participant_set always contains oneself.
     pub fn replace_set(&mut self, new_participant_set: ParticipantSet) { 
         let mut participant_set = self.participant_set.lock().unwrap();
         let mut pending_connections = self.pending_connections.lock().unwrap();
@@ -61,10 +64,10 @@ impl ConnectionSet {
         // 2. Only keep existing connections that feature in new_participant_set. 
         connections.retain(|existing_public_addr, existing_stream| {
             if let Some(new_ip_addr) = new_participant_set.get(existing_public_addr) {
-                if existing_stream.peer_addr().ip() == *new_ip_addr {
-                    true
-                } else {
-                    false
+                match existing_stream.peer_addr() {
+                    Ok(peer_addr) => peer_addr.ip() == *new_ip_addr,
+                    Err(IsLoopbackError) => true,
+                    _ => false,
                 }
             } else {
                 false
@@ -123,7 +126,7 @@ impl ConnectionSet {
     // Returns None if ConnectionSet is empty.
     pub fn get_random(&self) -> Option<(PublicKeyBytes, Arc<ipc::Stream>)> { 
         let connections = self.connections.lock().unwrap();
-        if connections.len() > 1 {
+        if connections.len() >= 1 {
             let random_idx = self.rng.lock().unwrap().gen_range(0..connections.len());
             match connections.get_index(random_idx) {
                 Some((public_addr, stream)) => Some((*public_addr, Arc::clone(stream))),

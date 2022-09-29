@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{Write, Read};
 use std::sync::mpsc::RecvTimeoutError;
 use std::{thread, mem};
@@ -8,14 +9,17 @@ use borsh::{BorshSerialize, BorshDeserialize};
 use crate::msg_types::ConsensusMsg;
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
-pub struct Stream {
-    to_writer: mpsc::SyncSender<ConsensusMsg>,
-
-    // Wrapped inside a Mutex so that Stream can be Sync. If Stream ends up never being shared between threads, the overhead of locking
-    // is cheap enough that we deem it acceptable. 
-    from_reader: Mutex<mpsc::Receiver<ConsensusMsg>>,
-
-    peer_addr: SocketAddr,
+pub enum Stream {
+    Foreign {
+        to_writer: mpsc::SyncSender<ConsensusMsg>,
+    
+        // Wrapped inside a Mutex so that Stream can be Sync. If Stream ends up never being shared between threads, the overhead of locking
+        // is cheap enough that we deem it acceptable. 
+        from_reader: Mutex<mpsc::Receiver<ConsensusMsg>>,
+    
+        peer_addr: SocketAddr,
+    },
+    Loopback(Mutex<VecDeque<ConsensusMsg>>),
 }
 
 impl Stream {
@@ -30,28 +34,45 @@ impl Stream {
         Self::writer(from_main, tcp_stream.try_clone().unwrap());
         Self::reader(to_main, tcp_stream.try_clone().unwrap());
 
-        Stream {
+        Stream::Foreign {
             to_writer,
             from_reader: Mutex::new(from_reader),
             peer_addr: tcp_stream.peer_addr().unwrap(),
         }
     }
 
+    pub fn new_loopback(config: StreamConfig) -> Stream {
+        Stream::Loopback(Mutex::new(VecDeque::with_capacity(config.reader_channel_buffer_len)))
+    }
+
     pub fn write(&self, msg: &ConsensusMsg) -> Result<(), StreamCorruptedError> {
-        self.to_writer.send(msg.clone()).map_err(|_| StreamCorruptedError)
+        match self {
+            Self::Foreign { to_writer, .. } => to_writer.send(msg.clone()).map_err(|_| StreamCorruptedError)?,
+            Self::Loopback(deque) => deque.lock().unwrap().push_back(msg.clone()),
+        };
+
+        Ok(())
     }
 
     pub fn read(&self, timeout: Duration) -> Result<ConsensusMsg, StreamReadError> {
-        self.from_reader.lock().unwrap().recv_timeout(timeout).map_err(|e| {
-            match e {
+        match self {
+            Self::Foreign { from_reader, .. } => from_reader.lock().unwrap().recv_timeout(timeout).map_err(|e| match e {
                 RecvTimeoutError::Disconnected => StreamReadError::Corrupted,
                 RecvTimeoutError::Timeout => StreamReadError::Timeout,
-            }
-        })
+            }),
+            Self::Loopback(deque) => match deque.lock().unwrap().pop_front() {
+                Some(msg) => Ok(msg),
+                None => Err(StreamReadError::LoopbackEmpty)
+            },
+        }
     }
 
-    pub fn peer_addr(&self) -> SocketAddr {
-        self.peer_addr
+    // # Panics
+    pub fn peer_addr(&self) -> Result<SocketAddr, IsLoopbackError> {
+        match self {
+            Self::Foreign { peer_addr, .. } => Ok(*peer_addr),
+            Self::Loopback(_) => Err(IsLoopbackError),
+        }
     }
 }
 
@@ -60,7 +81,11 @@ pub struct StreamCorruptedError;
 pub enum StreamReadError {
     Corrupted,
     Timeout,
+    LoopbackEmpty,
 }
+
+#[derive(Debug)]
+pub struct IsLoopbackError;
 
 impl Stream {
     // Continuously receives messages from_main and writes into tcp_stream.

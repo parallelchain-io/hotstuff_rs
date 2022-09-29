@@ -18,6 +18,7 @@ pub struct Establisher {
     to_listener: mpsc::Sender<EstablisherCmd>,
     my_public_addr: PublicKeyBytes,
     ipc_config: NetworkingConfiguration,
+    to_main: mpsc::Sender<EstablisherResult>,
 }
 
 impl Establisher {
@@ -29,34 +30,39 @@ impl Establisher {
         let establisher = Establisher {
             initiator: Self::start_initiator(ipc_config.clone(), initiator_from_main, to_main.clone()),
             to_initiator,
-            listener: Self::start_listener(ipc_config.clone(), listener_from_main, to_main),
+            listener: Self::start_listener(ipc_config.clone(), listener_from_main, to_main.clone()),
             to_listener,
             my_public_addr,
             ipc_config, 
+            to_main,
         };
 
         (establisher, from_establishers)
     }
 
     pub fn connect_later(&self, target: (PublicKeyBytes, IpAddr)) {
-        match target.0 {
-            target_public_addr if target_public_addr >= self.my_public_addr => { 
-                self.to_initiator.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between main thread and Initiator thread lost.") 
-            },
-            target_public_addr if target_public_addr <= self.my_public_addr => {
-                self.to_listener.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between main thread and Listener thread lost.")
-            }
-            _ => unreachable!(),
-        };
+        if target.0 == self.my_public_addr {
+            let stream_config = StreamConfig {
+                read_timeout: self.ipc_config.progress_mode.read_timeout,
+                write_timeout: self.ipc_config.progress_mode.write_timeout,
+                reader_channel_buffer_len: self.ipc_config.progress_mode.reader_channel_buffer_len,
+                writer_channel_buffer_len: self.ipc_config.progress_mode.writer_channel_buffer_len,
+            };
+            self.to_main.send(EstablisherResult((self.my_public_addr, Arc::new(ipc::Stream::new_loopback(stream_config))))).expect("Programming error: connection between Establisher thread and main thread lost.");
+        } else if target.0 > self.my_public_addr {
+            self.to_initiator.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between Establisher thread and Initiator thread lost.")
+        } else {
+            self.to_listener.send(EstablisherCmd::Connect(target)).expect("Programming error: connection between Establisher thread and Listener thread lost.")
+        }
     }
 
     pub fn cancel_later(&self, target: (PublicKeyBytes, IpAddr)) {
         match target.0 {
             target_public_addr if target_public_addr >= self.my_public_addr => {
-                self.to_initiator.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between main thread and Initiator thread lost.")
+                self.to_initiator.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between Establisher thread and Initiator thread lost.")
             },
             target_public_addr if target_public_addr <= self.my_public_addr => { 
-                self.to_listener.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between main thread and Listener thread lost.")
+                self.to_listener.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between Establisher thread and Listener thread lost.")
             }
             _ => unreachable!(),
         };

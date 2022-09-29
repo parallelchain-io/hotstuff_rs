@@ -233,7 +233,7 @@ impl<A: App> Algorithm<A> {
                 return State::NewView
             }
 
-            match self.ipc_handle.recv_from_any(Instant::now() - deadline) {
+            match self.ipc_handle.recv_from_any(deadline - Instant::now()) {
                 Err(RecvFromError::Timeout) => continue,
                 Err(RecvFromError::NotConnected) => continue,
                 Ok((_, ConsensusMsg::Propose(_, _))) => continue,
