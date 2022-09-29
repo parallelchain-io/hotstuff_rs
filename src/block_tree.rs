@@ -228,7 +228,7 @@ impl BlockTreeWriter {
         // Insert datums.
         for (i, datum) in block.data.iter().enumerate() {
             let datum_key = combine(&data_prefix, &i.to_le_bytes());
-            wb.put(&datum_key, datum.try_to_vec().unwrap());
+            wb.put(&datum_key, datum);
         }
     } 
 
@@ -331,7 +331,7 @@ pub struct BlockTreeSnapshotFactory {
 impl BlockTreeSnapshotFactory {
     pub fn snapshot(&self) -> BlockTreeSnapshot {
         BlockTreeSnapshot {
-            db_snapshot: Rc::new(self.db.snapshot())
+            db_snapshot: Arc::new(self.db.snapshot())
         }
     }
 }
@@ -345,7 +345,7 @@ impl BlockTreeSnapshotFactory {
 /// If you really need to get a speculative Block from the BlockTree from some reason, then you need to get it by its BlockHash. 
 #[derive(Clone)]
 pub struct BlockTreeSnapshot<'a> {
-    db_snapshot: Rc<Snapshot<'a>>,
+    db_snapshot: Arc<Snapshot<'a>>,
 }
 
 // Defines functions that get a Block, or one of its fields, from the BlockTree provided a **BlockHash**.
@@ -528,13 +528,13 @@ impl<'a> BlockTreeSnapshot<'a> {
         Some(self.get_block_by_hash(&top_block_hash).unwrap())
     }
 
-    pub fn get_highest_commited_block_hash(&self) -> Option<BlockHash> {
+    pub fn get_highest_committed_block_hash(&self) -> Option<BlockHash> {
         let highest_committed_block_hash = self.db_snapshot.get(special_paths::HIGHEST_COMMITTED_BLOCK_HASH).unwrap()?;
         Some(BlockHash::try_from(highest_committed_block_hash).unwrap())
     }
 
     pub fn get_highest_committed_block(&self) -> Option<Block> {
-        let highest_committed_block_hash = self.get_highest_commited_block_hash()?;
+        let highest_committed_block_hash = self.get_highest_committed_block_hash()?;
         Some(self.get_block_by_hash(&highest_committed_block_hash).unwrap())
     }
 
