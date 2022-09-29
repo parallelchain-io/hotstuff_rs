@@ -102,15 +102,28 @@ impl<A: App> Algorithm<A> {
 
         // 1. Call App to produce a new leaf Block.
         let (new_leaf, writes) = {
-            let parent_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
-            let (data, data_hash, state) = {
-                let app_block = AppBlock::new(parent_block.clone(), self.block_tree.clone());
-                let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &parent_block.hash);
-                self.app.propose_block(&app_block, storage, deadline)
+            let (parent_block, storage) = if self.top_qc.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
+                // parent_block and storage are None if the BlockTree does not have a genesis Block.
+                (None, None)
+            } else {
+                let msg_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
+                let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &msg_block.hash);
+                let app_block = AppBlock::new(msg_block, self.block_tree.clone());
+                (Some(app_block), Some(storage))
             };
-            let block = MsgBlock::new(self.algorithm_config.app_id, parent_block.height+1, self.top_qc.clone(), data_hash, data);
+            let (block_height, data, data_hash, writes) = {
+                let (data, data_hash, writes) = self.app.propose_block(parent_block.as_ref(), storage, deadline);
+                let block_height = match parent_block {
+                    Some(parent_block) => parent_block.height + 1,
+                    None => MsgBlock::GENESIS_BLOCK_HEIGHT
+                };
 
-            (block, state.into())
+                (block_height, data, data_hash, writes)
+            };
+
+            let block = MsgBlock::new(self.algorithm_config.app_id, block_height, self.top_qc.clone(), data_hash, data);
+
+            (block, writes)
         };
         
         // 2. Write new leaf into BlockTree.
@@ -161,7 +174,12 @@ impl<A: App> Algorithm<A> {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.top_qc.view_number {
-                        return State::Sync
+                        if !qc.is_valid(&self.identity_config.static_participant_set) {
+                            // TODO: Slash
+                            return State::Sync
+                        } else {
+                            return State::Sync
+                        }
                     } else {
                         continue
                     }
@@ -174,9 +192,15 @@ impl<A: App> Algorithm<A> {
                     } else if vn > self.cur_view {
                         continue
                     } else { // (if vn == cur_view);
-                        // 1. Validate the proposed block's QuorumCertificate
+                        // 1. Validate the proposed Block's QuorumCertificate
                         if !block.justify.is_valid(&self.identity_config.static_participant_set) {
+                            // TODO: Slash
                             return State::NewView // if the Block's QC is invalid, change to NewView.
+                        }
+
+                        // 2. Check if the proposed Block satisfies the SafeBlock predicate.
+                        if !safe_block(&block, &self.block_tree) {
+                            continue
                         }
 
                         proposed_block = block;
@@ -193,12 +217,13 @@ impl<A: App> Algorithm<A> {
         let app_block = AppBlock::new(proposed_block.clone(), self.block_tree.clone());
         let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash);   
         let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
-        let execution_result = self.app.validate_block(&app_block, storage, deadline);
  
         // 2. If App accepts the Block, write it and its writes into the BlockTree.
-        let writes = match execution_result {
+        let writes = match self.app.validate_block(&app_block, storage, deadline) {
             Ok(writes) => writes.into(),
-            Err(_) => return State::NewView, // If the App rejects the Block, change to NewView.
+            // If the App rejects the Block, change to NewView.
+            Err(ExecuteError::RanOutOfTime) => return State::NewView, 
+            Err(ExecuteError::InvalidBlock) => return State::NewView,
         };
         self.block_tree.insert_block(&proposed_block, &writes);
 
@@ -241,7 +266,12 @@ impl<A: App> Algorithm<A> {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.top_qc.view_number {
-                        return State::Sync
+                        if !qc.is_valid(&self.identity_config.static_participant_set) {
+                            // TODO: Slash
+                            return State::Sync
+                        } else {
+                            return State::Sync
+                        }
                     } else {
                         continue
                     }
@@ -308,7 +338,13 @@ impl<A: App> Algorithm<A> {
                 // 3. Filter the extension chain so that it includes only the blocks that we do *not* have in the local BlockTree.
                 let mut extension_chain = extension_chain.iter().filter(|block| self.block_tree.get_block(&block.hash).is_some()).peekable();
                 if extension_chain.peek().is_none() {
-                    // 3.1. If, after the Filter, the chain has length 0, change to BeginView (this suggests that we are *not* lagging behind, after all).
+                    // If, after the Filter, the chain has length 0, this suggests that we are *not* lagging behind, after all.
+
+                    // Update top_qc.
+                    if let Some(block) = self.block_tree.get_top_block() {
+                        self.top_qc = block.justify;
+                    }
+
                     return State::BeginView
                 }
     
@@ -333,7 +369,7 @@ impl<A: App> Algorithm<A> {
                     self.block_tree.insert_block(&block, &writes);
                 }
             }
-        }
+        } 
     }
 }
 

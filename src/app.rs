@@ -24,8 +24,8 @@ pub trait App: Send + 'static {
     /// when the Block containing the returned Data becomes committed. 
     fn propose_block(
         &mut self, 
-        parent_block: &Block,
-        storage_snapshot: SpeculativeStorageReader,
+        parent_block: Option<&Block>,
+        storage_snapshot: Option<SpeculativeStorageReader>,
         deadline: Instant
     ) -> (Data, DataHash, StorageMutations);
 
@@ -124,6 +124,9 @@ impl SpeculativeStorageReader {
     /// the empty WriteSet.
     /// 2. If parent_block_hash points to a child of the Genesis Block, then there is no great-grandparent and its writes are the set to the
     /// empty WriteSet. 
+    /// 
+    /// # Panic
+    /// if parent_block_hash does not point to a Block.
     pub(crate) fn open(block_tree: BlockTreeWriter, parent_block_hash: &BlockHash) -> SpeculativeStorageReader {
         let parent = block_tree.get_block(&parent_block_hash).unwrap();
         let parent_writes = block_tree.get_write_set(&parent_block_hash).map_or(StorageMutations::new(), identity);

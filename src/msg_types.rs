@@ -111,6 +111,9 @@ pub struct Block {
 }
 
 impl Block {
+    pub const PARENT_OF_GENESIS_BLOCK_HASH: BlockHash = [0u8; BLOCK_HASH_LEN];
+    pub const GENESIS_BLOCK_HEIGHT: BlockHeight = 0;
+
     pub fn new(app_id: AppID, height: BlockHeight, justify: QuorumCertificate, data_hash: DataHash, data: Data) -> Block {
         let hash = Self::hash(app_id, height, &justify, &data_hash);
         Block {
@@ -171,7 +174,7 @@ impl QuorumCertificate {
     pub(crate) fn new_genesis_qc(num_participants: usize) -> QuorumCertificate {
         QuorumCertificate {
             view_number: 0,
-            block_hash: [0u8; BLOCK_HASH_LEN],
+            block_hash: Block::PARENT_OF_GENESIS_BLOCK_HASH,
             sigs: SignatureSet::new(num_participants),
         }
     }

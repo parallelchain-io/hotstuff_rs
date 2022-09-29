@@ -39,10 +39,10 @@ impl BlockTreeWriter {
     /// If block.height < 4, this function exhibits some special behavior. In particular:
     /// 
     /// ### If block.height == 0
-    /// This function panics. `insert_genesis_block` should have been called before this function.
+    /// block is the genesis Block, with no parent, so steps 4 and beyond are skipped.
     /// 
     /// ### If block.height == 1 or block.height == 2
-    /// No blocks become committed by this insertion, so steps 6 and 7 are skipped.
+    /// No blocks become committed by this insertion, so steps 6 and beyond are skipped.
     /// 
     /// ### If block.height == 3
     /// The block with height == 0 becomes committed by this insertion. But because block does not have a great-great-grandparent, step 7 
@@ -50,60 +50,61 @@ impl BlockTreeWriter {
     pub(crate) fn insert_block(&self, block: &Block, write_set: &StorageMutations) {
         let mut wb = WriteBatch::default();
 
-        let parent_block = self.get_block(&block.justify.block_hash).unwrap();
-        
-        // 1. Insert block to parent's ChildrenList.
-        let parent_children = self
-            .get_children_list(&parent_block.hash)
-            .map_or(ChildrenList::new(), identity);
-        Self::set_children_list(&mut wb, &parent_block.hash, &parent_children);
-
-        // 2. Insert block to the NODES keyspace. 
+        // 1. Insert block to the NODES keyspace. 
         Self::set_block(&mut wb, &block);
 
-        // 3. Insert block's write_set to the WriteSet keyspace.
+        // 2. Insert block's write_set to the WriteSet keyspace.
         Self::set_write_set(&mut wb, &block.hash, write_set);
 
-        // 4. Update LOCKED_VIEW.
-        // As `block` is assumed to satisfy the SafeBlock predicate, the QC it carries is guaranteed to have a view number greater
-        // than or equal to locked_view.
-        Self::set_locked_view(&mut wb, parent_block.justify.view_number);
-
-        // 5. Update TOP_BLOCK.
+        // 3. Update TOP_BLOCK.
         if self.get_top_block().is_none() || block.justify.view_number > self.get_top_block().unwrap().justify.view_number {
             Self::set_top_block_hash(&mut wb, &block.hash);
         };
 
-        if block.height >= 3 {
-            let grandparent_block = self.get_block(&parent_block.justify.block_hash).unwrap();
-            let great_grandparent_block = self.get_block(&grandparent_block.justify.block_hash).unwrap();
+        if block.height >= 1 {
+            // 4. Insert block to parent's ChildrenList.
+            let parent_block = self.get_block(&block.justify.block_hash).unwrap();
+            let parent_children = self
+                .get_children_list(&parent_block.hash)
+                .map_or(ChildrenList::new(), identity);
+            Self::set_children_list(&mut wb, &parent_block.hash, &parent_children);
+            
+            // 5. Update LOCKED_VIEW.
+            // As `block` is assumed to satisfy the SafeBlock predicate, the QC it carries is guaranteed to have a view number greater
+            // than or equal to locked_view.
+            Self::set_locked_view(&mut wb, parent_block.justify.view_number);
 
-            // 6. Check if great_grandparent.height is greater than HIGHEST_COMMITTED_NODE.height. If so, commit great_grandparent.
-            // TODO: argue that no more than one Block can become committed because of a single insertion.
-            if let Some(highest_committed_block) = self.get_highest_committed_block() {
-                if great_grandparent_block.height > highest_committed_block.height {
+            if block.height >= 3 {
+                let grandparent_block = self.get_block(&parent_block.justify.block_hash).unwrap();
+                let great_grandparent_block = self.get_block(&grandparent_block.justify.block_hash).unwrap();
+
+                // 6. Check if great_grandparent.height is greater than HIGHEST_COMMITTED_NODE.height. If so, commit great_grandparent.
+                // TODO: argue that no more than one Block can become committed because of a single insertion.
+                if let Some(highest_committed_block) = self.get_highest_committed_block() {
+                    if great_grandparent_block.height > highest_committed_block.height {
+                        self.commit_block(&mut wb, &great_grandparent_block);
+                    }
+                } else {
+                    // This is entered when block.height == 3; in this case, no block has been committed yet.
                     self.commit_block(&mut wb, &great_grandparent_block);
                 }
-            } else {
-                // This is entered when block.height == 3; in this case, no block has been committed yet.
-                self.commit_block(&mut wb, &great_grandparent_block);
-            }
 
-            if block.height >= 4 {
-                let great_grandparent_block = self.get_block(&grandparent_block.justify.block_hash).unwrap(); 
-                let great_great_grandparent_block = self.get_block(&great_grandparent_block.justify.block_hash).unwrap();
+                if block.height >= 4 {
+                    let great_grandparent_block = self.get_block(&grandparent_block.justify.block_hash).unwrap(); 
+                    let great_great_grandparent_block = self.get_block(&great_grandparent_block.justify.block_hash).unwrap();
 
-                // 7. Abandon siblings of great_grandparent_block. They will never get a chance to become committed, so removing them
-                // from the BlockTree is harmless.
-                let great_great_grandparent_children = self.get_children_list(&great_great_grandparent_block.hash).unwrap(); 
-                let siblings = great_great_grandparent_children
-                    .iter()
-                    .filter(|child_hash| **child_hash != great_great_grandparent_block.hash);
-                for sibling_hash in siblings {
-                    self.delete_branch(&mut wb, &sibling_hash)
+                    // 7. Abandon siblings of great_grandparent_block. They will never get a chance to become committed, so removing them
+                    // from the BlockTree is harmless.
+                    let great_great_grandparent_children = self.get_children_list(&great_great_grandparent_block.hash).unwrap(); 
+                    let siblings = great_great_grandparent_children
+                        .iter()
+                        .filter(|child_hash| **child_hash != great_great_grandparent_block.hash);
+                    for sibling_hash in siblings {
+                        self.delete_branch(&mut wb, &sibling_hash)
+                    }
                 }
             }
-        } 
+        }
                 
         // 8. Write changes to persistent storage.
         self.db.write(wb)
