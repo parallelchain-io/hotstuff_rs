@@ -24,8 +24,6 @@ pub struct ConnectionSet {
     establisher_receiver: thread::JoinHandle<()>,
 }
 
-type ParticipantSetVersion = usize;
-
 impl ConnectionSet {
     pub fn new(static_participant_set: ParticipantSet, my_public_addr: PublicKeyBytes, ipc_config: NetworkingConfiguration) -> ConnectionSet { 
         // 1. Create Establisher.

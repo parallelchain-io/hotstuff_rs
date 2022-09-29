@@ -2,7 +2,6 @@ use std::convert::identity;
 use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
-use ed25519_dalek::Signer;
 use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash, Signature};
 use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
@@ -102,21 +101,22 @@ impl<A: App> Algorithm<A> {
 
         // 1. Call App to produce a new leaf Block.
         let (new_leaf, writes) = {
-            let (parent_block, storage) = if self.top_qc.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
+            let parent_state = if self.top_qc.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
                 // parent_block and storage are None if the BlockTree does not have a genesis Block.
-                (None, None)
+                None
             } else {
                 let msg_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
                 let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &msg_block.hash);
                 let app_block = AppBlock::new(msg_block, self.block_tree.clone());
-                (Some(app_block), Some(storage))
+                Some((app_block, storage))
             };
             let (block_height, data, data_hash, writes) = {
-                let (data, data_hash, writes) = self.app.propose_block(parent_block.as_ref(), storage, deadline);
-                let block_height = match parent_block {
-                    Some(parent_block) => parent_block.height + 1,
+                let block_height = match &parent_state {
+                    Some(parent_state) => parent_state.0.height + 1,
                     None => MsgBlock::GENESIS_BLOCK_HEIGHT
                 };
+                let (data, data_hash, writes) = self.app.propose_block(parent_state, deadline);
+                
 
                 (block_height, data, data_hash, writes)
             };
@@ -215,11 +215,15 @@ impl<A: App> Algorithm<A> {
 
         // 1. Call App to execute the proposed Block.
         let app_block = AppBlock::new(proposed_block.clone(), self.block_tree.clone());
-        let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash);   
+        let storage = if app_block.justify.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
+            None
+        } else {
+            Some(SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash))
+        };
         let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
  
         // 2. If App accepts the Block, write it and its writes into the BlockTree.
-        let writes = match self.app.validate_block(&app_block, storage, deadline) {
+        let writes = match self.app.validate_block(app_block, storage, deadline) {
             Ok(writes) => writes.into(),
             // If the App rejects the Block, change to NewView.
             Err(ExecuteError::RanOutOfTime) => return State::NewView, 
@@ -356,9 +360,13 @@ impl<A: App> Algorithm<A> {
 
                     // 5. Call App to validate block.
                     let app_block = AppBlock::new(block.clone(), self.block_tree.clone());
-                    let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &block.justify.block_hash);
+                    let storage = if block.justify.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
+                        None
+                    } else {
+                        Some(SpeculativeStorageReader::open(self.block_tree.clone(), &block.justify.block_hash))
+                    };
                     let deadline = Instant::now() + self.algorithm_config.sync_mode_execution_timeout;
-                    let execution_result = self.app.validate_block(&app_block, storage, deadline);
+                    let execution_result = self.app.validate_block(app_block, storage, deadline);
 
                     // 6. If App accepts the Block, write it and its WriteSet into the BlockTree.
                     let writes = match execution_result {
