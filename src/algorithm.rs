@@ -51,9 +51,10 @@ impl<A: App> Algorithm<A> {
         identity_config: IdentityConfig,
         ipc_config: NetworkingConfiguration
     ) -> Algorithm<A> {
-        let top_block = block_tree.get_top_block();
-        let top_qc = top_block.justify.clone();
-        let cur_view = top_block.justify.view_number;
+        let (cur_view, top_qc) = match block_tree.get_top_block() {
+            Some(block) => (block.justify.view_number + 1, block.justify),
+            None => (0, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
+        };
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, ipc_config.clone());
 
         Algorithm {
@@ -290,12 +291,12 @@ impl<A: App> Algorithm<A> {
             loop {
                 // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
                 // or the Genesis Block, if the former is still None.
-                let start_hash = match self.block_tree.get_highest_committed_block() {
-                    Some(block) => block.hash,
-                    None => self.block_tree.get_genesis_block().hash,
+                let start_height = match self.block_tree.get_highest_committed_block() {
+                    Some(block) => block.height,
+                    None => 0,
                 };
                 let request_result = client.get_blocks_from_tail(
-                    &start_hash, 
+                    start_height, 
                     self.networking_config.sync_mode.request_jump_size,
                     participant_ip_addr,
                 );
@@ -348,5 +349,5 @@ fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate)
 
 fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
     let locked_view = block_tree.get_locked_view();
-    block.justify.view_number >= locked_view
+    locked_view.is_none() || block.justify.view_number >= locked_view.unwrap()
 }

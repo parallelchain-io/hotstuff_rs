@@ -10,7 +10,7 @@ use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use reqwest;
 use pchain_types::Base64URL;
-use crate::msg_types::{Block, BlockHash};
+use crate::msg_types::{Block, BlockHash, BlockHeight};
 use crate::block_tree::{BlockTreeSnapshotFactory, BlockTreeSnapshot, ChildrenNotYetCommittedError};
 use crate::config::BlockTreeApiConfig;
 use crate::stored_types::Key;
@@ -42,19 +42,27 @@ impl Server {
     }
 
     async fn handle_get_blocks(block_tree_snapshot_factory: BlockTreeSnapshotFactory, params: GetBlocksParams) -> impl warp::Reply {
+        let block_tree_snapshot = block_tree_snapshot_factory.snapshot();
+
         // Interpret query parameters
-        let hash = match Base64URL::decode(&params.hash) {
-            Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
-            Ok(hash) => match hash.try_into() {
-                Ok(hash) => hash,
+        let hash = match (params.hash, params.height) {
+            (Some(hash), None) => match Base64URL::decode(&hash) {
                 Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
-            }
+                Ok(hash) => match hash.try_into() {
+                    Ok(hash) => hash,
+                    Err(_) => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
+                }
+            },
+            (None, Some(height)) => match block_tree_snapshot.get_committed_block_hash(height as u64) {
+                None => return http::Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()), 
+                Some(hash) => hash,
+            },
+            _ => return http::Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()),
         };
+
         let anchor = params.anchor.map_or(GetBlocksAnchor::Head, identity);
         let limit = params.limit.map_or(1, identity);
         let speculate = params.speculate.map_or(false, identity);
-
-        let block_tree_snapshot = block_tree_snapshot_factory.snapshot();
 
         match anchor {
             GetBlocksAnchor::Head => match get_blocks_up_to_head(&block_tree_snapshot, &hash, limit, speculate) {
@@ -85,7 +93,8 @@ impl Server {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct GetBlocksParams {
-    hash: String,
+    hash: Option<String>,
+    height: Option<usize>,
     anchor: Option<GetBlocksAnchor>,
     limit: Option<usize>,
     speculate: Option<bool>,
@@ -122,10 +131,11 @@ fn get_blocks_from_tail(block_tree: &BlockTreeSnapshot, tail_block_hash: &BlockH
 
     // 3. If limit is not yet satisfied and we are allowed to speculate, get speculative blocks.
     if res.len() < limit && speculate {
-        let top_block = block_tree.get_top_block();
-        // 3.1. Reverse uncommitted blocks so that blocks with lower heights appear first.
-        let uncommitted_blocks: Vec<Block> = get_chain_between_speculative_block_and_highest_committed_block(&block_tree, &top_block.hash).into_iter().rev().collect();
-        res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
+        if let Some(block) = block_tree.get_top_block() {
+            // We reverse (.rev) uncommitted blocks so that blocks with lower heights appear first.
+            let uncommitted_blocks: Vec<Block> = get_chain_between_speculative_block_and_highest_committed_block(&block_tree, &block.hash).into_iter().rev().collect();
+            res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
+        }
     }
 
     Some(res)
@@ -146,7 +156,7 @@ fn get_blocks_up_to_head(block_tree: &BlockTreeSnapshot, head_block_hash: &Block
 
     // 2. Check whether head block is speculative.
     let highest_committed_block = block_tree.get_highest_committed_block();
-    if head_block_height > highest_committed_block.height {
+    if highest_committed_block.is_none() || head_block_height > highest_committed_block.as_ref().unwrap().height {
         // Start block IS speculative. 
         if !speculate {
             return None
@@ -157,17 +167,19 @@ fn get_blocks_up_to_head(block_tree: &BlockTreeSnapshot, head_block_hash: &Block
         res.extend_from_slice(&speculative_ancestors[..min(limit - res.len(), speculative_ancestors.len())]);
 
         // 2.2. Get non-speculative ancestors of head block, up to the number necessary to satisfy limit.
-        let mut cursor = highest_committed_block;
-        while limit - res.len() > 0 {
-            let next_hash = cursor.justify.block_hash;
-            let cursor_height = cursor.height;
-            res.push(cursor);
-            if cursor_height == 0 {
-                break
-            }
+        if let Some(block) = highest_committed_block {
+            let mut cursor = block;
+            while limit - res.len() > 0 {
+                let next_hash = cursor.justify.block_hash;
+                let cursor_height = cursor.height;
+                res.push(cursor);
+                if cursor_height == 0 {
+                    break
+                }
 
-            cursor = block_tree.get_block_by_hash(&next_hash).unwrap();
-        }
+                cursor = block_tree.get_block_by_hash(&next_hash).unwrap();
+            }
+        } 
     } else {
         // Start block IS NOT speculative.
 
@@ -189,20 +201,27 @@ fn get_blocks_up_to_head(block_tree: &BlockTreeSnapshot, head_block_hash: &Block
     Some(res)
 }
 
-// Possibly unintuitive behavior: The returned chain is ordered from GREATER block height to SMALLER block height.
+// Unintuitive behaviors: 
+// 1. The returned chain does not include the highest_committed_block (it stops short on its child).
+// 2. The returned chain is ordered from GREATER block height to SMALLER block height.
+// 3. If highest committed block is None, returns an empty vector.
+//
+// # Panic
+// if head_block_hash is not in the BlockTree.
 fn get_chain_between_speculative_block_and_highest_committed_block(block_tree: &BlockTreeSnapshot, head_block_hash: &BlockHash) -> Vec<Block> {
     let mut res = Vec::new();
 
-    let top_block = block_tree.get_top_block();
-    let highest_committed_block = block_tree.get_highest_committed_block();
-    let mut cursor = top_block.justify.block_hash;
-    res.push(top_block);
+    let head_block = block_tree.get_block_by_hash(head_block_hash).unwrap();
+    if let Some(highest_committed_block) = block_tree.get_highest_committed_block() {
+        let mut cursor = head_block.justify.block_hash;
+        res.push(head_block);
 
-    while cursor != highest_committed_block.hash {
-        let block = block_tree.get_block_by_hash(&cursor).unwrap();
-        cursor = block.justify.block_hash;
-        res.push(block);
-    } 
+        while cursor != highest_committed_block.hash {
+            let block = block_tree.get_block_by_hash(&cursor).unwrap();
+            cursor = block.justify.block_hash;
+            res.push(block);
+        }
+    };
 
     res
 }
@@ -216,11 +235,11 @@ impl SyncModeClient {
         SyncModeClient(reqwest_client)
     }
 
-    pub fn get_blocks_from_tail(&self, tail_block_hash: &BlockHash, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
+    pub fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
-            "http://{}/blocks?hash={}&anchor=tail&limit={}&speculate=true",
+            "http://{}/blocks?height={}&anchor=tail&limit={}&speculate=true",
             participant_ip_addr,
-            Base64URL::encode(tail_block_hash).deref(),
+            tail_block_height,
             limit,
         );
         let resp = self.0.get(url).send().map_err(Self::convert_request_error)?;
