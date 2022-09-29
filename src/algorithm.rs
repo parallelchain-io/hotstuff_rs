@@ -336,6 +336,7 @@ impl<A: App> Algorithm<A> {
                 );
                 let extension_chain = match request_result {
                     Ok(blocks) => blocks,
+                    Err(crate::rest_api::GetBlocksFromTailError::TailBlockNotFound) => Vec::new(),
                     Err(_) => continue,
                 };
     

@@ -241,34 +241,33 @@ impl SyncModeClient {
 
     pub fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
-            "http://{}:{}/blocks?height={}&anchor=tail&limit={}&speculate=true",
+            "http://{}:{}/blocks?height={}&anchor=Tail&limit={}&speculate=true",
             participant_ip_addr,
             self.config.block_tree_api_listening_port,
             tail_block_height,
             limit,
         );
         let resp = self.reqwest_client.get(url).send().map_err(Self::convert_request_error)?;
-        let resp_bytes = resp.bytes().map_err(|_| GetBlocksFromTailError::BadResponse)?; 
-        let blocks = Vec::<Block>::deserialize(&mut &resp_bytes[..]).map_err(|_| GetBlocksFromTailError::BadResponse)?;
-
-        Ok(blocks)
+        match resp.status() {
+            StatusCode::OK => {
+                let resp_bytes = resp.bytes().map_err(|_| GetBlocksFromTailError::BadResponse)?; 
+                let blocks = Vec::<Block>::deserialize(&mut &resp_bytes[..]).map_err(|_| GetBlocksFromTailError::BadResponse)?;
+                Ok(blocks)
+            },
+            StatusCode::NOT_FOUND => Err(GetBlocksFromTailError::TailBlockNotFound),
+            _ => Err(GetBlocksFromTailError::BadResponse),
+        }
     }
-
+    
     fn convert_request_error(e: reqwest::Error) -> GetBlocksFromTailError {
-        if e.is_timeout() {
-            GetBlocksFromTailError::RequestTimedOut
-        } else if e.is_connect() {
-            GetBlocksFromTailError::FailToConnectToServer
-        } else if let Some(status) = e.status() {
-            if status == StatusCode::NOT_FOUND {
-                GetBlocksFromTailError::TailBlockNotFound
+            if e.is_timeout() {
+                GetBlocksFromTailError::RequestTimedOut
+            } else if e.is_connect() {
+                GetBlocksFromTailError::FailToConnectToServer
             } else {
                 GetBlocksFromTailError::BadResponse
             }
-        } else {
-            GetBlocksFromTailError::BadResponse
         }
-    }
 }
 
 pub(crate) enum GetBlocksFromTailError {
