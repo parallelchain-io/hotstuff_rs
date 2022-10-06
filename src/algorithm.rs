@@ -8,7 +8,7 @@ use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicKeyBytes, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, RecvFromError};
-use crate::rest_api::SyncModeClient;
+use crate::rest_api::{SyncModeClient, GetBlocksFromTailError};
 
 pub(crate) struct Algorithm<A: App> {
     // # Mutable state variables.
@@ -52,7 +52,7 @@ impl<A: App> Algorithm<A> {
     ) -> Algorithm<A> {
         let (cur_view, top_qc) = match block_tree.get_top_block() {
             Some(block) => (block.justify.view_number + 1, block.justify),
-            None => (0, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
+            None => (1, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
         };
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, ipc_config.clone());
 
@@ -338,8 +338,8 @@ impl<A: App> Algorithm<A> {
                 );
                 let extension_chain = match request_result {
                     Ok(blocks) => blocks,
-                    Err(crate::rest_api::GetBlocksFromTailError::TailBlockNotFound) => Vec::new(),
-                    Err(_) => continue,
+                    Err(GetBlocksFromTailError::TailBlockNotFound) => Vec::new(),
+                    Err(_) => break,
                 };
     
                 // 3. Filter the extension chain so that it includes only the blocks that we do *not* have in the local BlockTree.

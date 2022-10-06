@@ -116,6 +116,7 @@ impl BlockTreeWriter {
         Self::apply_write_set(wb, &writes);
         Self::delete_write_set(wb, &block.hash);
         Self::set_highest_committed_block(wb, &block.hash);
+        Self::set_committed_block_height_to_block_hash(wb, block.height, &block.hash);
     }
 }
 
@@ -149,6 +150,10 @@ impl BlockTreeWriter {
     fn set_highest_committed_block(wb: &mut WriteBatch, block_hash: &BlockHash) {
         wb.put(special_paths::HIGHEST_COMMITTED_BLOCK_HASH, block_hash)
     } 
+
+    fn set_committed_block_height_to_block_hash(wb: &mut WriteBatch, block_height: BlockHeight, block_hash: &BlockHash) {
+        wb.put(combine(&special_paths::COMMITTED_BLOCK_HEIGHT_TO_BLOCK_HASH, &block_height.to_le_bytes()),&block_hash);      
+    }
 }
 
 // This impl block defines getters and setters for Blocks and chains of Blocks.

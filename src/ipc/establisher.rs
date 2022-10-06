@@ -58,7 +58,7 @@ impl Establisher {
 
     pub fn cancel_later(&self, target: (PublicKeyBytes, IpAddr)) {
         match target.0 {
-            target_public_addr if target_public_addr >= self.my_public_addr => {
+            target_public_addr if target_public_addr > self.my_public_addr => {
                 self.to_initiator.send(EstablisherCmd::Cancel(target)).expect("Programming error: connection between Establisher thread and Initiator thread lost.")
             },
             target_public_addr if target_public_addr <= self.my_public_addr => { 
@@ -86,8 +86,8 @@ impl Establisher {
                 if pending_targets.len() == 0 {
                     continue
                 }
-                let random_idx = rng.gen_range(0..pending_targets.len());
-                let target = pending_targets.get_index(random_idx).unwrap();
+                let target_idx = rng.gen_range(0..pending_targets.len());
+                let target = pending_targets.get_index(target_idx).unwrap();
                 let target_socket_addr = SocketAddr::new(target.1, ipc_config.progress_mode.listening_port);
 
                 // 3. Attempt to establish stream to pending target.
@@ -100,7 +100,7 @@ impl Establisher {
                     }
                 };
 
-                // 4. Send established connection to main.
+                // 4. Send established stream to main.
                 let stream_config = StreamConfig {
                     read_timeout: ipc_config.progress_mode.read_timeout,
                     write_timeout: ipc_config.progress_mode.write_timeout,
@@ -109,6 +109,9 @@ impl Establisher {
                 };
                 to_main.send(EstablisherResult((target.0, Arc::new(ipc::Stream::new(stream, stream_config)))))
                     .expect("Programming error: main thread disconnected from Listener thread.");
+
+                // 5. Remove established stream from pending targets.
+                pending_targets.swap_remove_index(target_idx);
             }
         })
     }
@@ -133,17 +136,22 @@ impl Establisher {
                     return
                 }
 
-                // 4. If established connection is in tasks list, send to main. 
+                // 4. If established stream is in tasks list, send to main. 
                 let stream_config = StreamConfig {
                     read_timeout: ipc_config.progress_mode.read_timeout,
                     write_timeout: ipc_config.progress_mode.write_timeout,
                     reader_channel_buffer_len: ipc_config.progress_mode.reader_channel_buffer_len,
                     writer_channel_buffer_len: ipc_config.progress_mode.writer_channel_buffer_len,
                 };
-                if let Some(public_addr) =  pending_targets.get(&stream.peer_addr().unwrap().ip()) {
+                let stream_ip_addr = stream.peer_addr().unwrap().ip();
+                if let Some(public_addr) = pending_targets.get(&stream_ip_addr) {
                     to_main.send(EstablisherResult((*public_addr, Arc::new(ipc::Stream::new(stream, stream_config)))))
                         .expect("Programming error: main thread disconnected from Listener thread.");
+
+                    // 5. Remove established stream from tasks list.
+                    pending_targets.remove(&stream_ip_addr);
                 }
+
             }
         })
     }

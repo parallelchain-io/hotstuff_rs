@@ -149,8 +149,8 @@ impl ConnectionSet {
             loop {
                 let EstablisherResult((public_addr, new_stream)) = from_establisher.recv().expect("Programming error: channel between establisher_receiver and Establisher dropped.");
                 let participant_set = participant_set.lock().unwrap();
-                let mut connections = connections.lock().unwrap();
                 let mut pending_connections = pending_connections.lock().unwrap();
+                let mut connections = connections.lock().unwrap();
 
                 if participant_set.contains_key(&public_addr) {
                     if !connections.contains_key(&public_addr) {

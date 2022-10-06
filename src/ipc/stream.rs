@@ -134,12 +134,12 @@ impl Stream {
                         // If a read operation fails, break out of the while loop, ending the Reader thread.
                         break
                     }
-                    usize::from_be_bytes(buf.try_into().unwrap())
+                    usize::from_le_bytes(buf.try_into().unwrap())
                 };
                 
                 // Read message.
                 let bs = {
-                    let mut buf = Vec::with_capacity(bs_len);
+                    let mut buf = vec![0u8; bs_len];
                     if let Err(_) = tcp_stream.read_exact(&mut buf) {
                         break
                     }
