@@ -244,8 +244,7 @@ impl<A: App> Algorithm<A> {
         }
 
         // Phase 4: Wait for the next leader to finish collecting votes
-        let sleep_duration = min(self.networking_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
-        thread::sleep(sleep_duration);
+        thread::sleep(deadline - Instant::now());
 
         // Begin the next View.
         self.cur_view += 1;
