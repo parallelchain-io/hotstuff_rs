@@ -116,8 +116,7 @@ impl<A: App> Algorithm<A> {
                     None => MsgBlock::GENESIS_BLOCK_HEIGHT
                 };
 
-                let timeout = deadline - Instant::now();
-                let execute_deadline = Instant::now() + (timeout - 2*self.networking_config.progress_mode.expected_worst_case_net_latency) / 2;
+                let execute_deadline = Instant::now() + (self.algorithm_config.target_block_time - 2*self.networking_config.progress_mode.expected_worst_case_net_latency) / 2;
                 let (data, data_hash, writes) = self.app.propose_block(parent_state, execute_deadline);
 
                 (block_height, data, data_hash, writes)
@@ -150,8 +149,7 @@ impl<A: App> Algorithm<A> {
 
         // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
 
-        let sleep_duration = min(2 * self.networking_config.progress_mode.expected_worst_case_net_latency, deadline - Instant::now());
-        thread::sleep(sleep_duration);
+        thread::sleep(deadline - Instant::now());
 
         // Begin the next View.
         self.cur_view += 1;
