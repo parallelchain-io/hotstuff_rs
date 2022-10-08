@@ -51,7 +51,7 @@ impl HotStuff {
                 configuration.identity,
                 configuration.networking
             );
-            state_machine.enter(State::Sync);
+            state_machine.start();
         })
     }
 }

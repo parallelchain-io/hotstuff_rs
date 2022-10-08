@@ -56,7 +56,7 @@ impl<A: App> Algorithm<A> {
             Some(block) => (block.justify.view_number + 1, block.justify),
             None => (1, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
         };
-        let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set, networking_config.progress_mode.expected_worst_case_net_latency);
+        let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set.clone(), networking_config.progress_mode.expected_worst_case_net_latency);
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, networking_config.clone());
 
         Algorithm {
@@ -73,13 +73,9 @@ impl<A: App> Algorithm<A> {
         }
     }
 
-    pub(crate) fn enter(&mut self) {
-        let next_state = if &self.pacemaker.leader(self.cur_view) == self.identity_config.my_public_key.as_bytes() {
-            State::Leader
-        } else {
-            State::Replica
-        };
-        
+    pub(crate) fn start(&mut self) {
+        let mut next_state = self.do_sync();       
+
         loop {
             next_state = match next_state {
                 State::Leader => self.do_leader(),
@@ -320,6 +316,7 @@ impl<A: App> Algorithm<A> {
 
     fn do_sync(&mut self) -> State {
         let client = SyncModeClient::new(self.networking_config.sync_mode.clone());
+
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
             let participant_idx = { 
@@ -358,6 +355,13 @@ impl<A: App> Algorithm<A> {
                     if let Some(block) = self.block_tree.get_top_block() {
                         self.top_qc = block.justify;
                         self.cur_view = max(self.top_qc.view_number + 1, self.cur_view);
+                    }
+
+                    // Transition back to Progress Mode.
+                    if &self.pacemaker.leader(self.cur_view) == self.identity_config.my_public_key.as_bytes() {
+                        return State::Leader
+                    } else {
+                        return State::Replica
                     }
                 }
     
@@ -418,21 +422,5 @@ impl Pacemaker {
     fn wait_timeout(&self, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
         let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
         self.tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
-    }
-}
-
-mod timing {
-    use std::time::Duration;
-    use std::cmp::min;
-    use std::convert::identity;
-    use crate::msg_types::{ViewNumber, QuorumCertificate};
-    
-    pub(super) fn wait_for(tbt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
-        let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
-        tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
-    }
-
-    pub(super) fn execute_timeout(tbt: Duration, net_latency: Duration) -> Duration {
-        (tbt - 2*net_latency)/2
     }
 }
