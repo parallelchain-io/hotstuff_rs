@@ -176,7 +176,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                         continue
                     } else if qc.view_number > self.top_qc.view_number {
                         if !qc.is_valid(&self.identity_config.static_participant_set) {
-                            // TODO: Slash
+                            // The Leader is Byzantine.
                             return State::Sync
                         } else {
                             return State::Sync

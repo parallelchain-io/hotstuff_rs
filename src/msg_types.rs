@@ -166,6 +166,8 @@ impl QuorumCertificate {
     }
 
     pub(crate) fn is_valid(&self, participant_set: &ParticipantSet) -> bool {
+        // CRITICAL TODO [Alice]: Genesis QC needs a special notion of validity.
+
         self.is_correct_len(participant_set.len())
             && self.is_quorum(participant_set.len())
             && self.is_cryptographically_correct(participant_set)
@@ -207,7 +209,6 @@ impl QuorumCertificate {
                         public_key.verify(&msg, signature).is_ok()
                     },
                     None => true,
-
             })
     } 
 }
