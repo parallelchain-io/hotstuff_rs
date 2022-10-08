@@ -17,6 +17,9 @@ pub(crate) struct Algorithm<A: App> {
     top_qc: QuorumCertificate, 
     block_tree: BlockTreeWriter,
 
+    // # Pacemaker
+    pacemaker: Pacemaker,
+
     // # World State transition function.
     app: A,
 
@@ -31,13 +34,12 @@ pub(crate) struct Algorithm<A: App> {
 }
 
 pub(crate) enum State {
-    BeginView,
-    Leader(Instant),
-    Replica(Instant),
+    Leader,
+    Replica,
 
-    /// BlockHash (the second item in the tuple) is the Block that we expect to Justify in the next
+    /// BlockHash is the Block that we expect to Justify in the next
     /// View, when we become Leader.
-    NextLeader(Instant, BlockHash),
+    NextLeader(BlockHash),
     NewView,
     Sync,
 }
@@ -46,56 +48,50 @@ impl<A: App> Algorithm<A> {
     pub(crate) fn initialize(
         block_tree: BlockTreeWriter,
         app: A,
-        progress_mode_config: AlgorithmConfig,
+        algorithm_config: AlgorithmConfig,
         identity_config: IdentityConfig,
-        ipc_config: NetworkingConfiguration
+        networking_config: NetworkingConfiguration
     ) -> Algorithm<A> {
         let (cur_view, top_qc) = match block_tree.get_top_block() {
             Some(block) => (block.justify.view_number + 1, block.justify),
             None => (1, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
         };
-        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, ipc_config.clone());
+        let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set, networking_config.progress_mode.expected_worst_case_net_latency);
+        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, networking_config.clone());
 
         Algorithm {
             top_qc,
             cur_view,
             block_tree,
+            pacemaker,
             ipc_handle,
             round_robin_idx: 0,
-            networking_config: ipc_config,
+            networking_config,
             identity_config,
-            algorithm_config: progress_mode_config,
+            algorithm_config,
             app
         }
     }
 
-    pub(crate) fn enter(&mut self, state: State) {
-        let mut next_state = state;
+    pub(crate) fn enter(&mut self) {
+        let next_state = if &self.pacemaker.leader(self.cur_view) == self.identity_config.my_public_key.as_bytes() {
+            State::Leader
+        } else {
+            State::Replica
+        };
+        
         loop {
             next_state = match next_state {
-                State::BeginView => self.do_begin_view(),
-                State::Leader(deadline) => self.do_leader(deadline),
-                State::Replica(deadline) => self.do_replica(deadline),
-                State::NextLeader(deadline, block_hash) => self.do_next_leader(deadline, block_hash),
+                State::Leader => self.do_leader(),
+                State::Replica => self.do_replica(),
+                State::NextLeader(block_hash) => self.do_next_leader(block_hash),
                 State::NewView => self.do_new_view(),
                 State::Sync => self.do_sync(),
             }
         }
     }
 
-    fn do_begin_view(&mut self) -> State {
-        self.cur_view = max(self.cur_view, self.top_qc.view_number + 1);
-        let timeout = view_timeout(self.algorithm_config.target_block_time, self.cur_view, &self.top_qc);
-        let deadline = Instant::now() + timeout;
-
-        if view_leader(self.cur_view, &self.identity_config.static_participant_set) == self.identity_config.my_public_key.to_bytes() {
-            State::Leader(deadline)
-        } else {
-            State::Replica(deadline)
-        }
-    }
-
-    fn do_leader(&mut self, deadline: Instant) -> State {
+    fn do_leader(&mut self) -> State {
 
         // Phase 1: Produce a new Block.
 
@@ -116,8 +112,10 @@ impl<A: App> Algorithm<A> {
                     None => MsgBlock::GENESIS_BLOCK_HEIGHT
                 };
 
-                let execute_deadline = Instant::now() + (self.algorithm_config.target_block_time - 2*self.networking_config.progress_mode.expected_worst_case_net_latency) / 2;
-                let (data, data_hash, writes) = self.app.propose_block(parent_state, execute_deadline);
+                let (data, data_hash, writes) = self.app.propose_block(
+                    parent_state, 
+                    Instant::now() + self.pacemaker.execute_timeout()
+                );
 
                 (block_height, data, data_hash, writes)
             };
@@ -139,34 +137,35 @@ impl<A: App> Algorithm<A> {
 
         // 2. Send a VOTE for our own proposal to the next leader.
         let vote = ConsensusMsg::new_vote(self.cur_view, leaf_hash,&self.identity_config.my_keypair);
-        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
-        self.ipc_handle.send_to(&next_leader, &vote);
+        let next_leader = self.pacemaker.leader(self.cur_view + 1);
+        self.ipc_handle.send_to(&self.pacemaker.leader(self.cur_view + 1), &vote);
 
-        // 3. If next_leader == me, change to State::NextLeader.
+        // Phase 3: Wait for Replicas to send a vote for our proposal to the next Leader.
+
         if next_leader == self.identity_config.my_public_key.to_bytes() {
-            return State::NextLeader(deadline, leaf_hash)
+            // If we are the next Leader, transition to State::NextLeader and do the waiting there.
+            return State::NextLeader(leaf_hash)
+
+        } else {
+            thread::sleep(self.pacemaker.execute_timeout());
+
+            self.cur_view += 1;
+            return State::Replica
         }
-
-        // Phase 3: Wait for Replicas to send vote for proposal to the next leader.
-
-        thread::sleep(deadline - Instant::now());
-
-        // Begin the next View.
-        self.cur_view += 1;
-        State::BeginView
     }
 
-    fn do_replica(&mut self, deadline: Instant) -> State {
-        let leader = view_leader(self.cur_view, &self.identity_config.static_participant_set);
+    fn do_replica(&mut self) -> State {
+        let cur_leader = self.pacemaker.leader(self.cur_view);
 
         // Phase 1: Wait for a proposal.
+        let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
         let proposed_block;
         loop { 
             if Instant::now() >= deadline {
-                return State::NewView
+                return State::NewView 
             }
 
-            match self.ipc_handle.recv_from(&leader, deadline - Instant::now()) {
+            match self.ipc_handle.recv_from(&cur_leader, deadline - Instant::now()) {
                 Err(RecvFromError::Timeout) => continue,
                 Err(RecvFromError::NotConnected) => continue,
                 Ok(ConsensusMsg::Vote(_, _, _)) => continue,
@@ -194,8 +193,8 @@ impl<A: App> Algorithm<A> {
                     } else { // (if vn == cur_view);
                         // 1. Validate the proposed Block's QuorumCertificate
                         if !block.justify.is_valid(&self.identity_config.static_participant_set) {
-                            // TODO: Slash
-                            return State::NewView // if the Block's QC is invalid, change to NewView.
+                            // The Leader is Byzantine.
+                            return State::NewView
                         }
 
                         // 2. Check if the proposed Block satisfies the SafeBlock predicate.
@@ -234,31 +233,34 @@ impl<A: App> Algorithm<A> {
         // Phase 3: Vote for the proposal.
 
         // 1. Send a VOTE message to the next leader.
-        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
+        let next_leader = self.pacemaker.leader(self.cur_view + 1);
         let vote = ConsensusMsg::new_vote(self.cur_view, proposed_block.hash, &self.identity_config.my_keypair);
         self.ipc_handle.send_to(&next_leader, &vote);
 
-        // 2. If next leader == me, change to State::NextLeader.
+        // Phase 4: Wait for the next Leader to finish collecting votes
+
         if next_leader == self.identity_config.my_public_key.to_bytes() {
-            return State::NextLeader(deadline, proposed_block.hash)
+            // If next leader == me, transition to State::NextLeader and do the waiting there.
+            return State::NextLeader(proposed_block.hash)
+        } else {
+            thread::sleep(self.networking_config.progress_mode.expected_worst_case_net_latency);
+
+            self.cur_view += 1;
+            State::Replica
         }
-
-        // Phase 4: Wait for the next leader to finish collecting votes
-        thread::sleep(deadline - Instant::now());
-
-        // Begin the next View.
-        self.cur_view += 1;
-        State::BeginView
     }
 
-    fn do_next_leader(&mut self, deadline: Instant, pending_block_hash: BlockHash) -> State {
-        // 1. Read messages from every participant until deadline is reached or until a new QC is collected.
+    fn do_next_leader(&mut self, pending_block_hash: BlockHash) -> State {
+        let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
+
+        // Read messages from every participant until deadline is reached or until a new QC is collected.
         let mut qc_builder = QuorumCertificateAggregator::new(
             self.cur_view, pending_block_hash, self.identity_config.static_participant_set.clone()
         );
         loop {
+            // Deadline is reached.
             if Instant::now() >= deadline {
-                return State::NewView
+                break;
             }
 
             match self.ipc_handle.recv_from_any(deadline - Instant::now()) {
@@ -270,7 +272,7 @@ impl<A: App> Algorithm<A> {
                         continue
                     } else if qc.view_number > self.top_qc.view_number {
                         if !qc.is_valid(&self.identity_config.static_participant_set) {
-                            // TODO: Slash
+                            // The sender is Byzantine.
                             return State::Sync
                         } else {
                             return State::Sync
@@ -288,24 +290,32 @@ impl<A: App> Algorithm<A> {
                         continue
                     } else { // if vote.view_number == cur_view
                         if let Ok(true) = qc_builder.insert(sig, public_addr) {
+                            // A new QC is collected.
                             self.top_qc = qc_builder.into();
-                            self.cur_view += 1;
-                            return State::BeginView
+                            break;
                         }
                     }
                 }, 
             }
         }
+
+        self.cur_view += 1;
+        State::Leader
     }
 
     fn do_new_view(&mut self) -> State {
-        // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
-        let next_leader = view_leader(self.cur_view + 1, &self.identity_config.static_participant_set);
-        let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
-        self.ipc_handle.send_to(&next_leader, &new_view);
+        let next_leader = self.pacemaker.leader(self.cur_view+1);
+        if &next_leader == self.identity_config.my_public_key.as_bytes() {
+            // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
+            let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
+            self.ipc_handle.send_to(&next_leader, &new_view);
 
-        self.cur_view += 1;
-        State::BeginView
+            self.cur_view += 1;
+            return State::Leader;
+        } else {
+            self.cur_view += 1;
+            return State::Replica;
+        }
     }
 
     fn do_sync(&mut self) -> State {
@@ -347,9 +357,8 @@ impl<A: App> Algorithm<A> {
                     // Update top_qc.
                     if let Some(block) = self.block_tree.get_top_block() {
                         self.top_qc = block.justify;
+                        self.cur_view = max(self.top_qc.view_number + 1, self.cur_view);
                     }
-
-                    return State::BeginView
                 }
     
                 for block in extension_chain {
@@ -381,17 +390,49 @@ impl<A: App> Algorithm<A> {
     }
 }
 
-fn view_leader(cur_view: ViewNumber, participant_set: &ParticipantSet) -> PublicKeyBytes {
-    let idx = cur_view as usize % participant_set.len();
-    participant_set.keys().nth(idx).unwrap().clone()
-}
-
-fn view_timeout(tnt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
-    let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
-    tnt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
-}
-
 fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
     let locked_view = block_tree.get_locked_view();
     locked_view.is_none() || block.justify.view_number >= locked_view.unwrap()
+}
+
+struct Pacemaker {
+    tbt: Duration,
+    participant_set: ParticipantSet,
+    net_latency: Duration,
+}
+
+impl Pacemaker {
+    fn new(tbt: Duration, participant_set: ParticipantSet, net_latency: Duration) -> Pacemaker {
+        Pacemaker { tbt, participant_set, net_latency }
+    }
+
+    fn leader(&self, cur_view: ViewNumber) -> PublicKeyBytes {
+        let idx = cur_view as usize % self.participant_set.len();
+        self.participant_set.keys().nth(idx).unwrap().clone()
+    }
+
+    fn execute_timeout(&self) -> Duration {
+        (self.tbt - 2*self.net_latency)/2
+    }
+
+    fn wait_timeout(&self, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
+        let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
+        self.tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
+    }
+}
+
+mod timing {
+    use std::time::Duration;
+    use std::cmp::min;
+    use std::convert::identity;
+    use crate::msg_types::{ViewNumber, QuorumCertificate};
+    
+    pub(super) fn wait_for(tbt: Duration, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
+        let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
+        tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
+    }
+
+    pub(super) fn execute_timeout(tbt: Duration, net_latency: Duration) -> Duration {
+        (tbt - 2*net_latency)/2
+    }
 }
