@@ -8,9 +8,9 @@ use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicKeyBytes, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, AbstractHandle, RecvFromError};
-use crate::rest_api::{SyncModeClient, GetBlocksFromTailError};
+use crate::rest_api::{SyncModeClient, AbstractSyncModeClient, GetBlocksFromTailError};
 
-pub(crate) struct Algorithm<A: App> {
+pub(crate) struct Algorithm<A: App, I: AbstractHandle, S: AbstractSyncModeClient> {
     // # Mutable state variables.
     cur_view: ViewNumber,
     // top_qc is the cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
@@ -24,7 +24,8 @@ pub(crate) struct Algorithm<A: App> {
     app: A,
 
     // # Networking utilities.
-    ipc_handle: IPCHandle,
+    ipc_handle: I,
+    sync_mode_client: S,
     round_robin_idx: usize,
 
     // # Configuration variables.
@@ -44,20 +45,21 @@ pub(crate) enum State {
     Sync,
 }
 
-impl<A: App> Algorithm<A> {
+impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
     pub(crate) fn initialize(
         block_tree: BlockTreeWriter,
         app: A,
         algorithm_config: AlgorithmConfig,
         identity_config: IdentityConfig,
         networking_config: NetworkingConfiguration
-    ) -> Algorithm<A> {
+    ) -> Algorithm<A, IPCHandle, SyncModeClient> {
         let (cur_view, top_qc) = match block_tree.get_top_block() {
             Some(block) => (block.justify.view_number + 1, block.justify),
             None => (1, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
         };
         let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set.clone(), networking_config.progress_mode.expected_worst_case_net_latency);
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, networking_config.clone());
+        let sync_mode_client = SyncModeClient::new(networking_config.sync_mode.clone());
 
         Algorithm {
             top_qc,
@@ -65,6 +67,7 @@ impl<A: App> Algorithm<A> {
             block_tree,
             pacemaker,
             ipc_handle,
+            sync_mode_client,
             round_robin_idx: 0,
             networking_config,
             identity_config,
@@ -73,6 +76,9 @@ impl<A: App> Algorithm<A> {
         }
     }
 
+}
+
+impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     pub(crate) fn start(&mut self) {
         let mut next_state = self.do_sync();       
 
@@ -315,8 +321,6 @@ impl<A: App> Algorithm<A> {
     }
 
     fn do_sync(&mut self) -> State {
-        let client = SyncModeClient::new(self.networking_config.sync_mode.clone());
-
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
             let participant_idx = { 
@@ -335,7 +339,7 @@ impl<A: App> Algorithm<A> {
                     Some(block) => block.height,
                     None => 0,
                 };
-                let request_result = client.get_blocks_from_tail(
+                let request_result = self.sync_mode_client.get_blocks_from_tail(
                     start_height, 
                     self.networking_config.sync_mode.request_jump_size,
                     participant_ip_addr,

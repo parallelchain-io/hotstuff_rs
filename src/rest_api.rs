@@ -1,7 +1,6 @@
 use std::convert::identity;
 use std::net::{SocketAddr, IpAddr};
 use std::cmp::min;
-use std::time::Duration;
 use borsh::{BorshSerialize, BorshDeserialize};
 use tokio;
 use serde;
@@ -239,7 +238,19 @@ impl SyncModeClient {
         }
     }
 
-    pub fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
+    fn convert_request_error(e: reqwest::Error) -> GetBlocksFromTailError {
+        if e.is_timeout() {
+            GetBlocksFromTailError::RequestTimedOut
+        } else if e.is_connect() {
+            GetBlocksFromTailError::FailToConnectToServer
+        } else {
+            GetBlocksFromTailError::BadResponse
+        }
+    }
+}
+
+impl AbstractSyncModeClient for SyncModeClient {
+    fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError> {
         let url = format!(
             "http://{}:{}/blocks?height={}&anchor=Tail&limit={}&speculate=true",
             participant_ip_addr,
@@ -258,16 +269,6 @@ impl SyncModeClient {
             _ => Err(GetBlocksFromTailError::BadResponse),
         }
     }
-    
-    fn convert_request_error(e: reqwest::Error) -> GetBlocksFromTailError {
-            if e.is_timeout() {
-                GetBlocksFromTailError::RequestTimedOut
-            } else if e.is_connect() {
-                GetBlocksFromTailError::FailToConnectToServer
-            } else {
-                GetBlocksFromTailError::BadResponse
-            }
-        }
 }
 
 pub(crate) enum GetBlocksFromTailError {
@@ -277,3 +278,6 @@ pub(crate) enum GetBlocksFromTailError {
     BadResponse,
 }
 
+pub(crate) trait AbstractSyncModeClient {
+    fn get_blocks_from_tail(&self, tail_block_height: BlockHeight, limit: usize, participant_ip_addr: &IpAddr) -> Result<Vec<Block>, GetBlocksFromTailError>;
+}
