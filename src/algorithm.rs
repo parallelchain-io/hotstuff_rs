@@ -2,12 +2,12 @@ use std::convert::identity;
 use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
-use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash, Signature};
+use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
 use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
 use crate::identity::{PublicKeyBytes, ParticipantSet};
-use crate::ipc::{Handle as IPCHandle, RecvFromError};
+use crate::ipc::{Handle as IPCHandle, AbstractHandle, RecvFromError};
 use crate::rest_api::{SyncModeClient, GetBlocksFromTailError};
 
 pub(crate) struct Algorithm<A: App> {

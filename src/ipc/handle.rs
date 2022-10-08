@@ -21,10 +21,17 @@ impl Handle {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn update_participant_set(&mut self, new_participant_set: ParticipantSet) {
+        self.connections.replace_set(new_participant_set);
+    } 
+}
+
+impl AbstractHandle for Handle {
     /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. Returns false if there is
     /// no Stream corresponding to public_addr in the ConnectionSet, or if the Stream is corrupted, in which case Handle will
     /// transparently arrange for Stream to be dropped and re-established.
-    pub fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> bool {
+    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> bool {
         match self.connections.get(&public_addr) {
             Some(stream) => {
                 match stream.write(&msg) {
@@ -40,7 +47,7 @@ impl Handle {
     }
 
     /// Asynchronously send a ConsensusMsg to all Participants in the ConnectionSet.
-    pub fn broadcast(&self, msg: &ConsensusMsg) {
+    fn broadcast(&self, msg: &ConsensusMsg) {
         let mut errored_conns = vec![];
         for (public_addr, stream) in &self.connections.iter() {
             if let Err(StreamCorruptedError) = stream.write(msg) {
@@ -54,7 +61,7 @@ impl Handle {
     }
 
     /// Attempts to receive a ConsensusMsg from a particular Participant for at most timeout Duration.
-    pub fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+    fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
         match self.connections.get(public_addr) {
             Some(stream) => {
                 stream.read(timeout).map_err(|e| match e {
@@ -71,7 +78,7 @@ impl Handle {
     }
 
     /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
-    pub fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
+    fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             match self.connections.get_random() {
@@ -92,13 +99,16 @@ impl Handle {
 
         Err(RecvFromError::Timeout)
     }
-
-    pub fn update_participant_set(&mut self, new_participant_set: ParticipantSet) {
-        self.connections.replace_set(new_participant_set);
-    } 
 }
 
 pub enum RecvFromError {
     Timeout,
     NotConnected,
+}
+
+pub(crate) trait AbstractHandle {
+    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> bool;
+    fn broadcast(&self, msg: &ConsensusMsg);
+    fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError>;
+    fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError>;
 }

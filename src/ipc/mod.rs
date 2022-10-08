@@ -13,4 +13,4 @@ pub(crate) mod stream;
 pub(in crate::ipc) use connection_set::ConnectionSet;
 pub(in crate::ipc) use establisher::*;
 pub(in crate::ipc) use stream::*;
-pub(crate) use handle::{Handle, RecvFromError};
+pub(crate) use handle::*;
