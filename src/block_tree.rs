@@ -1,6 +1,6 @@
-use std::rc::Rc;
 use std::sync::Arc;
 use std::convert::{identity, TryFrom};
+use std::cmp::min;
 use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
 use crate::config::BlockTreeStorageConfig;
@@ -509,6 +509,124 @@ impl<'a> BlockTreeSnapshot<'a> {
         } else {
             Err(BlockNotFoundError)
         }
+    }
+}
+
+// Defines methods that get a chain of Blocks from the BlockTree.
+impl<'a> BlockTreeSnapshot<'a> {
+    pub fn get_blocks_from_tail(&self, tail_block_hash: &BlockHash, limit: usize, speculate: bool) -> Option<Vec<Block>> {
+        let mut res = Vec::with_capacity(limit);
+
+        // 1. Get tail block.
+        let tail_block = self.get_block_by_hash(tail_block_hash)?;
+        let mut cursor = tail_block.hash;
+        res.push(tail_block);
+
+        // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
+        while res.len() < limit {
+            let child = match self.get_committed_block_child(&cursor) {
+                Ok(block) => block,
+                Err(ChildrenNotYetCommittedError) => break,
+            };
+            cursor = child.hash;
+            res.push(child);
+        }
+
+        // 3. If limit is not yet satisfied and we are allowed to speculate, get speculative blocks.
+        if res.len() < limit && speculate {
+            if let Some(block) = self.get_top_block() {
+                // We reverse (.rev) uncommitted blocks so that blocks with lower heights appear first.
+                let uncommitted_blocks: Vec<Block> = self.get_chain_between_speculative_block_and_highest_committed_block(&block.hash).into_iter().rev().collect();
+                res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
+            }
+        }
+
+        Some(res)
+    }
+
+    pub fn get_blocks_up_to_head(&self, head_block_hash: &BlockHash, limit: usize, speculate: bool) -> Option<Vec<Block>> {
+        let mut res = Vec::with_capacity(limit);
+
+        // 1. Get head block.
+        let head_block = self.get_block_by_hash(head_block_hash)?;
+        let head_block_parent_hash = head_block.justify.block_hash;
+        let head_block_height = head_block.height;
+        res.push(head_block);
+        if limit == 1 {
+            // 1.1. If only one block is requested, return immediately.
+            return Some(res)
+        }
+
+        // 2. Check whether head block is speculative.
+        let highest_committed_block = self.get_highest_committed_block();
+        if highest_committed_block.is_none() || head_block_height > highest_committed_block.as_ref().unwrap().height {
+            // Start block IS speculative. 
+            if !speculate {
+                return None
+            }
+
+            // 2.1. Get speculative ancestors of head block.
+            let speculative_ancestors: Vec<Block> = self.get_chain_between_speculative_block_and_highest_committed_block(&head_block_hash).into_iter().rev().collect();
+            res.extend_from_slice(&speculative_ancestors[..min(limit - res.len(), speculative_ancestors.len())]);
+
+            // 2.2. Get non-speculative ancestors of head block, up to the number necessary to satisfy limit.
+            if let Some(block) = highest_committed_block {
+                let mut cursor = block;
+                while limit - res.len() > 0 {
+                    let next_hash = cursor.justify.block_hash;
+                    let cursor_height = cursor.height;
+                    res.push(cursor);
+                    if cursor_height == 0 {
+                        break
+                    }
+
+                    cursor = self.get_block_by_hash(&next_hash).unwrap();
+                }
+            } 
+        } else {
+            // Start block IS NOT speculative.
+
+            // 2.1. Get ancestors of head block, up to the number necessary to satisfy limit.
+            let mut cursor = self.get_block_by_hash(&head_block_parent_hash).unwrap();
+            while limit - res.len() > 0 {
+                let next_hash = cursor.justify.block_hash;
+                let cursor_height = cursor.height;
+                res.push(cursor);
+                if cursor_height == 0 {
+                    break
+                }
+
+                cursor = self.get_block_by_hash(&next_hash).unwrap();
+            }
+
+        }
+
+        Some(res)
+    }
+
+    // Unintuitive behaviors: 
+    // 1. The returned chain does not include the highest_committed_block (it stops short on its child).
+    // 2. The returned chain is ordered from GREATER block height to SMALLER block height.
+    // 3. If highest committed block is None, returns an empty vector.
+    //
+    // # Panic
+    // if head_block_hash is not in the BlockTree.
+    fn get_chain_between_speculative_block_and_highest_committed_block(&self, head_block_hash: &BlockHash) -> Vec<Block> {
+        let mut res = Vec::new();
+
+        let head_block = self.get_block_by_hash(head_block_hash).unwrap();
+        if let Some(highest_committed_block) = self.get_highest_committed_block() {
+            let mut cursor = head_block.justify.block_hash;
+            res.push(head_block);
+
+            while cursor != highest_committed_block.hash {
+                let block = self.get_block_by_hash(&cursor).unwrap();
+                cursor = block.justify.block_hash;
+                res.push(block);
+            }
+        };
+
+        res
     }
 }
 

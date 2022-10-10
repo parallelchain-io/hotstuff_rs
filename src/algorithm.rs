@@ -55,11 +55,11 @@ impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
     ) -> Algorithm<A, IPCHandle, SyncModeClient> {
         let (cur_view, top_qc) = match block_tree.get_top_block() {
             Some(block) => (block.justify.view_number + 1, block.justify),
-            None => (1, QuorumCertificate::new_genesis_qc(identity_config.static_participant_set.len())),
+            None => (1, QuorumCertificate::genesis_qc(identity_config.static_participant_set.len())),
         };
         let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set.clone(), networking_config.progress_mode.expected_worst_case_net_latency);
         let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, networking_config.clone());
-        let sync_mode_client = SyncModeClient::new(networking_config.sync_mode.clone());
+        let sync_mode_client = SyncModeClient::new(networking_config.sync_mode.clone(), identity_config.static_participant_set.clone());
 
         Algorithm {
             top_qc,
@@ -221,10 +221,9 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
         } else {
             Some(SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash))
         };
-        let deadline = deadline - self.networking_config.progress_mode.expected_worst_case_net_latency; 
  
         // 2. If App accepts the Block, write it and its writes into the BlockTree.
-        let writes = match self.app.validate_block(app_block, storage, deadline) {
+        let writes = match self.app.validate_block(app_block, storage, Instant::now() + self.pacemaker.execute_timeout()) {
             Ok(writes) => writes.into(),
             // If the App rejects the Block, change to NewView.
             Err(ExecuteError::RanOutOfTime) => return State::NewView, 
@@ -237,7 +236,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
         // 1. Send a VOTE message to the next leader.
         let next_leader = self.pacemaker.leader(self.cur_view + 1);
         let vote = ConsensusMsg::new_vote(self.cur_view, proposed_block.hash, &self.identity_config.my_keypair);
-        self.ipc_handle.send_to(&next_leader, &vote);
+        let _ = self.ipc_handle.send_to(&next_leader, &vote);
 
         // Phase 4: Wait for the next Leader to finish collecting votes
 
@@ -291,6 +290,8 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                     } else if vn > self.cur_view {
                         continue
                     } else { // if vote.view_number == cur_view
+                        // CRITICAL TODO [Alice]: check if signature is cryptographically correct.
+
                         if let Ok(true) = qc_builder.insert(sig, public_addr) {
                             // A new QC is collected.
                             self.top_qc = qc_builder.into();
@@ -330,7 +331,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 }
                 self.round_robin_idx
             };
-            let participant_ip_addr = self.identity_config.static_participant_set.values().nth(participant_idx).unwrap();
+            let participant = self.identity_config.static_participant_set.keys().nth(participant_idx).unwrap();
 
             loop {
                 // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
@@ -340,9 +341,9 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                     None => 0,
                 };
                 let request_result = self.sync_mode_client.get_blocks_from_tail(
+                    *participant, 
                     start_height, 
                     self.networking_config.sync_mode.request_jump_size,
-                    participant_ip_addr,
                 );
                 let extension_chain = match request_result {
                     Ok(blocks) => blocks,
@@ -403,28 +404,306 @@ fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
     locked_view.is_none() || block.justify.view_number >= locked_view.unwrap()
 }
 
-struct Pacemaker {
+pub(crate) struct Pacemaker {
     tbt: Duration,
     participant_set: ParticipantSet,
     net_latency: Duration,
 }
 
 impl Pacemaker {
-    fn new(tbt: Duration, participant_set: ParticipantSet, net_latency: Duration) -> Pacemaker {
+    pub(crate) fn new(tbt: Duration, participant_set: ParticipantSet, net_latency: Duration) -> Pacemaker {
         Pacemaker { tbt, participant_set, net_latency }
     }
 
-    fn leader(&self, cur_view: ViewNumber) -> PublicKeyBytes {
+    pub(crate) fn leader(&self, cur_view: ViewNumber) -> PublicKeyBytes {
         let idx = cur_view as usize % self.participant_set.len();
         self.participant_set.keys().nth(idx).unwrap().clone()
     }
 
-    fn execute_timeout(&self) -> Duration {
+    pub(crate) fn execute_timeout(&self) -> Duration {
         (self.tbt - 2*self.net_latency)/2
     }
 
-    fn wait_timeout(&self, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
+    pub(crate) fn wait_timeout(&self, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
         let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
+        // TODO [Alice]: consider removing TBT.
         self.tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
+    }
+}
+
+// These tests test Algorithm in a simulated multi-Participant setting without networking.
+#[cfg(test)]
+mod tests {
+    use std::thread;
+    use std::collections::{HashMap, VecDeque};
+    use std::sync::Arc;
+    use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError};
+    use std::time::{Duration, Instant};
+    use std::net::IpAddr;
+    use tempfile;
+    use rand;
+    use rand::rngs::OsRng;
+    use crate::block_tree::{self, BlockTreeSnapshotFactory};
+    use crate::config::{BlockTreeStorageConfig, NetworkingConfiguration, ProgressModeNetworkingConfig, SyncModeNetworkingConfig, IdentityConfig, AlgorithmConfig};
+    use crate::ipc::{AbstractHandle, NotConnectedError, RecvFromError};
+    use crate::rest_api::{AbstractSyncModeClient, SyncModeClient, GetBlocksFromTailError};
+    use crate::identity::{ParticipantSet, KeyPair, PublicKeyBytes, self};
+    use crate::msg_types::{QuorumCertificate, ConsensusMsg, BlockHeight, Block};
+    use crate::app::{App, SpeculativeStorageReader};
+    use crate::stored_types::StorageMutations;
+    use super::{Algorithm, Pacemaker};
+
+    #[test]
+    fn one_participant() {
+        // Make a BlockTree for the Participant.
+        let block_tree_db_dir = tempfile::tempdir().unwrap();
+        let block_tree_config = BlockTreeStorageConfig { db_path: block_tree_db_dir.path().to_path_buf() };
+        let (block_tree_writer, block_tree_snapshot_factory) = block_tree::open(&block_tree_config);
+        let mock_app = MockApp { pending_additions: 5 };
+
+        // Prepare configuration structs.
+        let networking_config = make_mock_networking_config(Duration::new(1, 0));
+        let identity_config = make_mock_identity_configs::<1>()[0];
+        let algorithm_config = make_mock_algorithm_config();
+
+        // Prepare mocked network handles.
+        let ipc_handle = {
+            let factory = MockIPCHandleFactory::new(identity_config.static_participant_set.keys().collect());
+        }
+        let algorithm = Algorithm {
+            cur_view: 1,
+            top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
+            block_tree: block_tree_writer,
+            pacemaker: Pacemaker { 
+                tbt: algorithm_config.target_block_time,
+                participant_set: identity_config.static_participant_set,
+                net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
+            },
+            app: mock_app,
+            ipc_handle: ,
+            sync_mode_client: ,
+            round_robin_idx: 0,
+            networking_config,
+            identity_config,
+            algorithm_config,
+        }
+
+        thread::spawn(move || algorithm.start());
+    }
+
+    #[test]
+    fn three_participants() {
+        todo!()
+    } 
+
+    struct MockApp {
+        pending_additions: usize,
+    }
+
+    impl App for MockApp {
+        fn propose_block(
+            &mut self, 
+            parent_state: Option<(crate::app::Block, crate::app::SpeculativeStorageReader)>,
+            deadline: std::time::Instant
+        ) -> (crate::msg_types::Data, crate::msg_types::DataHash, crate::stored_types::StorageMutations) {
+            if self.pending_additions >= 1 {
+                self.pending_additions -= 1;
+                let cur_value = match parent_state {
+                    Some((_, storage)) => storage.get(&vec![]).unwrap_or(vec![0])[0],
+                    None => 0,
+                };
+                let data = vec![vec![1]];
+                let data_hash = [1u8; 32];
+                let mut storage_mutations = StorageMutations::new();
+                storage_mutations.insert(vec![], vec![cur_value+1]);
+
+                (data, data_hash, storage_mutations)
+            } else {
+                let data = vec![vec![]];
+                let data_hash = [0u8; 32];
+                let storage_mutations = StorageMutations::new();
+
+                (data, data_hash, storage_mutations)
+            }
+        }
+
+        fn validate_block(
+            &mut self,
+            block: crate::app::Block,
+            storage: Option<SpeculativeStorageReader>,
+            deadline: std::time::Instant
+        ) -> Result<StorageMutations, crate::app::ExecuteError> {
+            let addition = block.data.get(0).unwrap_or(&vec![0])[0];
+            let cur_value = match storage {
+                Some(storage) => storage.get(&vec![]).unwrap_or(vec![0])[0],
+                None => 0,
+            };
+            let mut storage_mutations = StorageMutations::new();
+            storage_mutations.insert(vec![], vec![cur_value+addition]);
+            Ok(storage_mutations)
+        }
+    }
+
+    struct MockIPCHandleFactory {
+        peers: HashMap<PublicKeyBytes, Sender<(OriginAddr, ConsensusMsg)>>,
+        mailboxes: HashMap<PublicKeyBytes, Option<Receiver<(OriginAddr, ConsensusMsg)>>>,
+    }
+
+    type OriginAddr = PublicKeyBytes;
+
+    impl MockIPCHandleFactory {
+        fn new(participants: Vec<PublicKeyBytes>) -> MockIPCHandleFactory {
+            let mut peers = HashMap::new();
+            let mut mailboxes = HashMap::new();
+            for addr in participants {
+                let (sender, receiver) = mpsc::channel();
+                peers.insert(addr, sender);
+                mailboxes.insert(addr, Some(receiver));
+            }
+
+            MockIPCHandleFactory {
+                peers, 
+                mailboxes
+            }
+        }
+
+        fn get_handle(&self, for_addr: PublicKeyBytes) -> MockIPCHandle {
+            MockIPCHandle {
+                my_addr: for_addr,
+                peers: self.peers.clone(),
+                mailbox: self.mailboxes.get_mut(&for_addr).unwrap().take().unwrap(),
+                msgs_stash: VecDeque::new(),
+            }
+        }
+    }
+
+    struct MockIPCHandle {
+        my_addr: PublicKeyBytes,
+        peers: HashMap<PublicKeyBytes, Sender<(OriginAddr, ConsensusMsg)>>,
+        mailbox: Receiver<(OriginAddr, ConsensusMsg)>,
+        // Messages that have been removed from mailbox through recv_from, but did not come from the desired 
+        // sender address.
+        msgs_stash: VecDeque<(OriginAddr, ConsensusMsg)>,
+    }
+
+    impl AbstractHandle for MockIPCHandle {
+        fn broadcast(&self, msg: &ConsensusMsg) {
+            for peer in self.peers.values() {
+                peer.send((self.my_addr, msg.clone())).unwrap();
+            }
+        } 
+
+        fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
+            self.peers.get(public_addr).unwrap().send((self.my_addr, msg.clone()));
+            Ok(())
+        }
+
+        fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+            let deadline = Instant::now() + timeout;
+
+            // Try to get a matching message from msgs_stash.
+            if let Some(matching_idx) = self.msgs_stash.iter().position(|(origin, _)| origin == public_addr) {
+                return Ok(self.msgs_stash.remove(matching_idx).unwrap().1)
+            } 
+
+            // Try to receive a matching message from mailbox until deadline.
+            while Instant::now() < deadline {
+                if let Ok((origin, msg)) = self.mailbox.recv_timeout(deadline - Instant::now()) {
+                    if origin == *public_addr {
+                        return Ok(msg);
+                    } else {
+                        self.msgs_stash.push_back((origin, msg));
+                    }
+                }
+            }
+
+            Err(RecvFromError::Timeout)
+        }
+
+        fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
+            // Try to get a message from msgs_stash, if it's not empty.
+            if let Some((origin, msg)) = self.msgs_stash.pop_front() {
+                Ok((origin, msg))
+            }
+
+            // Try to receive a message from mailbox until timeout elapses.
+            else {
+                self.mailbox.recv_timeout(timeout).map_err(|_| RecvFromError::Timeout)
+            }
+        }
+    }
+
+    struct MockSyncModeClient(HashMap<PublicKeyBytes, Arc<BlockTreeSnapshotFactory>>);
+
+    impl AbstractSyncModeClient for MockSyncModeClient {
+        fn get_blocks_from_tail(&self, participant: PublicKeyBytes, tail_block_height: BlockHeight, limit: usize) -> Result<Vec<Block>, GetBlocksFromTailError> {
+            let bt_snapshot = self.0.get(&participant).unwrap().snapshot();
+            if let Some(tail_block_hash) = bt_snapshot.get_committed_block_hash(tail_block_height) {
+                if let Some(chain) = bt_snapshot.get_blocks_from_tail(&tail_block_hash, limit, true) {
+                    Ok(chain)
+                } else {
+                    Err(GetBlocksFromTailError::TailBlockNotFound)
+                }
+            } else {
+                Err(GetBlocksFromTailError::TailBlockNotFound)
+            } 
+        }
+    }
+
+    fn make_mock_identity_configs<const N: usize>() -> [IdentityConfig; N] {
+        let mut csprng = OsRng {};
+        let keypairs = Vec::with_capacity(N);
+        for _ in 0..N {
+            keypairs.push(KeyPair::generate(&mut csprng));
+        }
+
+        let mut static_participant_set = ParticipantSet::new();
+        for keypair in keypairs {
+            const DUMMY_IP_ADDR: IpAddr = "0.0.0.0".parse().unwrap();
+            static_participant_set.insert(keypair.public.to_bytes(), DUMMY_IP_ADDR);
+        }
+
+        let identity_configs: [IdentityConfig; N];
+        for (i, keypair) in keypairs.into_iter().enumerate() {
+            identity_configs[i] = IdentityConfig {
+                my_keypair: keypair,
+                my_public_key: keypair.public,
+                static_participant_set,
+            }
+        }
+
+        identity_configs
+    }
+
+    fn make_mock_networking_config(expected_worst_case_net_latency: Duration) -> NetworkingConfiguration {
+        NetworkingConfiguration {
+            progress_mode: ProgressModeNetworkingConfig {
+                expected_worst_case_net_latency,
+
+                // All the fields below are unused and are set to dummy values.
+                listening_addr: "0.0.0.0".parse().unwrap(),
+                listening_port: 0,
+                initiator_timeout: Duration::new(0, 0),
+                read_timeout: Duration::new(0, 0),
+                write_timeout: Duration::new(0, 0),
+                reader_channel_buffer_len: 0,
+                writer_channel_buffer_len: 0,
+            },
+            sync_mode: SyncModeNetworkingConfig {
+                // All fields are unused.
+                request_jump_size: 0,
+                request_timeout: Duration::new(0, 0),
+                block_tree_api_listening_addr: "0.0.0.0".parse().unwrap(),
+                block_tree_api_listening_port: 0,
+            },
+        }
+    }
+
+    fn make_mock_algorithm_config() -> AlgorithmConfig {
+        AlgorithmConfig {
+            app_id: 0,
+            target_block_time: Duration::new(1, 0),
+            sync_mode_execution_timeout: Duration::new(1, 0),
+        }
     }
 }

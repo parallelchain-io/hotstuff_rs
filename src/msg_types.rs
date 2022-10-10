@@ -145,7 +145,7 @@ impl Block {
 /// 
 /// A QuorumCertificate is 'valid', i.e., it can safely be inserted into the BlockTree, if its \
 /// [is_correct_len](QuorumCertificate::is_correct_len), is_quorum, and is_cryptographically_correct methods return true. 
-#[derive(BorshSerialize, BorshDeserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq, Eq)]
 pub struct QuorumCertificate {
     /// The view number of the Votes that were combined to form this QuorumCertificate. 
     pub view_number: ViewNumber,
@@ -166,14 +166,16 @@ impl QuorumCertificate {
     }
 
     pub(crate) fn is_valid(&self, participant_set: &ParticipantSet) -> bool {
-        // CRITICAL TODO [Alice]: Genesis QC needs a special notion of validity.
-
-        self.is_correct_len(participant_set.len())
-            && self.is_quorum(participant_set.len())
-            && self.is_cryptographically_correct(participant_set)
+        if self.view_number == 0 {
+            self == &Self::genesis_qc(participant_set.len())
+        } else {
+            self.is_correct_len(participant_set.len())
+                && self.is_quorum(participant_set.len())
+                && self.is_cryptographically_correct(participant_set)
+        }
     }
 
-    pub(crate) fn new_genesis_qc(num_participants: usize) -> QuorumCertificate {
+    pub(crate) fn genesis_qc(num_participants: usize) -> QuorumCertificate {
         QuorumCertificate {
             view_number: 0,
             block_hash: Block::PARENT_OF_GENESIS_BLOCK_HASH,
@@ -284,7 +286,7 @@ pub enum QCAggregatorInsertError {
 /// A list of Signatures, ordered according to the arithmetic order of the PublicAddr associated with the SecretKey that
 /// produced them. This special ordering makes it so that an explicit mapping between PublicAddr and Signature can be
 /// omitted from SignatureSet's bytes-encoding, saving message and storage size.
-#[derive(BorshSerialize, BorshDeserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq, Eq)]
 pub struct SignatureSet {
     pub signatures: Vec<Option<Signature>>,
 
@@ -336,7 +338,7 @@ impl SignatureSet {
 
 pub struct AlreadyInsertedError;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Signature(pub DalekSignature);
 
 impl BorshSerialize for Signature {

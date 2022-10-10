@@ -1,7 +1,7 @@
 use std::{thread, fs};
 use crate::app::App;
 use crate::config::Configuration;
-use crate::algorithm::{State, Algorithm};
+use crate::algorithm::Algorithm;
 use crate::block_tree::{self, BlockTreeWriter, BlockTreeSnapshotFactory};
 use crate::rest_api;
 

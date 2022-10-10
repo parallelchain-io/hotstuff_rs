@@ -10,14 +10,12 @@ use super::stream::StreamCorruptedError;
 /// transparently handle errored streams by calling `ConnectionSet::reconnect` on them. 
 pub struct Handle {
     connections: ConnectionSet,
-    ipc_config: NetworkingConfiguration,
 }
 
 impl Handle {
     pub fn new(static_participant_set: ParticipantSet, my_public_key: PublicKey, ipc_config: NetworkingConfiguration) -> Handle {
         Handle {
             connections: ConnectionSet::new(static_participant_set, my_public_key.to_bytes(), ipc_config.clone()),
-            ipc_config,
         }
     }
 
@@ -28,25 +26,19 @@ impl Handle {
 }
 
 impl AbstractHandle for Handle {
-    /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. Returns false if there is
-    /// no Stream corresponding to public_addr in the ConnectionSet, or if the Stream is corrupted, in which case Handle will
-    /// transparently arrange for Stream to be dropped and re-established.
-    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> bool {
-        match self.connections.get(&public_addr) {
-            Some(stream) => {
-                match stream.write(&msg) {
-                    Ok(_) => true,
-                    Err(StreamCorruptedError) => {
-                        self.connections.reconnect((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
-                        false
-                    },
-                }
-            },
-            None => false,
+    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
+        if let Some(stream) = self.connections.get(&public_addr) {
+            if let Err(StreamCorruptedError) = stream.write(&msg) {
+                self.connections.reconnect((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
+                Err(NotConnectedError)
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(NotConnectedError)
         }
     }
 
-    /// Asynchronously send a ConsensusMsg to all Participants in the ConnectionSet.
     fn broadcast(&self, msg: &ConsensusMsg) {
         let mut errored_conns = vec![];
         for (public_addr, stream) in &self.connections.iter() {
@@ -60,7 +52,6 @@ impl AbstractHandle for Handle {
         }
     }
 
-    /// Attempts to receive a ConsensusMsg from a particular Participant for at most timeout Duration.
     fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
         match self.connections.get(public_addr) {
             Some(stream) => {
@@ -77,7 +68,6 @@ impl AbstractHandle for Handle {
         }
     }
 
-    /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
     fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
@@ -101,14 +91,24 @@ impl AbstractHandle for Handle {
     }
 }
 
+pub struct NotConnectedError;
+
 pub enum RecvFromError {
     Timeout,
     NotConnected,
 }
 
 pub(crate) trait AbstractHandle {
-    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> bool;
+    /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. If the Handle
+    /// does not have a connection to the specified Participant, this method returns quietly. 
+    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError>;
+    
+    /// Asynchronously send a ConsensusMsg to all Participants connected to this Handle.
     fn broadcast(&self, msg: &ConsensusMsg);
+
+    /// Attempts to receive a ConsensusMsg from a particular Participant for at most timeout Duration. 
     fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError>;
+
+    /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
     fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError>;
 }
