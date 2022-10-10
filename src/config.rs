@@ -13,6 +13,7 @@ pub struct Configuration {
 }
 
 /// Configuration related to the cryptographic identities of consensus Participants.
+#[derive(Debug)]
 pub struct IdentityConfig {
     pub my_keypair: KeyPair,
     /// my_public_addr must be the equivalent to the PublicKey component of my_keypair.

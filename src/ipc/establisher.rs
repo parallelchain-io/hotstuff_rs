@@ -86,7 +86,7 @@ impl Establisher {
                 if pending_targets.len() == 0 {
                     continue
                 }
-                let target_idx = rng.gen_range(0..pending_targets.len());
+                let target_idx = rng.gen_range(0, pending_targets.len());
                 let target = pending_targets.get_index(target_idx).unwrap();
                 let target_socket_addr = SocketAddr::new(target.1, ipc_config.progress_mode.listening_port);
 

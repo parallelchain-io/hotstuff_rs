@@ -125,7 +125,7 @@ impl ConnectionSet {
     pub fn get_random(&self) -> Option<(PublicKeyBytes, Arc<ipc::Stream>)> { 
         let connections = self.connections.lock().unwrap();
         if connections.len() >= 1 {
-            let random_idx = self.rng.lock().unwrap().gen_range(0..connections.len());
+            let random_idx = self.rng.lock().unwrap().gen_range(0, connections.len());
             match connections.get_index(random_idx) {
                 Some((public_addr, stream)) => Some((*public_addr, Arc::clone(stream))),
                 None => None,

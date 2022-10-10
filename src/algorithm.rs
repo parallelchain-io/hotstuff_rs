@@ -186,13 +186,18 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                     }
                 },
                 Ok(ConsensusMsg::Propose(vn, block)) => {
+                    // The proposal comes from the past.
                     if vn < self.cur_view {
                         continue
-                    } else if self.block_tree.get_block(&block.justify.block_hash).is_none() {
+                    // The proposal refers to a branch that our BlockTree does not contain.
+                    } else if self.block_tree.get_block(&block.justify.block_hash).is_none() 
+                        && block.justify.block_hash != MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
                         return State::Sync
+                    // The proposal comes from the future but refers to a branch that we know.
                     } else if vn > self.cur_view {
                         continue
-                    } else { // (if vn == cur_view);
+                    // The proposal is for the present and refers to a branch that we know.
+                    } else {
                         // 1. Validate the proposed Block's QuorumCertificate
                         if !block.justify.is_valid(&self.identity_config.static_participant_set) {
                             // The Leader is Byzantine.
@@ -461,34 +466,36 @@ mod tests {
         let (block_tree_writer, block_tree_snapshot_factory) = block_tree::open(&block_tree_config);
         let mock_app = MockApp { pending_additions: 5 };
 
+        todo!();
+
         // Prepare configuration structs.
-        let networking_config = make_mock_networking_config(Duration::new(1, 0));
-        let identity_config = make_mock_identity_configs::<1>()[0];
-        let algorithm_config = make_mock_algorithm_config();
+        // let networking_config = make_mock_networking_config(Duration::new(1, 0));
+        // let identity_config = make_mock_identity_configs::<1>()[0];
+        // let algorithm_config = make_mock_algorithm_config();
 
         // Prepare mocked network handles.
-        let ipc_handle = {
-            let factory = MockIPCHandleFactory::new(identity_config.static_participant_set.keys().collect());
-        }
-        let algorithm = Algorithm {
-            cur_view: 1,
-            top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
-            block_tree: block_tree_writer,
-            pacemaker: Pacemaker { 
-                tbt: algorithm_config.target_block_time,
-                participant_set: identity_config.static_participant_set,
-                net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
-            },
-            app: mock_app,
-            ipc_handle: ,
-            sync_mode_client: ,
-            round_robin_idx: 0,
-            networking_config,
-            identity_config,
-            algorithm_config,
-        }
+        // let ipc_handle = {
+        //     let factory = MockIPCHandleFactory::new(identity_config.static_participant_set.keys().collect());
+        // }
+        // let algorithm = Algorithm {
+        //     cur_view: 1,
+        //     top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
+        //     block_tree: block_tree_writer,
+        //     pacemaker: Pacemaker { 
+        //         tbt: algorithm_config.target_block_time,
+        //         participant_set: identity_config.static_participant_set,
+        //         net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
+        //     },
+        //     app: mock_app,
+        //     ipc_handle: ,
+        //     sync_mode_client: ,
+        //     round_robin_idx: 0,
+        //     networking_config,
+        //     identity_config,
+        //     algorithm_config,
+        // }
 
-        thread::spawn(move || algorithm.start());
+        // thread::spawn(move || algorithm.start());
     }
 
     #[test]
@@ -567,7 +574,7 @@ mod tests {
             }
         }
 
-        fn get_handle(&self, for_addr: PublicKeyBytes) -> MockIPCHandle {
+        fn get_handle(&mut self, for_addr: PublicKeyBytes) -> MockIPCHandle {
             MockIPCHandle {
                 my_addr: for_addr,
                 peers: self.peers.clone(),
@@ -587,18 +594,18 @@ mod tests {
     }
 
     impl AbstractHandle for MockIPCHandle {
-        fn broadcast(&self, msg: &ConsensusMsg) {
+        fn broadcast(&mut self, msg: &ConsensusMsg) {
             for peer in self.peers.values() {
                 peer.send((self.my_addr, msg.clone())).unwrap();
             }
         } 
 
-        fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
+        fn send_to(&mut self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
             self.peers.get(public_addr).unwrap().send((self.my_addr, msg.clone()));
             Ok(())
         }
 
-        fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+        fn recv_from(&mut self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
             let deadline = Instant::now() + timeout;
 
             // Try to get a matching message from msgs_stash.
@@ -620,7 +627,7 @@ mod tests {
             Err(RecvFromError::Timeout)
         }
 
-        fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
+        fn recv_from_any(&mut self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
             // Try to get a message from msgs_stash, if it's not empty.
             if let Some((origin, msg)) = self.msgs_stash.pop_front() {
                 Ok((origin, msg))
@@ -652,27 +659,27 @@ mod tests {
 
     fn make_mock_identity_configs<const N: usize>() -> [IdentityConfig; N] {
         let mut csprng = OsRng {};
-        let keypairs = Vec::with_capacity(N);
+        let mut keypairs = Vec::with_capacity(N);
         for _ in 0..N {
             keypairs.push(KeyPair::generate(&mut csprng));
         }
 
         let mut static_participant_set = ParticipantSet::new();
-        for keypair in keypairs {
-            const DUMMY_IP_ADDR: IpAddr = "0.0.0.0".parse().unwrap();
-            static_participant_set.insert(keypair.public.to_bytes(), DUMMY_IP_ADDR);
+        let dummy_ip_addr = "0.0.0.0".parse().unwrap();
+        for keypair in &keypairs {
+            static_participant_set.insert(keypair.public.to_bytes(), dummy_ip_addr);
         }
 
-        let identity_configs: [IdentityConfig; N];
-        for (i, keypair) in keypairs.into_iter().enumerate() {
-            identity_configs[i] = IdentityConfig {
+        let mut identity_configs = Vec::with_capacity(N);
+        for keypair in keypairs.into_iter() {
+            identity_configs.push(IdentityConfig {
+                my_public_key: keypair.public.clone(),
                 my_keypair: keypair,
-                my_public_key: keypair.public,
-                static_participant_set,
-            }
+                static_participant_set: static_participant_set.clone(),
+            });
         }
 
-        identity_configs
+        identity_configs.try_into().unwrap()
     }
 
     fn make_mock_networking_config(expected_worst_case_net_latency: Duration) -> NetworkingConfiguration {

@@ -26,7 +26,7 @@ impl Handle {
 }
 
 impl AbstractHandle for Handle {
-    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
+    fn send_to(&mut self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
         if let Some(stream) = self.connections.get(&public_addr) {
             if let Err(StreamCorruptedError) = stream.write(&msg) {
                 self.connections.reconnect((*public_addr, stream.peer_addr().expect("Programming error: Loopback Stream is corrupted.").ip()));
@@ -39,7 +39,7 @@ impl AbstractHandle for Handle {
         }
     }
 
-    fn broadcast(&self, msg: &ConsensusMsg) {
+    fn broadcast(&mut self, msg: &ConsensusMsg) {
         let mut errored_conns = vec![];
         for (public_addr, stream) in &self.connections.iter() {
             if let Err(StreamCorruptedError) = stream.write(msg) {
@@ -52,7 +52,7 @@ impl AbstractHandle for Handle {
         }
     }
 
-    fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
+    fn recv_from(&mut self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
         match self.connections.get(public_addr) {
             Some(stream) => {
                 stream.read(timeout).map_err(|e| match e {
@@ -68,7 +68,7 @@ impl AbstractHandle for Handle {
         }
     }
 
-    fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
+    fn recv_from_any(&mut self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             match self.connections.get_random() {
@@ -101,14 +101,14 @@ pub enum RecvFromError {
 pub(crate) trait AbstractHandle {
     /// Asynchronously send a ConsensusMsg to a specific Participant, identified by their PublicAddr. If the Handle
     /// does not have a connection to the specified Participant, this method returns quietly. 
-    fn send_to(&self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError>;
+    fn send_to(&mut self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError>;
     
     /// Asynchronously send a ConsensusMsg to all Participants connected to this Handle.
-    fn broadcast(&self, msg: &ConsensusMsg);
+    fn broadcast(&mut self, msg: &ConsensusMsg);
 
     /// Attempts to receive a ConsensusMsg from a particular Participant for at most timeout Duration. 
-    fn recv_from(&self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError>;
+    fn recv_from(&mut self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError>;
 
     /// Attempts to receive ConsensusMsg from *any* Participant for at most timeout Duration.
-    fn recv_from_any(&self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError>;
+    fn recv_from_any(&mut self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError>;
 }
