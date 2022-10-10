@@ -5,9 +5,9 @@ use std::net::{SocketAddr, IpAddr, TcpStream, TcpListener};
 use std::io::ErrorKind;
 use rand::{self, Rng};
 use indexmap::{IndexSet, IndexMap};
+use hotstuff_rs_types::identity::PublicKeyBytes;
 use crate::config::NetworkingConfiguration;
 use crate::ipc;
-use crate::identity::PublicKeyBytes;
 
 use super::stream::StreamConfig;
 

@@ -3,9 +3,9 @@ use std::convert::{identity, TryFrom};
 use std::cmp::min;
 use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
+use hotstuff_rs_types::stored::{StorageMutations, ChildrenList, Key, Value, DataLen};
+use hotstuff_rs_types::messages::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate, AppID, DataHash};
 use crate::config::BlockTreeStorageConfig;
-use crate::stored_types::{StorageMutations, ChildrenList, Key, Value, DataLen};
-use crate::msg_types::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate, AppID, DataHash};
 
 /// Create an instance of BlockTreeWriter and BlockTreeSnapshotFactory. This function should only be called once in the process's lifetime.
 pub(crate) fn open(block_tree_config: &BlockTreeStorageConfig) -> (BlockTreeWriter, BlockTreeSnapshotFactory) {

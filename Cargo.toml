@@ -11,9 +11,9 @@ license = "GPL-2.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+base64 = "0.13"
 borsh = "0.9"
 ed25519-dalek = "1"
-pchain-types = "0.2"
 # Dalek requires this minor version of rand.
 rand = "0.7"
 rocksdb = "0.19"
@@ -25,3 +25,4 @@ tempfile = "3"
 threadpool = "1.8"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 warp = "0.3"
+hotstuff_rs_types = { path = "./types" }

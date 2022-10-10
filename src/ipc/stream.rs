@@ -6,7 +6,7 @@ use std::sync::{mpsc, Mutex};
 use std::net::{self, SocketAddr};
 use std::time::Duration;
 use borsh::{BorshSerialize, BorshDeserialize};
-use crate::msg_types::ConsensusMsg;
+use hotstuff_rs_types::messages::ConsensusMsg;
 
 /// Stream is a wrapper around TcpStream which implements in-the-background reads and writes of ConsensusMsgs.
 pub enum Stream {

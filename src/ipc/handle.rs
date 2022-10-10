@@ -1,7 +1,7 @@
 use std::time::{Instant, Duration};
+use hotstuff_rs_types::messages::ConsensusMsg;
+use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet, PublicKey};
 use crate::config::NetworkingConfiguration;
-use crate::msg_types::ConsensusMsg;
-use crate::identity::{PublicKeyBytes, ParticipantSet, PublicKey};
 use crate::ipc::{ConnectionSet, StreamReadError};
 
 use super::stream::StreamCorruptedError;

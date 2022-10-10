@@ -1,9 +1,9 @@
 use std::convert::identity;
 use std::ops::Deref;
 use std::time::Instant;
+use hotstuff_rs_types::stored::{StorageMutations, Key, Value};
+use hotstuff_rs_types::messages::{Data, DataHash, Block as MsgBlock, BlockHash};
 use crate::block_tree::BlockTreeWriter;
-use crate::stored_types::{StorageMutations, Key, Value};
-use crate::msg_types::{Data, DataHash, Block as MsgBlock, BlockHash};
 
 /// Methods that a type needs to implement to serve as a HotStuff-rs network's deterministic state transition function.
 /// 

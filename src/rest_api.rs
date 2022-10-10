@@ -1,14 +1,15 @@
 use std::convert::identity;
 use std::net::SocketAddr;
+use std::ops::Deref;
 use borsh::{BorshSerialize, BorshDeserialize};
 use tokio;
 use serde;
 use warp::hyper::StatusCode;
 use warp::{self, http, Filter};
 use reqwest;
-use pchain_types::Base64URL;
-use crate::identity::{PublicKeyBytes, ParticipantSet};
-use crate::msg_types::{Block, BlockHeight};
+use base64;
+use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
+use hotstuff_rs_types::messages::{Block, BlockHeight};
 use crate::block_tree::BlockTreeSnapshotFactory;
 use crate::config::SyncModeNetworkingConfig;
 
@@ -170,4 +171,31 @@ pub(crate) enum GetBlocksFromTailError {
 
 pub(crate) trait AbstractSyncModeClient {
     fn get_blocks_from_tail(&self, participant: PublicKeyBytes, tail_block_height: BlockHeight, limit: usize) -> Result<Vec<Block>, GetBlocksFromTailError>;
+}
+
+/// Base64URL are Strings restricted to containing the 2^6 UTF-8 code points in the Base64URL bytes-to-characters encoding.
+/// Base64URL MUST NOT contain padding. 
+pub struct Base64URL(String);
+
+
+impl Base64URL {
+    /// encode takes in a slice of bytes and returns the bytes encoded as a Base64URL String. 
+    pub fn encode<T: AsRef<[u8]>>(bytes: T) -> Base64URL { 
+        Base64URL(base64::encode_config(bytes, base64::Config::new(base64::CharacterSet::UrlSafe, false)))
+    }
+
+    /// decode takes in a string and tries to decode it into a Vector of bytes. It returns a base64::DecodeError if `string`
+    /// is not valid Base64URL.
+    pub fn decode<T: ?Sized + AsRef<[u8]>>(base64_url: &T) -> Result<Vec<u8>, base64::DecodeError> {
+        base64::decode_config(base64_url, base64::Config::new(base64::CharacterSet::UrlSafe, false))
+    } 
+}
+
+
+impl Deref for Base64URL {
+    type Target = String;
+
+    fn deref(&self) -> &String {
+        &self.0
+    }
 }

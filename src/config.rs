@@ -1,7 +1,7 @@
 use std::{time::Duration, path::PathBuf};
 use std::net::IpAddr;
-use crate::identity::PublicKey;
-use crate::{identity::{ParticipantSet, KeyPair}, msg_types::AppID};
+use hotstuff_rs_types::identity::{PublicKey, KeyPair, ParticipantSet};
+use hotstuff_rs_types::messages::AppID;
 
 /// Configuration as specified by the operator. This is split up into smaller, subsystem specific config structs
 /// before being passed to components.

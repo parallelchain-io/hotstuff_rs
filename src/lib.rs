@@ -22,24 +22,10 @@ pub mod config;
 /// the distributed state machine's Storage to evolve over time. The 'Block Tree' is a generalization of the concept of a 'blockchain'.
 pub mod block_tree;
 
-/// Defines types and encodings that are used in messages exchanged between Participants. The wire-encodings of these types are an
-/// integral part of the protocol, and all Participant implementations that wish to communicate with the implementation in this crate
-/// needs to encode these types in the exact same way.
-pub mod msg_types;
-
-/// Defines *additional* types that the Block Tree's storage implementation needs to store to support its functionality, but which are
-/// not sent over the wire and therefore are not part of the protocol. An example functionality of the Block Tree that requires these
-/// additional types is getting the child of a Block, since a msg_types::Block only stores a pointer to its parent in the form of 
-/// `justify.block_hash`.
-pub mod stored_types;
-
 /// Defines an HTTP server that serves the 'Block Tree HTTP API' (endpoints documented in '/docs'). The `GET /blocks` route of this API
 /// is used by the protocol state machine's 'Sync Mode' to catch-up lagging Participants to the global head of the Block Tree, and therefore
 /// is a required part of the protocol. The rest of the routes are optional.
 pub(crate) mod rest_api;
-
-/// Defines types that give a cryptographic identity to every Participant. This chiefly includes secret keys, public keys, and signatures.
-pub(crate) mod identity;
 
 /// Defines HotStuff-rs' Algorithm State Machine, the component which actually drives the growth of the Block Tree through Byzantine Fault
 /// Tolerant consensus. 

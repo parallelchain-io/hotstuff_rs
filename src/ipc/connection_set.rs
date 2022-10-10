@@ -5,9 +5,9 @@ use std::thread;
 use indexmap::{map, IndexMap};
 use rand::Rng;
 use rand::rngs::ThreadRng;
+use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
 use crate::config::NetworkingConfiguration;
 use crate::ipc::{self, Establisher, EstablisherResult};
-use crate::identity::{PublicKeyBytes, ParticipantSet};
 
 use super::stream::IsLoopbackError;
 

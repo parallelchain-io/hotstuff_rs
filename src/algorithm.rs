@@ -2,11 +2,11 @@ use std::convert::identity;
 use std::time::{Instant, Duration};
 use std::cmp::{min, max};
 use std::thread;
-use crate::msg_types::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
+use hotstuff_rs_types::messages::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
+use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
 use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
-use crate::identity::{PublicKeyBytes, ParticipantSet};
 use crate::ipc::{Handle as IPCHandle, AbstractHandle, RecvFromError};
 use crate::rest_api::{SyncModeClient, AbstractSyncModeClient, GetBlocksFromTailError};
 
@@ -439,23 +439,21 @@ impl Pacemaker {
 // These tests test Algorithm in a simulated multi-Participant setting without networking.
 #[cfg(test)]
 mod tests {
-    use std::thread;
     use std::collections::{HashMap, VecDeque};
-    use std::sync::Arc;
-    use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError};
+    use std::sync::mpsc::{self, Sender, Receiver};
     use std::time::{Duration, Instant};
-    use std::net::IpAddr;
+    use std::thread;
     use tempfile;
     use rand;
     use rand::rngs::OsRng;
+    use hotstuff_rs_types::identity::{ParticipantSet, KeyPair, PublicKeyBytes};
+    use hotstuff_rs_types::messages::{QuorumCertificate, ConsensusMsg, BlockHeight, Block, Data, DataHash};
+    use hotstuff_rs_types::stored::StorageMutations;
     use crate::block_tree::{self, BlockTreeSnapshotFactory};
     use crate::config::{BlockTreeStorageConfig, NetworkingConfiguration, ProgressModeNetworkingConfig, SyncModeNetworkingConfig, IdentityConfig, AlgorithmConfig};
     use crate::ipc::{AbstractHandle, NotConnectedError, RecvFromError};
-    use crate::rest_api::{AbstractSyncModeClient, SyncModeClient, GetBlocksFromTailError};
-    use crate::identity::{ParticipantSet, KeyPair, PublicKeyBytes, self};
-    use crate::msg_types::{QuorumCertificate, ConsensusMsg, BlockHeight, Block};
+    use crate::rest_api::{AbstractSyncModeClient, GetBlocksFromTailError};
     use crate::app::{App, SpeculativeStorageReader};
-    use crate::stored_types::StorageMutations;
     use super::{Algorithm, Pacemaker};
 
     #[test]
@@ -466,36 +464,48 @@ mod tests {
         let (block_tree_writer, block_tree_snapshot_factory) = block_tree::open(&block_tree_config);
         let mock_app = MockApp { pending_additions: 5 };
 
-        todo!();
-
         // Prepare configuration structs.
-        // let networking_config = make_mock_networking_config(Duration::new(1, 0));
-        // let identity_config = make_mock_identity_configs::<1>()[0];
-        // let algorithm_config = make_mock_algorithm_config();
+        let networking_config = make_mock_networking_config(Duration::new(1, 0));
+        let identity_config = make_mock_identity_configs(1).into_iter().next().unwrap();
+        let algorithm_config = make_mock_algorithm_config();
 
         // Prepare mocked network handles.
-        // let ipc_handle = {
-        //     let factory = MockIPCHandleFactory::new(identity_config.static_participant_set.keys().collect());
-        // }
-        // let algorithm = Algorithm {
-        //     cur_view: 1,
-        //     top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
-        //     block_tree: block_tree_writer,
-        //     pacemaker: Pacemaker { 
-        //         tbt: algorithm_config.target_block_time,
-        //         participant_set: identity_config.static_participant_set,
-        //         net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
-        //     },
-        //     app: mock_app,
-        //     ipc_handle: ,
-        //     sync_mode_client: ,
-        //     round_robin_idx: 0,
-        //     networking_config,
-        //     identity_config,
-        //     algorithm_config,
-        // }
+        let ipc_handle = {
+            let participants = identity_config.static_participant_set.iter().map(|(public_addr, _)| *public_addr).collect();
+            let mut factory = MockIPCHandleFactory::new(participants);
+            factory.get_handle(identity_config.my_public_key.to_bytes())
+        };
+        let sync_mode_client = {
+            let mut bt_snapshot_factories = HashMap::new();
+            bt_snapshot_factories.insert(identity_config.my_public_key.to_bytes(), block_tree_snapshot_factory.clone());
+            MockSyncModeClient::new(bt_snapshot_factories)
+        };
 
-        // thread::spawn(move || algorithm.start());
+        // Prepare 1 Algorithm.
+        let mut algorithm = Algorithm {
+            cur_view: 1,
+            top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
+            block_tree: block_tree_writer,
+            pacemaker: Pacemaker { 
+                tbt: algorithm_config.target_block_time,
+                participant_set: identity_config.static_participant_set.clone(),
+                net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
+            },
+            app: mock_app,
+            ipc_handle,
+            sync_mode_client,
+            round_robin_idx: 0,
+            networking_config,
+            identity_config,
+            algorithm_config,
+        };
+
+        // Start the Algorithm in the background.
+        thread::spawn(move || algorithm.start());
+
+        // Periodically query  
+        todo!()
+    
     }
 
     #[test]
@@ -511,8 +521,8 @@ mod tests {
         fn propose_block(
             &mut self, 
             parent_state: Option<(crate::app::Block, crate::app::SpeculativeStorageReader)>,
-            deadline: std::time::Instant
-        ) -> (crate::msg_types::Data, crate::msg_types::DataHash, crate::stored_types::StorageMutations) {
+            _deadline: std::time::Instant
+        ) -> (Data, DataHash, StorageMutations) {
             if self.pending_additions >= 1 {
                 self.pending_additions -= 1;
                 let cur_value = match parent_state {
@@ -538,7 +548,7 @@ mod tests {
             &mut self,
             block: crate::app::Block,
             storage: Option<SpeculativeStorageReader>,
-            deadline: std::time::Instant
+            _deadline: std::time::Instant
         ) -> Result<StorageMutations, crate::app::ExecuteError> {
             let addition = block.data.get(0).unwrap_or(&vec![0])[0];
             let cur_value = match storage {
@@ -640,7 +650,13 @@ mod tests {
         }
     }
 
-    struct MockSyncModeClient(HashMap<PublicKeyBytes, Arc<BlockTreeSnapshotFactory>>);
+    struct MockSyncModeClient(HashMap<PublicKeyBytes, BlockTreeSnapshotFactory>);
+
+    impl MockSyncModeClient {
+        fn new(bt_snapshot_factories: HashMap<PublicKeyBytes, BlockTreeSnapshotFactory>) -> MockSyncModeClient {
+            MockSyncModeClient(bt_snapshot_factories)
+        }
+    }
 
     impl AbstractSyncModeClient for MockSyncModeClient {
         fn get_blocks_from_tail(&self, participant: PublicKeyBytes, tail_block_height: BlockHeight, limit: usize) -> Result<Vec<Block>, GetBlocksFromTailError> {
@@ -657,10 +673,10 @@ mod tests {
         }
     }
 
-    fn make_mock_identity_configs<const N: usize>() -> [IdentityConfig; N] {
+    fn make_mock_identity_configs(n: usize) -> Vec<IdentityConfig> {
         let mut csprng = OsRng {};
-        let mut keypairs = Vec::with_capacity(N);
-        for _ in 0..N {
+        let mut keypairs = Vec::with_capacity(n);
+        for _ in 0..n {
             keypairs.push(KeyPair::generate(&mut csprng));
         }
 
@@ -670,7 +686,7 @@ mod tests {
             static_participant_set.insert(keypair.public.to_bytes(), dummy_ip_addr);
         }
 
-        let mut identity_configs = Vec::with_capacity(N);
+        let mut identity_configs = Vec::with_capacity(n);
         for keypair in keypairs.into_iter() {
             identity_configs.push(IdentityConfig {
                 my_public_key: keypair.public.clone(),
