@@ -184,7 +184,7 @@ impl QuorumCertificate {
     }
 
     pub(crate) fn is_correct_len(&self, num_participants: usize) -> bool {
-        self.sigs.len() > num_participants
+        self.sigs.len() == num_participants
     }
 
     /// Returns whether this QuorumCertificate contains at least a quorum of signatures, correct or incorrect. 
