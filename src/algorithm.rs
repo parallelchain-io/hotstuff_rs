@@ -313,14 +313,14 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
 
     fn do_new_view(&mut self) -> State {
         let next_leader = self.pacemaker.leader(self.cur_view+1);
-        if &next_leader == self.identity_config.my_public_key.as_bytes() {
-            // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
-            let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
-            self.ipc_handle.send_to(&next_leader, &new_view);
-
+        if &next_leader == self.identity_config.my_public_key.as_bytes() { 
             self.cur_view += 1;
             return State::Leader;
         } else {
+            // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
+            let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
+            let _ = self.ipc_handle.send_to(&next_leader, &new_view);
+
             self.cur_view += 1;
             return State::Replica;
         }
@@ -472,8 +472,8 @@ mod tests {
         // Prepare mocked network handles.
         let ipc_handle = {
             let participants = identity_config.static_participant_set.iter().map(|(public_addr, _)| *public_addr).collect();
-            let mut factory = MockIPCHandleFactory::new(participants);
-            factory.get_handle(identity_config.my_public_key.to_bytes())
+            let mut mock_ipc_handle_factory = MockIPCHandleFactory::new(participants);
+            mock_ipc_handle_factory.get_handle(identity_config.my_public_key.to_bytes())
         };
         let sync_mode_client = {
             let mut bt_snapshot_factories = HashMap::new();
@@ -503,9 +503,18 @@ mod tests {
         // Start the Algorithm in the background.
         thread::spawn(move || algorithm.start());
 
-        // Periodically query  
-        todo!()
-    
+        // Periodically query the BlockTree until number == 5  (all pending additions are successfully applied).
+        loop {
+            let bt_snapshot = block_tree_snapshot_factory.snapshot();
+            if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
+                if let Some(number) = state.get(0) {
+                    if *number == 5 {
+                        break
+                    }
+                }
+            }
+            thread::sleep(Duration::new(1, 0));
+        }
     }
 
     #[test]
