@@ -64,9 +64,10 @@ impl BlockTreeWriter {
         if block.height >= 1 {
             // 4. Insert block to parent's ChildrenList.
             let parent_block = self.get_block(&block.justify.block_hash).unwrap();
-            let parent_children = self
+            let mut parent_children = self
                 .get_children_list(&parent_block.hash)
                 .map_or(ChildrenList::new(), identity);
+            parent_children.insert(block.hash);
             Self::set_children_list(&mut wb, &parent_block.hash, &parent_children);
             
             // 5. Update LOCKED_VIEW.

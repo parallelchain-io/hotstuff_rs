@@ -10,6 +10,10 @@ impl ChildrenList {
         ChildrenList(HashSet::new())
     }
 
+    pub fn insert(&mut self, child_hash: BlockHash) {
+        self.0.insert(child_hash);
+    }
+
     pub fn iter(&self) -> hash_set::Iter<BlockHash> {
         self.0.iter()
     }
