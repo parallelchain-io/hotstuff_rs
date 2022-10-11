@@ -460,57 +460,17 @@ mod tests {
 
     #[test]
     fn one_participant() {
-        // Make a BlockTree for the Participant.
-        let block_tree_db_dir = tempfile::tempdir().unwrap();
-        let block_tree_config = BlockTreeStorageConfig { db_path: block_tree_db_dir.path().to_path_buf() };
-        let (block_tree_writer, block_tree_snapshot_factory) = block_tree::open(&block_tree_config);
-        let mock_app = MockApp { pending_additions: 5 };
-
-        // Prepare configuration structs.
-        let networking_config = make_mock_networking_config(Duration::new(0, 5000000));
-        let identity_config = make_mock_identity_configs(1).into_iter().next().unwrap();
-        let algorithm_config = make_mock_algorithm_config();
-
-        // Prepare mocked network handles.
-        let ipc_handle = {
-            let participants = identity_config.static_participant_set.iter().map(|(public_addr, _)| *public_addr).collect();
-            let mut mock_ipc_handle_factory = MockIPCHandleFactory::new(participants);
-            mock_ipc_handle_factory.get_handle(identity_config.my_public_key.to_bytes())
-        };
-        let sync_mode_client = {
-            let mut bt_snapshot_factories = HashMap::new();
-            bt_snapshot_factories.insert(identity_config.my_public_key.to_bytes(), block_tree_snapshot_factory.clone());
-            MockSyncModeClient::new(bt_snapshot_factories)
-        };
-
-        // Prepare 1 Algorithm.
-        let mut algorithm = Algorithm {
-            cur_view: 1,
-            top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
-            block_tree: block_tree_writer,
-            pacemaker: Pacemaker { 
-                tbt: algorithm_config.target_block_time,
-                participant_set: identity_config.static_participant_set.clone(),
-                net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
-            },
-            app: mock_app,
-            ipc_handle,
-            sync_mode_client,
-            round_robin_idx: 0,
-            networking_config,
-            identity_config,
-            algorithm_config,
-        };
+        let (mut algorithm, bt_snapshot_factory) = make_mock_algos(1, 5).into_iter().next().unwrap();
 
         // Start the Algorithm in the background.
         thread::spawn(move || algorithm.start());
 
         // Periodically query the BlockTree until number == 5  (all pending additions are successfully applied).
         loop {
-            let bt_snapshot = block_tree_snapshot_factory.snapshot();
+            let bt_snapshot = bt_snapshot_factory.snapshot();
             if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
                 if let Some(number) = state.get(0) {
-                    if *number == 6 {
+                    if *number == 5 {
                         break
                     }
                 }
@@ -525,6 +485,8 @@ mod tests {
         todo!()
     } 
 
+    // An App that maintains a single unsigned number in Storage, whose value starts from zero and is incremented in every
+    // view until `pending_additions` is zero.
     struct MockApp {
         pending_additions: usize,
     }
@@ -662,6 +624,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct MockSyncModeClient(HashMap<PublicKeyBytes, BlockTreeSnapshotFactory>);
 
     impl MockSyncModeClient {
@@ -683,6 +646,54 @@ mod tests {
                 Err(GetBlocksFromTailError::TailBlockNotFound)
             } 
         }
+    }
+
+    fn make_mock_algos(n: usize, additions_per_app: usize) -> Vec<(Algorithm<MockApp, MockIPCHandle, MockSyncModeClient>, BlockTreeSnapshotFactory)> {
+        // Prepare configuration structs.
+        let identity_configs = make_mock_identity_configs(n); 
+        let networking_config = make_mock_networking_config();
+        let algorithm_config = make_mock_algorithm_config();
+
+        let participants: Vec<PublicKeyBytes> = identity_configs[0].static_participant_set.iter().map(|(public_addr, _)| *public_addr).collect();
+
+        // Prepare separate BlockTrees, one for every Participant.
+        let mut block_trees = HashMap::new();
+        for public_addr in &participants {
+            let block_tree_db_dir = tempfile::tempdir().unwrap();
+            let block_tree_config = BlockTreeStorageConfig { db_path: block_tree_db_dir.path().to_path_buf() };
+            block_trees.insert(*public_addr, block_tree::open(&block_tree_config));
+        }
+
+        // Prepare mocked network handles.
+        let mut ipc_handle_factory = MockIPCHandleFactory::new(participants.clone());
+        let bt_snapshot_factories = block_trees.iter()
+            .map(|(public_addr, (_, snapshot_factory))| (*public_addr, snapshot_factory.clone())).collect();
+        let sync_mode_client = MockSyncModeClient::new(bt_snapshot_factories);
+
+        let algo_and_block_trees = identity_configs.into_iter().zip(block_trees.into_values())
+            .map(|(identity_config, block_tree)| {
+                let algorithm = Algorithm {
+                    cur_view: 0,
+                    top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
+                    block_tree: block_tree.0,
+                    pacemaker: Pacemaker {
+                        tbt: algorithm_config.target_block_time,
+                        participant_set: identity_config.static_participant_set.clone(),
+                        net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
+                    },
+                    app: MockApp { pending_additions: additions_per_app },
+                    ipc_handle: ipc_handle_factory.get_handle(identity_config.my_public_key.to_bytes()),
+                    sync_mode_client: sync_mode_client.clone(),
+                    round_robin_idx: 0,
+                    networking_config: networking_config.clone(),
+                    identity_config,
+                    algorithm_config: algorithm_config.clone(),
+                };
+
+            (algorithm, block_tree.1)
+        }).collect();
+
+        algo_and_block_trees
     }
 
     fn make_mock_identity_configs(n: usize) -> Vec<IdentityConfig> {
@@ -710,10 +721,12 @@ mod tests {
         identity_configs.try_into().unwrap()
     }
 
-    fn make_mock_networking_config(expected_worst_case_net_latency: Duration) -> NetworkingConfiguration {
+    fn make_mock_networking_config() -> NetworkingConfiguration {
+        const EXPECTED_WORST_CASE_NET_LATENCY: Duration = Duration::new(0, 5_000_000);
+
         NetworkingConfiguration {
             progress_mode: ProgressModeNetworkingConfig {
-                expected_worst_case_net_latency,
+                expected_worst_case_net_latency: EXPECTED_WORST_CASE_NET_LATENCY,
 
                 // All the fields below are unused and are set to dummy values.
                 listening_addr: "0.0.0.0".parse().unwrap(),
