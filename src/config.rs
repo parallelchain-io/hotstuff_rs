@@ -34,7 +34,7 @@ pub struct AlgorithmConfig {
     /// A number which uniquely identifies the specific HotStuff-rs network that this Participant operates in.
     pub app_id: AppID,
 
-    /// How long should a view be at most.
+    /// How long should a view be at most. This has to be at least 2 times the worst case expected network latency.
     pub target_block_time: Duration,
 
     /// How long should App execute and validate Blocks in Sync Mode.

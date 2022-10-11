@@ -244,7 +244,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
         let _ = self.ipc_handle.send_to(&next_leader, &vote);
 
         // Phase 4: Wait for the next Leader to finish collecting votes
-
+        
         if next_leader == self.identity_config.my_public_key.to_bytes() {
             // If next leader == me, transition to State::NextLeader and do the waiting there.
             return State::NextLeader(proposed_block.hash)
@@ -467,7 +467,7 @@ mod tests {
         let mock_app = MockApp { pending_additions: 5 };
 
         // Prepare configuration structs.
-        let networking_config = make_mock_networking_config(Duration::new(1, 0));
+        let networking_config = make_mock_networking_config(Duration::new(0, 5000000));
         let identity_config = make_mock_identity_configs(1).into_iter().next().unwrap();
         let algorithm_config = make_mock_algorithm_config();
 
@@ -510,7 +510,7 @@ mod tests {
             let bt_snapshot = block_tree_snapshot_factory.snapshot();
             if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
                 if let Some(number) = state.get(0) {
-                    if *number == 5 {
+                    if *number == 6 {
                         break
                     }
                 }
@@ -521,6 +521,7 @@ mod tests {
 
     #[test]
     fn three_participants() {
+        // Make a BlockTree for each of the three Participants.
         todo!()
     } 
 
@@ -622,7 +623,7 @@ mod tests {
         } 
 
         fn send_to(&mut self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
-            self.peers.get(public_addr).unwrap().send((self.my_addr, msg.clone()));
+            self.peers.get(public_addr).unwrap().send((self.my_addr, msg.clone())).unwrap();
             Ok(())
         }
 
