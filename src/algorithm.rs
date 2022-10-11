@@ -481,8 +481,25 @@ mod tests {
 
     #[test]
     fn three_participants() {
-        // Make a BlockTree for each of the three Participants.
-        todo!()
+        let algo_and_bts = make_mock_algos(3, 5); 
+        let bt_snapshot_factory = algo_and_bts.iter().next().unwrap().1.clone();
+
+        for (mut algorithm, _) in algo_and_bts {
+            thread::spawn(move || algorithm.start());
+        }
+
+        // Periodically query the BlockTree until number == 15 (3 * 5).
+        loop {
+            let bt_snapshot = bt_snapshot_factory.snapshot();
+            if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
+                if let Some(number) = state.get(0) {
+                    if *number == 15 {
+                        break
+                    }
+                }
+            }
+            thread::sleep(Duration::new(1, 0));
+        }
     } 
 
     // An App that maintains a single unsigned number in Storage, whose value starts from zero and is incremented in every
@@ -510,7 +527,7 @@ mod tests {
 
                 (data, data_hash, storage_mutations)
             } else {
-                let data = vec![vec![]];
+                let data = vec![];
                 let data_hash = [0u8; 32];
                 let storage_mutations = StorageMutations::new();
 
