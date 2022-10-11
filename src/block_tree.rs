@@ -99,7 +99,7 @@ impl BlockTreeWriter {
                     let great_great_grandparent_children = self.get_children_list(&great_great_grandparent_block.hash).unwrap(); 
                     let siblings = great_great_grandparent_children
                         .iter()
-                        .filter(|child_hash| **child_hash != great_great_grandparent_block.hash);
+                        .filter(|child_hash| **child_hash != great_grandparent_block.hash);
                     for sibling_hash in siblings {
                         self.delete_branch(&mut wb, &sibling_hash)
                     }

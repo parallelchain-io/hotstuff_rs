@@ -342,7 +342,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
                 // or the Genesis Block, if the former is still None.
                 let start_height = match self.block_tree.get_highest_committed_block() {
-                    Some(block) => block.height,
+                    Some(block) => block.height + 1,
                     None => 0,
                 };
                 let request_result = self.sync_mode_client.get_blocks_from_tail(
