@@ -4,6 +4,7 @@ use std::cmp::{min, max};
 use std::thread;
 use hotstuff_rs_types::messages::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
 use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
+use log;
 use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
 use crate::block_tree::BlockTreeWriter;
@@ -80,6 +81,8 @@ impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
 
 impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     pub(crate) fn start(&mut self) {
+        log::debug!("start: in");
+
         let mut next_state = self.do_sync();       
 
         loop {
@@ -94,6 +97,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_leader(&mut self) -> State {
+        log::debug!("do_leader: in; cur_view: {}", self.cur_view);
 
         // Phase 1: Produce a new Block.
 
@@ -157,6 +161,8 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_replica(&mut self) -> State {
+        log::debug!("do_replica: in");
+
         let cur_leader = self.pacemaker.leader(self.cur_view);
 
         // Phase 1: Wait for a proposal.
@@ -257,6 +263,8 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_next_leader(&mut self, pending_block_hash: BlockHash) -> State {
+        log::debug!("do_next_leader: in");
+
         let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
 
         // Read messages from every participant until deadline is reached or until a new QC is collected.
@@ -312,6 +320,8 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_new_view(&mut self) -> State {
+        log::debug!("do_new_view: in");
+
         let next_leader = self.pacemaker.leader(self.cur_view+1);
         if &next_leader == self.identity_config.my_public_key.as_bytes() { 
             self.cur_view += 1;
@@ -327,6 +337,8 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_sync(&mut self) -> State {
+        log::debug!("do_sync: in");
+
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
             let participant_idx = { 
@@ -448,6 +460,7 @@ mod tests {
     use tempfile;
     use rand;
     use rand::rngs::OsRng;
+    use fern;
     use hotstuff_rs_types::identity::{ParticipantSet, KeyPair, PublicKeyBytes};
     use hotstuff_rs_types::messages::{QuorumCertificate, ConsensusMsg, BlockHeight, Block, Data, DataHash};
     use hotstuff_rs_types::stored::StorageMutations;
@@ -460,6 +473,8 @@ mod tests {
 
     #[test]
     fn one_participant() {
+        setup_logger().unwrap();
+
         let (mut algorithm, bt_snapshot_factory) = make_mock_algos(1, 5).into_iter().next().unwrap();
 
         // Start the Algorithm in the background.
@@ -770,5 +785,10 @@ mod tests {
             target_block_time: Duration::new(1, 0),
             sync_mode_execution_timeout: Duration::new(1, 0),
         }
+    }
+
+    fn setup_logger() -> Result<(), fern::InitError> {
+        fern::Dispatch::new().apply()?;
+        Ok(())
     }
 }

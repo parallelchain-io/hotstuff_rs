@@ -14,6 +14,8 @@ license = "GPL-2.0-or-later"
 base64 = "0.13"
 borsh = "0.9"
 ed25519-dalek = "1"
+log = "0.4"
+fern = "0.6"
 # Dalek requires this minor version of rand.
 rand = "0.7"
 rocksdb = "0.19"
