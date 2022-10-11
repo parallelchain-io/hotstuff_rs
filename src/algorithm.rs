@@ -357,7 +357,9 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 };
     
                 // 3. Filter the extension chain so that it includes only the blocks that we do *not* have in the local BlockTree.
-                let mut extension_chain = extension_chain.iter().filter(|block| self.block_tree.get_block(&block.hash).is_some()).peekable();
+                let mut extension_chain = extension_chain.iter().filter(|block| 
+                    self.block_tree.get_block(&block.hash).is_none()
+                ).peekable();
                 if extension_chain.peek().is_none() {
                     // If, after the Filter, the chain has length 0, this suggests that we are *not* lagging behind, after all.
 
