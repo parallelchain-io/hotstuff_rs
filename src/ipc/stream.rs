@@ -23,9 +23,9 @@ pub enum Stream {
 }
 
 impl Stream {
-    pub fn new(tcp_stream: net::TcpStream, config: StreamConfig) -> Stream {
-        tcp_stream.set_read_timeout(Some(config.read_timeout)).expect("Programming error: fail to set Stream read timeout.");
-        tcp_stream.set_write_timeout(Some(config.write_timeout)).expect("Programming error: fail to set Stream write timeout");
+    pub fn new(tcp_stream: net::TcpStream, config: StreamConfig) -> Result<Stream, StreamCorruptedError> {
+        tcp_stream.set_read_timeout(Some(config.read_timeout)).map_err(|_| StreamCorruptedError)?;
+        tcp_stream.set_write_timeout(Some(config.write_timeout)).map_err(|_| StreamCorruptedError)?;
 
         let (to_writer, from_main) = mpsc::sync_channel(config.writer_channel_buffer_len);
         let (to_main, from_reader) = mpsc::sync_channel(config.reader_channel_buffer_len);
@@ -34,11 +34,11 @@ impl Stream {
         Self::writer(from_main, tcp_stream.try_clone().unwrap());
         Self::reader(to_main, tcp_stream.try_clone().unwrap());
 
-        Stream::Foreign {
+        Ok(Stream::Foreign {
             to_writer,
             from_reader: Mutex::new(from_reader),
-            peer_addr: tcp_stream.peer_addr().unwrap(),
-        }
+            peer_addr: tcp_stream.peer_addr().map_err(|_| StreamCorruptedError)?,
+        })
     }
 
     pub fn new_loopback(config: StreamConfig) -> Stream {
