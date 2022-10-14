@@ -81,7 +81,7 @@ impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
 
 impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     pub(crate) fn start(&mut self) {
-        log::debug!("start: in");
+        log::trace!("start: in");
 
         let mut next_state = self.do_sync();       
 
@@ -97,7 +97,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_leader(&mut self) -> State {
-        log::debug!("do_leader: in; cur_view: {}", self.cur_view);
+        log::trace!("do_leader: in; cur_view: {}", self.cur_view);
 
         // Phase 1: Produce a new Block.
 
@@ -144,7 +144,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
         // 2. Send a VOTE for our own proposal to the next leader.
         let vote = ConsensusMsg::new_vote(self.cur_view, leaf_hash,&self.identity_config.my_keypair);
         let next_leader = self.pacemaker.leader(self.cur_view + 1);
-        self.ipc_handle.send_to(&self.pacemaker.leader(self.cur_view + 1), &vote);
+        let _ = self.ipc_handle.send_to(&self.pacemaker.leader(self.cur_view + 1), &vote);
 
         // Phase 3: Wait for Replicas to send a vote for our proposal to the next Leader.
 
@@ -161,7 +161,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_replica(&mut self) -> State {
-        log::debug!("do_replica: in");
+        log::trace!("do_replica: in; cur_view: {}", self.cur_view);
 
         let cur_leader = self.pacemaker.leader(self.cur_view);
 
@@ -263,7 +263,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_next_leader(&mut self, pending_block_hash: BlockHash) -> State {
-        log::debug!("do_next_leader: in");
+        log::trace!("do_next_leader: in");
 
         let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
 
@@ -320,7 +320,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_new_view(&mut self) -> State {
-        log::debug!("do_new_view: in");
+        log::trace!("do_new_view: in");
 
         let next_leader = self.pacemaker.leader(self.cur_view+1);
         if &next_leader == self.identity_config.my_public_key.as_bytes() { 
@@ -337,7 +337,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_sync(&mut self) -> State {
-        log::debug!("do_sync: in");
+        log::trace!("do_sync: in");
 
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
@@ -473,8 +473,6 @@ mod tests {
 
     #[test]
     fn one_participant() {
-        setup_logger().unwrap();
-
         let (mut algorithm, bt_snapshot_factory) = make_mock_algos(1, 5).into_iter().next().unwrap();
 
         // Start the Algorithm in the background.
@@ -705,7 +703,7 @@ mod tests {
         let algo_and_block_trees = identity_configs.into_iter().zip(block_trees.into_values())
             .map(|(identity_config, block_tree)| {
                 let algorithm = Algorithm {
-                    cur_view: 0,
+                    cur_view: 1,
                     top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
                     block_tree: block_tree.0,
                     pacemaker: Pacemaker {
@@ -787,8 +785,19 @@ mod tests {
         }
     }
 
-    fn setup_logger() -> Result<(), fern::InitError> {
-        fern::Dispatch::new().apply()?;
+    fn setup_debug_logger() -> Result<(), fern::InitError> {
+        fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{:?}][{}] {}",
+                thread::current().id(),
+                record.level(),
+                message
+            ))
+        }) 
+        .chain(std::io::stdout())
+        .level(log::LevelFilter::Debug)
+        .apply()?;
         Ok(())
     }
 }
