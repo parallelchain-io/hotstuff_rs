@@ -20,5 +20,3 @@ The choice of third confirmation to define commitment--as opposed to first or se
 2. Tendermint require only 2 confirmations for commitment and has a simple leader-replacement flow, but needs an explicit 'wait-for-N seconds' step to guarantee liveness.
 
 HotStuff is the first consensus algorithm with a simple leader-replacement algorithm that does not have a 'wait-for-N seconds' step, and thus can make progress as fast as network latency allows.
-
-## Using HotStuff-rs in your project
