@@ -1,8 +1,10 @@
 use std::sync::Arc;
 use std::convert::{identity, TryFrom};
 use std::cmp::min;
+use log;
 use borsh::{BorshDeserialize, BorshSerialize};
 use rocksdb::{DB, WriteBatch, Snapshot};
+use hotstuff_rs_types::base64url::Base64URL;
 use hotstuff_rs_types::stored::{StorageMutations, ChildrenList, Key, Value, DataLen};
 use hotstuff_rs_types::messages::{Block, BlockHash, ViewNumber, BlockHeight, Datum, Data, QuorumCertificate, AppID, DataHash};
 use crate::config::BlockTreeStorageConfig;
@@ -48,6 +50,7 @@ impl BlockTreeWriter {
     /// The block with height == 0 becomes committed by this insertion. But because block does not have a great-great-grandparent, step 7 
     /// is skipped.
     pub(crate) fn insert_block(&self, block: &Block, write_set: &StorageMutations) {
+        log::info!("insert_block: height: {}, hash: {}", block.height, Base64URL::encode(block.hash).as_str());
         let mut wb = WriteBatch::default();
 
         // 1. Insert block to the NODES keyspace. 

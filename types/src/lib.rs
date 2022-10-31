@@ -11,3 +11,6 @@ pub mod stored;
 
 /// Defines types that give a cryptographic identity to every Participant. This chiefly includes secret keys, public keys, and signatures.
 pub mod identity;
+
+/// Subset of Base64 binary-to-string encoding that is used to serialize REST API requests.
+pub mod base64url;

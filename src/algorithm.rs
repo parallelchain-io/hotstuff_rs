@@ -4,6 +4,7 @@ use std::cmp::{min, max};
 use std::thread;
 use hotstuff_rs_types::messages::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
 use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
+use hotstuff_rs_types::base64url::Base64URL;
 use log;
 use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
 use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
@@ -81,7 +82,7 @@ impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
 
 impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     pub(crate) fn start(&mut self) {
-        log::trace!("start: in");
+        log::debug!("start: in");
 
         let mut next_state = self.do_sync();       
 
@@ -97,7 +98,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_leader(&mut self) -> State {
-        log::trace!("do_leader: in; cur_view: {}", self.cur_view);
+        log::debug!("do_leader: in; cur_view: {}", self.cur_view);
 
         // Phase 1: Produce a new Block.
 
@@ -161,7 +162,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_replica(&mut self) -> State {
-        log::trace!("do_replica: in; cur_view: {}", self.cur_view);
+        log::debug!("do_replica: in; cur_view: {}", self.cur_view);
 
         let cur_leader = self.pacemaker.leader(self.cur_view);
 
@@ -183,6 +184,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                     } else if qc.view_number > self.top_qc.view_number {
                         if !qc.is_valid(&self.identity_config.static_participant_set) {
                             // The Leader is Byzantine.
+                            log::warn!("do_replica: received NewView that includes an invalid QuorumCertificate. Origin: {} (Leader)", Base64URL::encode(&cur_leader).as_str());
                             return State::Sync
                         } else {
                             return State::Sync
@@ -237,8 +239,14 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
         let writes = match self.app.validate_block(app_block, storage, Instant::now() + self.pacemaker.execute_timeout()) {
             Ok(writes) => writes.into(),
             // If the App rejects the Block, change to NewView.
-            Err(ExecuteError::RanOutOfTime) => return State::NewView, 
-            Err(ExecuteError::InvalidBlock) => return State::NewView,
+            Err(ExecuteError::RanOutOfTime) => {
+                log::warn!("do_replica: proposed Block ran out of time during validate_block. Origin: {}", Base64URL::encode(&cur_leader).as_str());
+                return State::NewView
+            }, 
+            Err(ExecuteError::InvalidBlock) => { 
+                log::warn!("do_replica: proposed Block is invalid. Origin: {}", Base64URL::encode(&cur_leader).as_str());
+                return State::NewView
+            },
         };
         self.block_tree.insert_block(&proposed_block, &writes);
 
@@ -263,7 +271,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_next_leader(&mut self, pending_block_hash: BlockHash) -> State {
-        log::trace!("do_next_leader: in");
+        log::debug!("do_next_leader: in");
 
         let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
 
@@ -281,12 +289,13 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 Err(RecvFromError::Timeout) => continue,
                 Err(RecvFromError::NotConnected) => continue,
                 Ok((_, ConsensusMsg::Propose(_, _))) => continue,
-                Ok((_, ConsensusMsg::NewView(vn, qc))) => {
+                Ok((origin, ConsensusMsg::NewView(vn, qc))) => {
                     if vn < self.cur_view - 1 {
                         continue
                     } else if qc.view_number > self.top_qc.view_number {
                         if !qc.is_valid(&self.identity_config.static_participant_set) {
                             // The sender is Byzantine.
+                            log::warn!("do_replica: received NewView that includes an invalid QuorumCertificate. Origin: {}", Base64URL::encode(&origin).as_str());
                             return State::Sync
                         } else {
                             return State::Sync
@@ -320,7 +329,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_new_view(&mut self) -> State {
-        log::trace!("do_new_view: in");
+        log::debug!("do_new_view: in");
 
         let next_leader = self.pacemaker.leader(self.cur_view+1);
         if &next_leader == self.identity_config.my_public_key.as_bytes() { 
@@ -337,7 +346,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
     }
 
     fn do_sync(&mut self) -> State {
-        log::trace!("do_sync: in");
+        log::debug!("do_sync: in");
 
         loop {
             // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
@@ -349,6 +358,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 self.round_robin_idx
             };
             let participant = self.identity_config.static_participant_set.keys().nth(participant_idx).unwrap();
+            log::info!("do_sync: syncing with participant: {}", Base64URL::encode(participant).as_str());
 
             loop {
                 // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
@@ -392,6 +402,7 @@ impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
                 for block in extension_chain {
                     // 4. Structurally validate Block. 
                     if !block.justify.is_valid(&self.identity_config.static_participant_set) {
+                        log::warn!("do_sync: received Block that includes an invalid QuorumCertificate. Block Hash: {}", Base64URL::encode(&block.hash).as_str());
                         break
                     }
 
@@ -473,6 +484,7 @@ mod tests {
 
     #[test]
     fn one_participant() {
+        setup_debug_logger().unwrap();
         let (mut algorithm, bt_snapshot_factory) = make_mock_algos(1, 5).into_iter().next().unwrap();
 
         // Start the Algorithm in the background.
@@ -516,7 +528,8 @@ mod tests {
     } 
 
     // An App that maintains a single unsigned number in Storage, whose value starts from zero and is incremented in every
-    // view until `pending_additions` is zero.
+    // view until `pending_additions` is zero. `pending_additions` is decremented in every call to `propose_block`, so tests
+    // that expect this App's state to reach a particular stable value may fail if a Block is orphaned. 
     struct MockApp {
         pending_additions: usize,
     }
@@ -795,8 +808,8 @@ mod tests {
                 message
             ))
         }) 
-        .chain(std::io::stdout())
         .level(log::LevelFilter::Debug)
+        .chain(std::io::stdout())
         .apply()?;
         Ok(())
     }
