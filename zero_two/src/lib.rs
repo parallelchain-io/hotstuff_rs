@@ -6,11 +6,13 @@
 
 pub mod app;
 
+pub mod config;
+
 pub mod types;
 
 pub mod messages;
 
-pub mod persistence;
+pub mod state;
 
 pub mod networking;
 

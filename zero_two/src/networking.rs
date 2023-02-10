@@ -1,7 +1,7 @@
 //! HotStuff-rs' has pluggable peer-to-peer networking, with each peer identified by a PublicKey. Networking providers
 //! interact with HotStuff-rs' threads through implementations of the [Network] trait.
 
-use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, RecvError};
+use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
 use std::thread;
 use std::time::{Instant, Duration};
 use crate::types::{PublicKey, ViewNumber};
@@ -39,9 +39,11 @@ pub(crate) fn start_polling<N: Network>(network: N, shutdown_signal: Receiver<()
 
     let poller_thread = thread::spawn(move || {
         loop {
-            if let Ok(()) = shutdown_signal.try_recv() {
-                return
-            } 
+            match shutdown_signal.try_recv() {
+                Ok(()) => return,
+                Err(TryRecvError::Empty) => (),
+                Err(TryRecvError::Disconnected) => panic!("Poller thread disconnected from main thread"),
+            }
 
             if let Some((origin, msg)) = network.recv() {
                 match msg {
@@ -59,7 +61,6 @@ pub(crate) fn start_polling<N: Network>(network: N, shutdown_signal: Receiver<()
     let progress_message_filter = ProgressMessageFilter {
         recycler: to_progress_msg_filter.clone(),
         receiver: progress_msg_from_poller,
-        cur_view: 0,
     };
     let sync_request_receiver = SyncRequestReceiver(sync_request_from_poller);
     let sync_response_receiver = SyncResponseReceiver(sync_response_from_poller);
@@ -72,6 +73,8 @@ pub(crate) fn start_polling<N: Network>(network: N, shutdown_signal: Receiver<()
     )
 }
 
+pub(crate) struct ProgressMessageSender<N: Network>(N);
+
 /// A stream of Progress Messages for the current view. Progress messages received from this stream are
 /// guaranteed to have correct signatures.
 /// 
@@ -80,15 +83,10 @@ pub(crate) fn start_polling<N: Network>(network: N, shutdown_signal: Receiver<()
 pub(crate) struct ProgressMessageFilter {
     recycler: Sender<(PublicKey, ProgressMessage)>,
     receiver: Receiver<(PublicKey, ProgressMessage)>,
-    cur_view: ViewNumber
 }
 
 impl ProgressMessageFilter {
-    pub(crate) fn set_cur_view(&mut self, cur_view: ViewNumber) {
-        self.cur_view = cur_view;
-    }
-
-    pub(crate) fn recv(&self, timeout: Duration) -> Option<(PublicKey, ProgressMessage)> {
+    pub(crate) fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKey, ProgressMessage)> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             let (origin, msg) = match self.receiver.recv_timeout(deadline - Instant::now()) {
@@ -97,10 +95,10 @@ impl ProgressMessageFilter {
                 Err(RecvTimeoutError::Disconnected) => panic!("ProgressMessageFilter disconnected from poller"),
             };
 
-            if msg.view() == self.cur_view {
+            if msg.view() == cur_view {
                 // Verify signature.
                 return Some((origin, msg)) 
-            } else if msg.view() == self.cur_view + 1 {
+            } else if msg.view() == cur_view + 1 {
                 self.recycler.send((origin, msg));
             }
         }
@@ -108,6 +106,8 @@ impl ProgressMessageFilter {
         None
     }
 }
+
+pub(crate) struct SyncMessageSender<N: Network>(N);
 
 pub(crate) struct SyncRequestReceiver(Receiver<(PublicKey, SyncRequest)>);
 
@@ -119,6 +119,8 @@ impl SyncRequestReceiver {
         }
     }
 }
+
+pub(crate) struct SyncResponseSender<N: Network>(N);
 
 pub(crate) struct SyncResponseReceiver(Receiver<(PublicKey, SyncResponse)>);
 

@@ -32,6 +32,7 @@ pub enum Proposal {
 }
 
 pub struct Vote {
+    app_id: AppID,
     view: ViewNumber,
     block: CryptoHash,
     phase: Phase,

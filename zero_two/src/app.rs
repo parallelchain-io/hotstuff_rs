@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::persistence::{BlockTreeSnapshot, KVGet};
+use crate::state::{BlockTreeSnapshot, KVGet};
 
 pub trait App {
     type K: KVGet;

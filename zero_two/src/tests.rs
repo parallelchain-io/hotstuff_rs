@@ -18,6 +18,7 @@ fn mock_network(peers: Vec<PublicKey>) -> Vec<(PublicKey, MockNetworkStub)> {
     for peer in peers 
 }
 
+/// 
 struct MockApp {
 
 }
