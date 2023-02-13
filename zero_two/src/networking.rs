@@ -4,30 +4,26 @@
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
 use std::thread;
 use std::time::{Instant, Duration};
-use crate::types::{PublicKey, ViewNumber};
+use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet};
 use crate::messages::*;
 
-pub trait Network: Clone + Send + Sync + 'static {
-    /// Causes the network stub to try and connect with the identified peer without blocking. The network stub will continue
-    /// to try and connect to the peer until it succeeds or if the peer is [Network::disconnect]ed.
-    fn connect(&self, peer: PublicKey);
-
-    /// Causes the network stub to disconnect with the identified peer, or, if not connected, to stop trying to connect to it.
-    fn disconnect(&self, peer: PublicKey);
+pub trait Network: Clone + Send + 'static {
+    fn update_validator_set(&mut self, validator_set: ValidatorSet);
 
     /// Send a message to the specified peer without blocking.
-    fn send(&self, peer: PublicKey, message: Message);
+    fn send(&mut self, peer: PublicKeyBytes, message: Message);
 
     /// Receive a message from any peer.
     ///
     /// # Important
-    /// Messages returned from this function should be deserialized using the Message's implementation of TryFrom<Vec<u8>>.
-    fn recv(&self) -> Option<(PublicKey, Message)>;
+    /// Messages returned from this function should be deserialized using the Message's implementation of TryFrom<Vec<u8>>,
+    /// which checks some simple invariants.
+    fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
 }
 
 /// Spawn the poller thread, which polls the Network for messages and distributes them into the ProgressMessageFilter,
 /// or SyncRequestReceiver, or the SyncResponseReceiver according to their variant.
-pub(crate) fn start_polling<N: Network>(network: N, shutdown_signal: Receiver<()>) -> (
+pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receiver<()>) -> (
     thread::JoinHandle<()>,
     ProgressMessageFilter,
     SyncRequestReceiver,
@@ -81,12 +77,12 @@ pub(crate) struct ProgressMessageSender<N: Network>(N);
 /// Progress messages from the next view (current view + 1) are cached, while those from all other views 
 /// are dropped.
 pub(crate) struct ProgressMessageFilter {
-    recycler: Sender<(PublicKey, ProgressMessage)>,
-    receiver: Receiver<(PublicKey, ProgressMessage)>,
+    recycler: Sender<(PublicKeyBytes, ProgressMessage)>,
+    receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
 }
 
 impl ProgressMessageFilter {
-    pub(crate) fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKey, ProgressMessage)> {
+    pub(crate) fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKeyBytes, ProgressMessage)> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             let (origin, msg) = match self.receiver.recv_timeout(deadline - Instant::now()) {
@@ -109,10 +105,10 @@ impl ProgressMessageFilter {
 
 pub(crate) struct SyncMessageSender<N: Network>(N);
 
-pub(crate) struct SyncRequestReceiver(Receiver<(PublicKey, SyncRequest)>);
+pub(crate) struct SyncRequestReceiver(Receiver<(PublicKeyBytes, SyncRequest)>);
 
 impl SyncRequestReceiver {
-    pub(crate) fn recv(&self) -> (PublicKey, SyncRequest) {
+    pub(crate) fn recv(&self) -> (PublicKeyBytes, SyncRequest) {
         match self.0.recv() {
             Ok(o_m) => o_m,
             Err(RecvError) => panic!("SyncRequestReceiver disconnected from poller"),
@@ -122,10 +118,10 @@ impl SyncRequestReceiver {
 
 pub(crate) struct SyncResponseSender<N: Network>(N);
 
-pub(crate) struct SyncResponseReceiver(Receiver<(PublicKey, SyncResponse)>);
+pub(crate) struct SyncResponseReceiver(Receiver<(PublicKeyBytes, SyncResponse)>);
 
 impl SyncResponseReceiver {
-    pub(crate) fn recv(&self, timeout: Duration) -> Option<(PublicKey, SyncResponse)> {
+    pub(crate) fn recv(&self, timeout: Duration) -> Option<(PublicKeyBytes, SyncResponse)> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             match self.0.recv_timeout(deadline - Instant::now()) {

@@ -12,10 +12,15 @@ pub mod types;
 
 pub mod messages;
 
+pub mod pacemaker;
+
 pub mod state;
 
 pub mod networking;
 
+#[cfg(test)]
 pub mod tests;
 
-pub mod validator;
+pub mod sync_server;
+
+pub mod replica;

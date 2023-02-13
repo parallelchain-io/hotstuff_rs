@@ -7,7 +7,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base64 = "0.13"
 borsh = "0.9"
 ed25519-dalek = "1"
 log = "0.4" 

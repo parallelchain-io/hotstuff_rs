@@ -13,11 +13,15 @@ pub type Data = Vec<Datum>;
 pub type Datum = Vec<u8>;
 pub type Key = Vec<u8>;
 pub type Power = u64;
-pub type ValidatorSet = Vec<(PublicKey, Power)>;
-pub type ValidatorSetUpdates = Vec<(PublicKey, Power)>;
+
+// PublicKey in version 1 of dalek doesn't implement hash: https://github.com/dalek-cryptography/ed25519-dalek/issues/183
+pub type PublicKeyBytes = [u8; 32];
+pub type ValidatorSet = Vec<(PublicKeyBytes, Power)>;
+pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
 pub type Value = Vec<u8>;
 pub type ViewNumber = u64;
 
+#[derive(Clone)]
 pub struct Block {
     num: BlockNumber,
     hash: CryptoHash,
@@ -26,6 +30,7 @@ pub struct Block {
     data: Data,
 }
 
+#[derive(Clone)]
 pub struct QuorumCertificate {
     app_id: AppID,
     view: ViewNumber,
@@ -34,6 +39,7 @@ pub struct QuorumCertificate {
     signatures: SignatureSet,
 }
 
+#[derive(Clone)]
 pub enum Phase {
     Generic,
     Prepare,
@@ -41,6 +47,10 @@ pub enum Phase {
     Commit
 }
 
+#[derive(Clone)]
+pub struct SignatureSet;
+
+#[derive(Clone)]
 pub struct AppStateUpdates {
     inserts: HashMap<Key, Value>,
     deletes: HashSet<Key>, 

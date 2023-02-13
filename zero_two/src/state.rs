@@ -23,23 +23,30 @@
 //! without loading the entire block from storage, which may be expensive. The key suffixes on which each of
 //! block's fields are stored are also defined in [kv_paths].
 
-use crate::types::*;
+use std::marker::PhantomData;
 
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
-pub(crate) struct BlockTree<K: KVWrite + KVGet + KVCamera>(K);
+pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
-impl<K: KVWrite + KVGet + KVCamera> BlockTree<K> {
+impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
 }
 
+pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
+
 /// A read view into the block tree that is guaranteed to stay unchanged.
-pub struct BlockTreeSnapshot<S: KVGet>;
+pub struct BlockTreeSnapshot<'a, S: 'a + KVGet>(S, PhantomData<&'a ()>);
 
+impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
+    fn state()
+}
 
-pub trait KVWrite {
-    type WB: WriteBatch;
+pub trait KVStore<'a>: KVGet + 'static {
+    type WriteBatch: WriteBatch;
+    type Snapshot: 'a + KVGet;
 
-    fn write(&mut self, wb: Self::WB);
-    fn delete_all(&mut self);
+    fn write(&mut self, wb: Self::WriteBatch);
+    fn clear(&mut self);
+    fn snapshot(&'a self) -> Self::Snapshot;
 }
 
 pub trait WriteBatch {
@@ -48,16 +55,9 @@ pub trait WriteBatch {
 }
 
 pub trait KVGet {
-    fn get(&mut self, key: Vec<u8>) -> Vec<u8>;
+    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>>;
 }
 
-/// A trait for key-value stores that can be 'snapshotted', or produce a 'snapshot'. A snapshot is a read
-/// view into the key-value store that is guaranteed to stay unchanged.
-pub trait KVCamera {
-    type S: KVGet;
-
-    fn snapshot(&self) -> Self::S;
-}
 
 mod kv_paths {
     // State variables
