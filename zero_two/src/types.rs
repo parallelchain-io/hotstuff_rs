@@ -3,6 +3,7 @@ use std::collections::{hash_set, HashSet, hash_map, HashMap};
 pub use ed25519_dalek::{
     PublicKey,
     Keypair, 
+    Signature,
 };
 
 pub type AppID = u64;
@@ -16,30 +17,31 @@ pub type Power = u64;
 
 // PublicKey in version 1 of dalek doesn't implement hash: https://github.com/dalek-cryptography/ed25519-dalek/issues/183
 pub type PublicKeyBytes = [u8; 32];
-pub type ValidatorSet = Vec<(PublicKeyBytes, Power)>;
+pub type SignatureBytes = [u8; 64];
+
 pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
 pub type Value = Vec<u8>;
 pub type ViewNumber = u64;
 
 #[derive(Clone)]
 pub struct Block {
-    num: BlockNumber,
-    hash: CryptoHash,
-    justify: QuorumCertificate,
-    data_hash: CryptoHash,
-    data: Data,
+    pub num: BlockNumber,
+    pub hash: CryptoHash,
+    pub justify: QuorumCertificate,
+    pub data_hash: CryptoHash,
+    pub data: Data,
 }
 
 #[derive(Clone)]
 pub struct QuorumCertificate {
-    app_id: AppID,
-    view: ViewNumber,
-    block: CryptoHash,
-    phase: Phase,
-    signatures: SignatureSet,
+    pub app_id: AppID,
+    pub view: ViewNumber,
+    pub block: CryptoHash,
+    pub phase: Phase,
+    pub signatures: SignatureSet,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Phase {
     Generic,
     Prepare,
@@ -90,5 +92,13 @@ impl AppStateUpdates {
     /// Get an iterator over all of the keys that are deleted by this WriteSet.
     pub(crate) fn deletes(&self) -> hash_set::Iter<Key> {
         self.deletes.iter()
+    }
+}
+
+pub struct ValidatorSet(Vec<(PublicKeyBytes, Power)>);
+
+impl ValidatorSet {
+    pub fn contains(&self, validator: &PublicKeyBytes) -> bool {
+        todo!()
     }
 }

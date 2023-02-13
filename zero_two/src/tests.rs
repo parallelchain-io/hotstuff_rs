@@ -7,19 +7,18 @@
 //! simulate persistence, and so do not leave any artifacts behind.
 
 use std::collections::HashMap;
-use std::sync::mpsc::TryRecvError;
 use std::sync::{
     Arc,
     Mutex,
     MutexGuard,
-    mpsc::{Sender, Receiver}
+    mpsc::{Sender, Receiver, TryRecvError}
 };
 use crate::app::{App, ProposeBlockRequest, ValidateBlockRequest, ProposeBlockResponse, ValidateBlockResponse};
 use crate::config::Configuration;
 use crate::pacemaker::DefaultPacemaker;
 use crate::replica::Replica;
 use crate::state::{BlockTreeCamera, KVStore, KVGet, WriteBatch};
-use crate::types::{PublicKeyBytes, Keypair, ValidatorSetUpdates, AppID, AppStateUpdates};
+use crate::types::{PublicKeyBytes, Keypair, ValidatorSetUpdates, AppID, AppStateUpdates, Power};
 use crate::messages::*;
 use crate::networking::Network;
 
@@ -55,8 +54,15 @@ fn mock_network<const N: usize>(peers: [Keypair; N]) -> Vec<(Keypair, NetworkStu
     todo!()
 }
 
-struct NumberApp;
+struct NumberApp {
+    transactions: Vec<NumberAppTransaction>,
+}
 const NUMBER_KEY: [u8; 1] = [0];
+
+enum NumberAppTransaction {
+    Increment,
+    SetValidator(PublicKeyBytes, Power),
+}
 
 impl App<MemDBSnapshot<'_>> for NumberApp {
     fn id(&self) -> AppID {
@@ -65,6 +71,7 @@ impl App<MemDBSnapshot<'_>> for NumberApp {
 
     fn propose_block(&mut self, request: ProposeBlockRequest<MemDBSnapshot>) -> ProposeBlockResponse {
         let number = request.app_state().get(&NUMBER_KEY);
+        todo!()
     }
 
     fn validate_block(&mut self, request: ValidateBlockRequest<MemDBSnapshot>) -> ValidateBlockResponse {
@@ -112,8 +119,8 @@ impl<'a> KVStore<'a> for MemDB {
 } 
 
 impl<'a> KVGet for MemDB {
-    fn get(&mut self, key: Vec<u8>) -> Option<Vec<u8>> {
-        self.0.lock().unwrap().get(&key).cloned()
+    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        self.0.lock().unwrap().get(key).cloned()
     }
 }
 
@@ -151,27 +158,29 @@ fn integration_test() {
         state.insert(NUMBER_KEY.to_vec(), usize::to_le_bytes(0).to_vec());
         state
     };
-    let init_vs: ValidatorSetUpdates = keypairs[0..3].iter().map(|k| (*k.public.as_bytes(), 1)).collect();
-    let configuration: Configuration = todo!();
+    // let init_vs: ValidatorSetUpdates = keypairs[0..3].iter().map(|k| (*k.public.as_bytes(), 1)).collect();
+    // let configuration: Configuration = todo!();
 
-    let nodes: Vec<Node> = mock_network(keypairs).into_iter().map(|(keypair, network_stub)| {
-        let kv_store = MemDB::new();
+    // let nodes: Vec<Node> = mock_network(keypairs).into_iter().map(|(keypair, network_stub)| {
+    //     let kv_store = MemDB::new();
 
-        Replica::initialize(&mut kv_store, init_as.clone(), init_vs.clone());
-        let (replica, bt_camera) = Replica::start(
-            NumberApp,
-            keypair,
-            network_stub,
-            MemDB::new(),
-            DefaultPacemaker,
-            configuration,
-        );
+    //     Replica::initialize(&mut kv_store, init_as.clone(), init_vs.clone());
+    //     todo!();
 
-        Node {
-            replica,
-            bt_camera
-        }
-    }).collect();
+    //     let (replica, bt_camera) = Replica::start(
+    //         NumberApp,
+    //         keypair,
+    //         network_stub,
+    //         MemDB::new(),
+    //         DefaultPacemaker,
+    //         configuration,
+    //     );
+
+    //     Node {
+    //         replica,
+    //         bt_camera
+    //     }
+    // }).collect();
 
     // Push an add transaction to each of the 3 initial validators.
 

@@ -7,7 +7,8 @@ pub enum Message {
 
 pub enum ProgressMessage {
     Proposal(Proposal),
-    Vote(Vote)
+    Vote(Vote),
+    NewView(ViewNumber, QuorumCertificate),
 }
 
 impl ProgressMessage {
@@ -16,6 +17,7 @@ impl ProgressMessage {
             ProgressMessage::Proposal(Proposal::New { vote, .. }) => vote.view,
             ProgressMessage::Proposal(Proposal::Nudge { vote, .. }) => vote.view,
             ProgressMessage::Vote(Vote { view, .. }) => *view,
+            ProgressMessage::NewView(view, _) => *view,
         }
     } 
 }
@@ -36,6 +38,7 @@ pub struct Vote {
     view: ViewNumber,
     block: CryptoHash,
     phase: Phase,
+    signature: SignatureBytes,
 }
 
 pub enum SyncMessage {

@@ -10,6 +10,8 @@ use crate::messages::*;
 pub trait Network: Clone + Send + 'static {
     fn update_validator_set(&mut self, validator_set: ValidatorSet);
 
+    fn broadcast(&mut self, message: Message);
+
     /// Send a message to the specified peer without blocking.
     fn send(&mut self, peer: PublicKeyBytes, message: Message);
 
@@ -54,6 +56,7 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
             thread::yield_now();
         }
     });
+    todo!();
     let progress_message_filter = ProgressMessageFilter {
         recycler: to_progress_msg_filter.clone(),
         receiver: progress_msg_from_poller,
@@ -70,6 +73,16 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
 }
 
 pub(crate) struct ProgressMessageSender<N: Network>(N);
+
+impl<N: Network> ProgressMessageSender<N> {
+    pub(crate) fn send(&mut self, peer: PublicKeyBytes, msg: ProgressMessage) {
+        todo!()
+    }
+
+    pub(crate) fn broadcast(&mut self, msg: ProgressMessage) {
+        todo!()
+    }
+}
 
 /// A stream of Progress Messages for the current view. Progress messages received from this stream are
 /// guaranteed to have correct signatures.

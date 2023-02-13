@@ -23,12 +23,16 @@
 //! without loading the entire block from storage, which may be expensive. The key suffixes on which each of
 //! block's fields are stored are also defined in [kv_paths].
 
+use crate::types::*;
 use std::marker::PhantomData;
 
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
 pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
 impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
+    pub(crate) fn insert_block(&mut self, block: Block, app_state_updates: Option<AppStateUpdates>, validator_set_updates: Option<ValidatorSetUpdates>) {
+        todo!()
+    }
 }
 
 pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
@@ -37,7 +41,9 @@ pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 pub struct BlockTreeSnapshot<'a, S: 'a + KVGet>(S, PhantomData<&'a ()>);
 
 impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
-    fn state()
+    fn state(&self) -> Value {
+        todo!()
+    }
 }
 
 pub trait KVStore<'a>: KVGet + 'static {
