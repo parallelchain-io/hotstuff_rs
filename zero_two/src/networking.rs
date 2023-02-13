@@ -2,9 +2,9 @@
 //! interact with HotStuff-rs' threads through implementations of the [Network] trait.
 
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Instant, Duration};
-use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet};
+use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID};
 use crate::messages::*;
 
 pub trait Network: Clone + Send + 'static {
@@ -26,10 +26,10 @@ pub trait Network: Clone + Send + 'static {
 /// Spawn the poller thread, which polls the Network for messages and distributes them into the ProgressMessageFilter,
 /// or SyncRequestReceiver, or the SyncResponseReceiver according to their variant.
 pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receiver<()>) -> (
-    thread::JoinHandle<()>,
+    JoinHandle<()>,
     ProgressMessageFilter,
-    SyncRequestReceiver,
-    SyncResponseReceiver,
+    Receiver<SyncRequest>,
+    Receiver<SyncResponse>,
 ) {
     let (to_progress_msg_filter, progress_msg_from_poller) = mpsc::channel();
     let (to_sync_request_receiver, sync_request_from_poller) = mpsc::channel();
@@ -72,30 +72,35 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
     )
 }
 
-pub(crate) struct ProgressMessageSender<N: Network>(N);
+pub(crate) struct ProgressMessageStub;
 
-impl<N: Network> ProgressMessageSender<N> {
-    pub(crate) fn send(&mut self, peer: PublicKeyBytes, msg: ProgressMessage) {
+impl ProgressMessageStub {
+    pub(crate) fn recv(&self, cur_view: ViewNumber, deadline: Instant) -> Option<(PublicKeyBytes, ProgressMessage)> {
         todo!()
     }
 
-    pub(crate) fn broadcast(&mut self, msg: ProgressMessage) {
+    pub(crate) fn send(&self, peer: PublicKeyBytes, msg: ProgressMessage) {
+        todo!()
+    }
+
+    pub(crate) fn broadcast(&self, msg: ProgressMessage) {
         todo!()
     }
 }
 
-/// A stream of Progress Messages for the current view. Progress messages received from this stream are
-/// guaranteed to have correct signatures.
+/// A stream of Progress Messages for the current view and specified app. Progress messages received from
+/// this stream are guaranteed to have correct signatures.
 /// 
 /// Progress messages from the next view (current view + 1) are cached, while those from all other views 
 /// are dropped.
-pub(crate) struct ProgressMessageFilter {
+struct ProgressMessageFilter {
+    app_id: AppID,
     recycler: Sender<(PublicKeyBytes, ProgressMessage)>,
     receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
 }
 
 impl ProgressMessageFilter {
-    pub(crate) fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKeyBytes, ProgressMessage)> {
+    fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKeyBytes, ProgressMessage)> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             let (origin, msg) = match self.receiver.recv_timeout(deadline - Instant::now()) {
@@ -104,11 +109,12 @@ impl ProgressMessageFilter {
                 Err(RecvTimeoutError::Disconnected) => panic!("ProgressMessageFilter disconnected from poller"),
             };
 
-            if msg.view() == cur_view {
-                // Verify signature.
-                return Some((origin, msg)) 
-            } else if msg.view() == cur_view + 1 {
-                self.recycler.send((origin, msg));
+            if msg.app_id() == self.app_id {
+                if msg.view() == cur_view {
+                    return Some((origin, msg)) 
+                } else if msg.view() == cur_view + 1 {
+                    self.recycler.send((origin, msg));
+                }   
             }
         }
 
@@ -116,34 +122,20 @@ impl ProgressMessageFilter {
     }
 }
 
-pub(crate) struct SyncMessageSender<N: Network>(N);
+pub(crate) struct SyncClientStub;
 
-pub(crate) struct SyncRequestReceiver(Receiver<(PublicKeyBytes, SyncRequest)>);
+impl SyncClientStub {
 
-impl SyncRequestReceiver {
+}
+
+pub(crate) struct SyncServerStub;
+
+impl SyncServerStub {
     pub(crate) fn recv(&self) -> (PublicKeyBytes, SyncRequest) {
-        match self.0.recv() {
-            Ok(o_m) => o_m,
-            Err(RecvError) => panic!("SyncRequestReceiver disconnected from poller"),
-        }
+        todo!()
     }
-}
 
-pub(crate) struct SyncResponseSender<N: Network>(N);
-
-pub(crate) struct SyncResponseReceiver(Receiver<(PublicKeyBytes, SyncResponse)>);
-
-impl SyncResponseReceiver {
-    pub(crate) fn recv(&self, timeout: Duration) -> Option<(PublicKeyBytes, SyncResponse)> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            match self.0.recv_timeout(deadline - Instant::now()) {
-                Ok(o_m) => return Some(o_m),
-                Err(RecvTimeoutError::Timeout) => continue,
-                Err(RecvTimeoutError::Disconnected) => panic!("SyncResponseReceiver disconnected from poller"),
-            }
-        }
-
-        None
+    pub(crate) fn send(&self, peer: &PublicKeyBytes, msg: SyncResponse) {
+        todo!()
     }
 }

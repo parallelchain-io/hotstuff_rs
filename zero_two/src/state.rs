@@ -12,10 +12,10 @@
 //! - **Block Hash to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
 //! - **Committed App State** ([Key] -> [Value]).
 //! - **Committed Validator Set** ([ValidatorSet]).
-//! - **Pending App State Changes** (`CryptoHash -> AppStateChanges`).
-//! - **Pending Validator Set Changes** (`CryptoHash -> ValidatorSetChanges`).
+//! - **Pending App State Updates** (`CryptoHash -> AppStateUpdates`).
+//! - **Pending Validator Set Updates** (`CryptoHash -> ValidatorSetUpdates`).
 //! - **Locked View** (`ViewNumber`): the highest view number of a quorum certificate contained in a block that has a child.
-//! - **Highest Entered View** (`ViewNumber`): the highest view that this validator has entered.
+//! - **Highest Voted View** (`ViewNumber`): the highest view that this validator has voted in.
 //! - **Highest Quorum Certificate** (`QuorumCertificate`): among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.
 //! 
 //! The location of each of these variables in a KV store is defined in [kv_paths]. Note that the fields of a
@@ -30,10 +30,32 @@ use std::marker::PhantomData;
 pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
 impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
-    pub(crate) fn insert_block(&mut self, block: Block, app_state_updates: Option<AppStateUpdates>, validator_set_updates: Option<ValidatorSetUpdates>) {
+    pub(crate) fn insert_block(
+        &mut self, 
+        block: Block, 
+        app_state_updates: Option<AppStateUpdates>, 
+        validator_set_updates: Option<ValidatorSetUpdates>
+    ) {
+        todo!()
+    }
+
+    // Returns false if inserting the block may cause a committed block to be reverted, or if the block
+    // has the wrong kind of quorum certificate:
+    // 1. A block must contain either a generic qc or a commit qc.
+    // 2. A block with a commit qc should extend a validator-set-changing parent.
+    // 3. A block with a generic qc should extend a non-validator-set-changing parent.
+    pub(crate) fn can_accept(
+        &self,
+        block: &Block
+    ) -> bool {
+        todo!()
+    }
+
+    pub(crate) fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot> {
         todo!()
     }
 }
+
 
 pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
@@ -43,6 +65,37 @@ pub struct BlockTreeSnapshot<'a, S: 'a + KVGet>(S, PhantomData<&'a ()>);
 impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
     fn state(&self) -> Value {
         todo!()
+    }
+
+    pub fn blocks_from_tail(&self, tail: &CryptoHash, limit: u32) -> Option<Vec<Block>> {
+        let mut res = Vec::with_capacity(limit as usize);
+
+        // 1. Get tail block.
+        let tail_block = self.block(tail)?;
+        let mut cursor = tail_block.hash;
+        res.push(tail_block);
+
+        // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
+        while res.len() < limit {
+            let child = match self.child(&cursor) {
+                Ok(block) => block,
+                Err(ChildrenNotYetCommittedError) => break,
+            };
+            cursor = child.hash;
+            res.push(child);
+        }
+
+        // 3. If limit is not yet satisfied, get speculative blocks.
+        todo!();
+        // if res.len() < limit {
+        //     if let Some(block) = self.get_top_block() {
+        //         // We reverse (.rev) uncommitted blocks so that blocks with lower heights appear first.
+        //         let uncommitted_blocks: Vec<Block> = self.get_chain_between_speculative_block_and_highest_committed_block(&block.hash).into_iter().rev().collect();
+        //         res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
+        //     }
+        // }
+
+        Some(res)
     }
 }
 
@@ -72,10 +125,10 @@ mod kv_paths {
     pub(super) const BLOCK_HASH_TO_CHILDREN: [u8; 1] = [2];
     pub(super) const COMMITTED_APP_STATE: [u8; 1] = [3];
     pub(super) const COMMITTED_VALIDATOR_SET: [u8; 1] = [4];
-    pub(super) const PENDING_APP_STATE_CHANGES: [u8; 1] = [5];
-    pub(super) const PENDING_VALIDATOR_SET_CHANGES: [u8; 1] = [6];
+    pub(super) const PENDING_APP_STATE_UPDATES: [u8; 1] = [5]; 
+    pub(super) const PENDING_VALIDATOR_SET_UPDATES: [u8; 1] = [6];
     pub(super) const LOCKED_VIEW: [u8; 1] = [7];
-    pub(super) const HIGHEST_ENTERED_VIEW: [u8; 1] = [8];
+    pub(super) const HIGHEST_VOTED_VIEW: [u8; 1] = [8];
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
 
     // Fields of Block

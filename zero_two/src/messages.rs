@@ -7,30 +7,41 @@ pub enum Message {
 
 pub enum ProgressMessage {
     Proposal(Proposal),
+    Nudge(Nudge), 
     Vote(Vote),
-    NewView(ViewNumber, QuorumCertificate),
+    NewView(NewView),
 }
 
 impl ProgressMessage {
+    pub fn app_id(&self) -> AppID {
+        match self {
+            ProgressMessage::Proposal(Proposal { app_id, .. }) => *app_id,
+            ProgressMessage::Nudge(Nudge { app_id, .. }) => *app_id,
+            ProgressMessage::Vote(Vote { app_id, .. })  => *app_id,
+            ProgressMessage::NewView(NewView { app_id, .. }) => *app_id,
+        }
+    }
+
     pub fn view(&self) -> ViewNumber {
         match self {
-            ProgressMessage::Proposal(Proposal::New { vote, .. }) => vote.view,
-            ProgressMessage::Proposal(Proposal::Nudge { vote, .. }) => vote.view,
+            ProgressMessage::Proposal(Proposal { view, .. }) => *view,
+            ProgressMessage::Nudge(Nudge { view, .. }) => *view,
             ProgressMessage::Vote(Vote { view, .. }) => *view,
-            ProgressMessage::NewView(view, _) => *view,
+            ProgressMessage::NewView(NewView { view, .. }) => *view,
         }
     } 
 }
 
-pub enum Proposal {
-    New {
-        block: Block,
-        vote: Vote,
-    },
-    Nudge {
-        justify: QuorumCertificate,
-        vote: Vote,
-    }
+pub struct Proposal {
+    app_id: AppID,
+    view: ViewNumber,
+    block: Block,
+}
+
+pub struct Nudge {
+    app_id: AppID,
+    view: ViewNumber,
+    justify: QuorumCertificate,
 }
 
 pub struct Vote {
@@ -41,17 +52,51 @@ pub struct Vote {
     signature: SignatureBytes,
 }
 
+impl Vote {
+    pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
+        todo!()
+    }
+}
+
+pub struct NewView {
+    app_id: AppID,
+    view: ViewNumber,
+    highest_qc: QuorumCertificate
+}
+
 pub enum SyncMessage {
     SyncRequest(SyncRequest),
     SyncResponse(SyncResponse),
 }
 
 pub struct SyncRequest {
-    highest_committed_block: CryptoHash,
-    limit: u32,
+    pub highest_committed_block: CryptoHash,
+    pub limit: u32,
 }
 
 pub struct SyncResponse {
-    blocks: Vec<Block>,
-    next_qc: Option<QuorumCertificate>, 
+    pub blocks: Option<Vec<Block>>,
+    pub highest_qc: Option<QuorumCertificate>, 
+}
+
+pub(crate) struct ProgressMessageFactory(pub(crate) Keypair);
+
+impl ProgressMessageFactory {
+    // phase must be either Generic or Prepare.
+    pub(crate) fn new_proposal(&self, app_id: AppID, view: ViewNumber, block: Block, phase: Phase) -> ProgressMessage {
+        todo!()
+    }
+
+    // justify.phase must be either Prepare or Precommit.
+    pub(crate) fn nudge_proposal(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, justify: QuorumCertificate) -> ProgressMessage {
+        todo!()
+    }
+
+    pub(crate) fn vote(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, phase: Phase) -> ProgressMessage {
+        todo!()
+    }
+
+    pub(crate) fn new_view(&self, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {
+        todo!()
+    }
 }

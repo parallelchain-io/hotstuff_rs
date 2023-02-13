@@ -158,29 +158,29 @@ fn integration_test() {
         state.insert(NUMBER_KEY.to_vec(), usize::to_le_bytes(0).to_vec());
         state
     };
-    // let init_vs: ValidatorSetUpdates = keypairs[0..3].iter().map(|k| (*k.public.as_bytes(), 1)).collect();
-    // let configuration: Configuration = todo!();
+    let init_vs: ValidatorSetUpdates = keypairs[0..3].iter().map(|k| (*k.public.as_bytes(), 1)).collect();
+    let configuration: Configuration = todo!();
 
-    // let nodes: Vec<Node> = mock_network(keypairs).into_iter().map(|(keypair, network_stub)| {
-    //     let kv_store = MemDB::new();
+    let nodes: Vec<Node> = mock_network(keypairs).into_iter().map(|(keypair, network_stub)| {
+        let kv_store = MemDB::new();
 
-    //     Replica::initialize(&mut kv_store, init_as.clone(), init_vs.clone());
-    //     todo!();
+        Replica::initialize(&mut kv_store, init_as.clone(), init_vs.clone());
+        todo!();
 
-    //     let (replica, bt_camera) = Replica::start(
-    //         NumberApp,
-    //         keypair,
-    //         network_stub,
-    //         MemDB::new(),
-    //         DefaultPacemaker,
-    //         configuration,
-    //     );
+        let (replica, bt_camera) = Replica::start(
+            NumberApp,
+            keypair,
+            network_stub,
+            MemDB::new(),
+            DefaultPacemaker,
+            configuration,
+        );
 
-    //     Node {
-    //         replica,
-    //         bt_camera
-    //     }
-    // }).collect();
+        Node {
+            replica,
+            bt_camera
+        }
+    }).collect();
 
     // Push an add transaction to each of the 3 initial validators.
 

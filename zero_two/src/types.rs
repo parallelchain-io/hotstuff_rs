@@ -1,4 +1,5 @@
 use std::collections::{hash_set, HashSet, hash_map, HashMap};
+use crate::messages::Vote;
 
 pub use ed25519_dalek::{
     PublicKey,
@@ -39,6 +40,12 @@ pub struct QuorumCertificate {
     pub block: CryptoHash,
     pub phase: Phase,
     pub signatures: SignatureSet,
+}
+
+impl QuorumCertificate {
+    pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+        todo!()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -99,6 +106,15 @@ pub struct ValidatorSet(Vec<(PublicKeyBytes, Power)>);
 
 impl ValidatorSet {
     pub fn contains(&self, validator: &PublicKeyBytes) -> bool {
+        todo!()
+    }
+}
+
+/// Helps leaders incrementally form QuorumCertificates by combining votes for the same view, block, and phase.
+pub(crate) struct VoteCollector;
+
+impl VoteCollector {
+    pub(crate) fn collect(&mut self, vote: Vote) -> Option<QuorumCertificate> {
         todo!()
     }
 }
