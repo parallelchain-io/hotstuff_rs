@@ -1,3 +1,10 @@
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
 use crate::types::*;
 
 pub enum Message {
@@ -79,16 +86,16 @@ pub struct SyncResponse {
     pub highest_qc: Option<QuorumCertificate>, 
 }
 
-pub(crate) struct ProgressMessageFactory(pub(crate) Keypair);
+pub(crate) struct ProgressMessageFactory(pub(crate) &Keypair);
 
 impl ProgressMessageFactory {
     // phase must be either Generic or Prepare.
-    pub(crate) fn new_proposal(&self, app_id: AppID, view: ViewNumber, block: Block, phase: Phase) -> ProgressMessage {
+    pub(crate) fn proposal(&self, app_id: AppID, view: ViewNumber, block: Block, phase: Phase) -> ProgressMessage {
         todo!()
     }
 
     // justify.phase must be either Prepare or Precommit.
-    pub(crate) fn nudge_proposal(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, justify: QuorumCertificate) -> ProgressMessage {
+    pub(crate) fn nudge(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, justify: QuorumCertificate) -> ProgressMessage {
         todo!()
     }
 

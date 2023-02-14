@@ -1,4 +1,11 @@
-//! HotStuff-rs' has pluggable peer-to-peer networking, with each peer identified by a PublicKey. Networking providers
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
+//! HotStuff-rs' has modular peer-to-peer networking, with each peer identified by a PublicKey. Networking providers
 //! interact with HotStuff-rs' threads through implementations of the [Network] trait.
 
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
@@ -83,7 +90,7 @@ impl ProgressMessageStub {
         todo!()
     }
 
-    pub(crate) fn broadcast(&self, msg: ProgressMessage) {
+    pub(crate) fn broadcast(&self, msg: &ProgressMessage) {
         todo!()
     }
 }
@@ -95,7 +102,6 @@ impl ProgressMessageStub {
 /// are dropped.
 struct ProgressMessageFilter {
     app_id: AppID,
-    recycler: Sender<(PublicKeyBytes, ProgressMessage)>,
     receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
 }
 
@@ -112,9 +118,7 @@ impl ProgressMessageFilter {
             if msg.app_id() == self.app_id {
                 if msg.view() == cur_view {
                     return Some((origin, msg)) 
-                } else if msg.view() == cur_view + 1 {
-                    self.recycler.send((origin, msg));
-                }   
+                } 
             }
         }
 

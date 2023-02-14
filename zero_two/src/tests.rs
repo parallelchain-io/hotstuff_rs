@@ -1,6 +1,13 @@
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
 //! The test suite for HotStuff-rs involves an [NumberApp](app) that keeps track of a single number in its state, which
-//! is initially 0. Users can push transactions to this app to increase this number, or change its validator
-//! set.
+//! is initially 0. Tests push transactions to this app to increase this number, or change its validator set, and then
+//! query its state to check if consensus is proceeding.
 //! 
 //! The replicas used in this test suite use a mock [NetworkStub], a mock [MemDB](key-value store), and
 //! the [crate::pacemaker::DefaultPacemaker]. These use channels to simulate communication, and a hashmap to 
@@ -13,7 +20,7 @@ use std::sync::{
     MutexGuard,
     mpsc::{Sender, Receiver, TryRecvError}
 };
-use crate::app::{App, ProposeBlockRequest, ValidateBlockRequest, ProposeBlockResponse, ValidateBlockResponse};
+use crate::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBlockResponse, ValidateBlockResponse};
 use crate::config::Configuration;
 use crate::pacemaker::DefaultPacemaker;
 use crate::replica::Replica;
@@ -69,7 +76,7 @@ impl App<MemDBSnapshot<'_>> for NumberApp {
         1
     }
 
-    fn propose_block(&mut self, request: ProposeBlockRequest<MemDBSnapshot>) -> ProposeBlockResponse {
+    fn produce_block(&mut self, request: ProduceBlockRequest<MemDBSnapshot>) -> ProduceBlockResponse {
         let number = request.app_state().get(&NUMBER_KEY);
         todo!()
     }

@@ -1,20 +1,27 @@
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
 use crate::types::*;
 use crate::state::{BlockTreeSnapshot, KVGet};
 
 pub trait App<K: KVGet> {
     fn id(&self) -> AppID;
-    fn propose_block(&mut self, request: ProposeBlockRequest<K>) -> ProposeBlockResponse;
+    fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
     fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
 }
 
-pub struct ProposeBlockRequest<'a, S: KVGet> {
+pub struct ProduceBlockRequest<'a, S: KVGet> {
     cur_view: ViewNumber,
     prev_block: CryptoHash,
     block_tree: BlockTreeSnapshot<'a, S>,
     app_state: SpeculativeAppState,
 }
 
-impl<'a, S: KVGet> ProposeBlockRequest<'a, S> {
+impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
     pub fn cur_view(&self) -> ViewNumber {
         self.cur_view
     }
@@ -32,7 +39,7 @@ impl<'a, S: KVGet> ProposeBlockRequest<'a, S> {
     }
 }
 
-pub struct ProposeBlockResponse {
+pub struct ProduceBlockResponse {
     data: Data,
     app_state_updates: Option<AppStateUpdates>,
     validator_set_updates: Option<ValidatorSetUpdates>

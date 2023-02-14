@@ -1,3 +1,10 @@
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
 //! This module defines types and methods used to access and mutate the persistent state that a HotStuff-rs
 //! validator keeps track for the operation of the protocol, and for its application.
 //! 
@@ -15,7 +22,7 @@
 //! - **Pending App State Updates** (`CryptoHash -> AppStateUpdates`).
 //! - **Pending Validator Set Updates** (`CryptoHash -> ValidatorSetUpdates`).
 //! - **Locked View** (`ViewNumber`): the highest view number of a quorum certificate contained in a block that has a child.
-//! - **Highest Voted View** (`ViewNumber`): the highest view that this validator has voted in.
+//! - **Highest View Entered** (`ViewNumber`): the highest view that this validator has entered.
 //! - **Highest Quorum Certificate** (`QuorumCertificate`): among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.
 //! 
 //! The location of each of these variables in a KV store is defined in [kv_paths]. Note that the fields of a
@@ -44,7 +51,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
     // 1. A block must contain either a generic qc or a commit qc.
     // 2. A block with a commit qc should extend a validator-set-changing parent.
     // 3. A block with a generic qc should extend a non-validator-set-changing parent.
-    pub(crate) fn can_accept(
+    pub(crate) fn validate(
         &self,
         block: &Block
     ) -> bool {
@@ -128,7 +135,7 @@ mod kv_paths {
     pub(super) const PENDING_APP_STATE_UPDATES: [u8; 1] = [5]; 
     pub(super) const PENDING_VALIDATOR_SET_UPDATES: [u8; 1] = [6];
     pub(super) const LOCKED_VIEW: [u8; 1] = [7];
-    pub(super) const HIGHEST_VOTED_VIEW: [u8; 1] = [8];
+    pub(super) const HIGHEST_VIEW_ENTERED: [u8; 1] = [8];
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
 
     // Fields of Block
