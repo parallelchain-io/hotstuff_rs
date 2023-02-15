@@ -40,23 +40,23 @@ impl ProgressMessage {
 }
 
 pub struct Proposal {
-    app_id: AppID,
-    view: ViewNumber,
-    block: Block,
+    pub app_id: AppID,
+    pub view: ViewNumber,
+    pub block: Block,
 }
 
 pub struct Nudge {
-    app_id: AppID,
-    view: ViewNumber,
-    justify: QuorumCertificate,
+    pub app_id: AppID,
+    pub view: ViewNumber,
+    pub justify: QuorumCertificate,
 }
 
 pub struct Vote {
-    app_id: AppID,
-    view: ViewNumber,
-    block: CryptoHash,
-    phase: Phase,
-    signature: SignatureBytes,
+    pub app_id: AppID,
+    pub view: ViewNumber,
+    pub block: CryptoHash,
+    pub phase: Phase,
+    pub signature: SignatureBytes,
 }
 
 impl Vote {
@@ -66,9 +66,9 @@ impl Vote {
 }
 
 pub struct NewView {
-    app_id: AppID,
-    view: ViewNumber,
-    highest_qc: QuorumCertificate
+    pub app_id: AppID,
+    pub view: ViewNumber,
+    pub highest_qc: QuorumCertificate
 }
 
 pub enum SyncMessage {
@@ -85,17 +85,17 @@ pub struct SyncResponse {
     pub blocks: Option<Vec<Block>>,
     pub highest_qc: Option<QuorumCertificate>, 
 }
+ 
+pub(crate) struct Keypair(DalekKeypair);
 
-pub(crate) struct ProgressMessageFactory(pub(crate) &Keypair);
-
-impl ProgressMessageFactory {
+impl Keypair {
     // phase must be either Generic or Prepare.
-    pub(crate) fn proposal(&self, app_id: AppID, view: ViewNumber, block: Block, phase: Phase) -> ProgressMessage {
+    pub(crate) fn proposal(&self, app_id: AppID, view: ViewNumber, block: &Block) -> ProgressMessage {
         todo!()
     }
 
     // justify.phase must be either Prepare or Precommit.
-    pub(crate) fn nudge(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, justify: QuorumCertificate) -> ProgressMessage {
+    pub(crate) fn nudge(&self, app_id: AppID, view: ViewNumber, justify: &QuorumCertificate) -> ProgressMessage {
         todo!()
     }
 
@@ -103,7 +103,11 @@ impl ProgressMessageFactory {
         todo!()
     }
 
-    pub(crate) fn new_view(&self, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {
+    pub(crate) fn new_view(&self, app_id: AppID, view: ViewNumber, highest_qc: &QuorumCertificate) -> ProgressMessage {
         todo!()
+    }
+
+    pub(crate) fn public(&self) -> PublicKeyBytes {
+        self.0.public.to_bytes()
     }
 }

@@ -9,8 +9,8 @@ use std::collections::{hash_set, HashSet, hash_map, HashMap};
 use crate::messages::Vote;
 
 pub use ed25519_dalek::{
+    Keypair as DalekKeypair,
     PublicKey,
-    Keypair, 
     Signature,
 };
 
@@ -22,11 +22,7 @@ pub type Data = Vec<Datum>;
 pub type Datum = Vec<u8>;
 pub type Key = Vec<u8>;
 pub type Power = u64;
-
-// PublicKey in version 1 of dalek doesn't implement hash: https://github.com/dalek-cryptography/ed25519-dalek/issues/183
 pub type PublicKeyBytes = [u8; 32];
-pub type SignatureBytes = [u8; 64];
-
 pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
 pub type Value = Vec<u8>;
 pub type ViewNumber = u64;
@@ -38,6 +34,13 @@ pub struct Block {
     pub justify: QuorumCertificate,
     pub data_hash: CryptoHash,
     pub data: Data,
+}
+
+impl Block {
+    /// Checks if data_hash, hash, and justify are cryptographically correct.
+    pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+
+    }
 }
 
 #[derive(Clone)]
@@ -118,10 +121,22 @@ impl ValidatorSet {
 }
 
 /// Helps leaders incrementally form QuorumCertificates by combining votes for the same view, block, and phase.
-pub(crate) struct VoteCollector;
+pub(crate) struct VoteCollector<'a> {
+    view: ViewNumber,
+    validator_set: &'a ValidatorSet,
+}
 
-impl VoteCollector {
-    pub(crate) fn collect(&mut self, vote: Vote) -> Option<QuorumCertificate> {
+impl<'a> VoteCollector<'a> {
+    pub(crate) fn new(view: ViewNumber, validator_set: &ValidatorSet) -> VoteCollector {
+        todo!()
+    }
+
+    // Adds the vote to a signature set for the specified view, block, and phase. Returning a quorum certificate
+    // if adding the vote allows for one to be created.
+    // 
+    // If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not part
+    // of its validator set, then this is a no-op.
+    pub(crate) fn collect(&mut self, signer: &PublicKeyBytes, vote: Vote) -> Option<QuorumCertificate> {
         todo!()
     }
 }

@@ -39,22 +39,33 @@ pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
     pub(crate) fn insert_block(
         &mut self, 
-        block: Block, 
-        app_state_updates: Option<AppStateUpdates>, 
-        validator_set_updates: Option<ValidatorSetUpdates>
+        block: &Block, 
+        app_state_updates: Option<&AppStateUpdates>, 
+        validator_set_updates: Option<&ValidatorSetUpdates>
     ) {
         todo!()
     }
 
-    // Returns false if inserting the block may cause a committed block to be reverted, or if the block
-    // has the wrong kind of quorum certificate:
-    // 1. A block must contain either a generic qc or a commit qc.
-    // 2. A block with a commit qc should extend a validator-set-changing parent.
-    // 3. A block with a generic qc should extend a non-validator-set-changing parent.
-    pub(crate) fn validate(
-        &self,
-        block: &Block
-    ) -> bool {
+    // Returns whether a block can be safely inserted. For this, it is necessary that:
+    // 1. Its qc's view number is greater than or equal to locked view.
+    // 2. Its qc's must be either a generic qc or a commit qc.
+    // 3. If its qc is a commit qc, it should justify a validator-set-changing parent.
+    // 4. If its qc is a generic qc, it should justify a non-validator-set-changing parent.
+    //
+    // # Precondition
+    // block.is_correct().
+    pub(crate) fn block_can_be_inserted(&self, block: &Block) -> bool {
+        todo!()
+    }
+
+    // Returns whether a qc can be safely set as highest_qc. For this, it is necessary that:
+    // 1. Its view number is greater than or equal to locked view.
+    // 2. Its either a prepare qc or a precommit qc.
+    // 3. It justifies a validator-set-changing block. 
+    //
+    // # Precondition
+    // qc.is_correct().
+    pub(crate) fn qc_can_be_inserted(&self, qc: &QuorumCertificate) -> bool {
         todo!()
     }
 

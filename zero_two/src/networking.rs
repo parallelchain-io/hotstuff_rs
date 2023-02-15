@@ -82,47 +82,16 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
 pub(crate) struct ProgressMessageStub;
 
 impl ProgressMessageStub {
-    pub(crate) fn recv(&self, cur_view: ViewNumber, deadline: Instant) -> Option<(PublicKeyBytes, ProgressMessage)> {
+    pub(crate) fn recv(&self, app_id: AppID, cur_view: ViewNumber, deadline: Instant) -> Option<(PublicKeyBytes, ProgressMessage)> {
         todo!()
     }
 
-    pub(crate) fn send(&self, peer: PublicKeyBytes, msg: ProgressMessage) {
+    pub(crate) fn send(&self, peer: &PublicKeyBytes, msg: &ProgressMessage) {
         todo!()
     }
 
     pub(crate) fn broadcast(&self, msg: &ProgressMessage) {
         todo!()
-    }
-}
-
-/// A stream of Progress Messages for the current view and specified app. Progress messages received from
-/// this stream are guaranteed to have correct signatures.
-/// 
-/// Progress messages from the next view (current view + 1) are cached, while those from all other views 
-/// are dropped.
-struct ProgressMessageFilter {
-    app_id: AppID,
-    receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
-}
-
-impl ProgressMessageFilter {
-    fn recv(&self, cur_view: ViewNumber, timeout: Duration) -> Option<(PublicKeyBytes, ProgressMessage)> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            let (origin, msg) = match self.receiver.recv_timeout(deadline - Instant::now()) {
-                Ok(o_m) => o_m,
-                Err(RecvTimeoutError::Timeout) => continue,
-                Err(RecvTimeoutError::Disconnected) => panic!("ProgressMessageFilter disconnected from poller"),
-            };
-
-            if msg.app_id() == self.app_id {
-                if msg.view() == cur_view {
-                    return Some((origin, msg)) 
-                } 
-            }
-        }
-
-        None
     }
 }
 
