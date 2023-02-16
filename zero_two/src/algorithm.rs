@@ -51,9 +51,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::cmp::{min, max};
 use std::time::{Instant, Duration};
 use std::thread::{self, JoinHandle};
+use rand::seq::SliceRandom;
 use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
 use crate::app::ProduceBlockResponse;
-use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge};
+use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge, SyncRequest};
 use crate::pacemaker::Pacemaker;
 use crate::types::*;
 use crate::state::*;
@@ -68,6 +69,7 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
     proposal_rebroadcast_period: Duration,
     pm_stub: ProgressMessageStub,
     sync_stub: SyncClientStub,
+    sync_request_limit: u32,
     shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
@@ -83,7 +85,7 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
 
             let progressed = execute_view(&me, cur_view, pacemaker, proposal_rebroadcast_period, &mut block_tree, &mut pm_stub, &mut app);
             if !progressed && block_tree.highest_qc().view + 2 {
-                sync(&mut block_tree, &mut sync_stub);
+                sync(&mut block_tree, &mut sync_stub, sync_request_limit, &mut app);
             }
 
             cur_view += 1;
@@ -351,8 +353,55 @@ fn on_receive_new_view<'a, K: KVStore<'a>>(
 }
 
 fn sync<'a, K: KVStore<'a>>(
+    block_tree: &mut BlockTree<'a, K>, 
+    sync_stub: &mut SyncClientStub,
+    app: &mut impl App<K::Snapshot>,
+    pacemaker: &impl Pacemaker,
+) {
+    // Pick random validator.
+    if let Some(peer) = block_tree.committed_vs().random() {
+        sync_with(&peer, block_tree, sync_stub, app, pacemaker);
+    }
+}
+
+fn sync_with<'a, K: KVStore<'a>>(
+    peer: &PublicKeyBytes, 
     block_tree: &mut BlockTree<'a, K>,
     sync_stub: &mut SyncClientStub,
+    app: &mut impl App<K::Snapshot>,
+    pacemaker: &impl Pacemaker,
 ) {
-    todo!()
+    loop {
+        let request = SyncRequest {
+            highest_committed_block: block_tree.highest_committed_block(),
+            limit: pacemaker.sync_request_limit(),
+        };
+        sync_stub.send_request(&peer, &request);
+
+        let response = sync_stub.recv_response(&peer);
+        for block in response.blocks {
+            if !block.is_correct(&block_tree.committed_qc())
+                || !block_tree.block_can_be_inserted(&block) {
+                return
+            }
+
+            let validate_block_request: ValidateBlockRequest<K::Snapshot>;
+            if let ValidateBlockResponse::Valid {
+                app_state_updates,
+                validator_set_updates
+            } = app.validate_block(validate_block_request) {
+                block_tree.insert_block(&block, &app_state_updates, &validator_set_updates)
+            } else {
+                return
+            }
+        }
+
+        if block_tree.qc_can_be_inserted(&response.highest_qc) {
+            block_tree.set_highest_qc(&response.highest_qc)
+        }
+
+        if response.blocks.len() == 0 {
+            return
+        }
+    }
 }

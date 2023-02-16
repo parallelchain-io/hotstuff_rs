@@ -47,10 +47,11 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
     }
 
     // Returns whether a block can be safely inserted. For this, it is necessary that:
-    // 1. Its qc's view number is greater than or equal to locked view.
-    // 2. Its qc's must be either a generic qc or a commit qc.
-    // 3. If its qc is a commit qc, it should justify a validator-set-changing parent.
-    // 4. If its qc is a generic qc, it should justify a non-validator-set-changing parent.
+    // 1. Its qc must justify a known block.
+    // 2. Its qc's view number is greater than or equal to locked view.
+    // 3. Its qc's must be either a generic qc or a commit qc.
+    // 4. If its qc is a commit qc, it should justify a validator-set-changing parent.
+    // 5. If its qc is a generic qc, it should justify a non-validator-set-changing parent.
     //
     // # Precondition
     // block.is_correct().
@@ -59,9 +60,9 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
     }
 
     // Returns whether a qc can be safely set as highest_qc. For this, it is necessary that:
-    // 1. Its view number is greater than or equal to locked view.
-    // 2. Its either a prepare qc or a precommit qc.
-    // 3. It justifies a validator-set-changing block. 
+    // 1. It justifies a known block.
+    // 2. Its view number is greater than or equal to locked view.
+    // 3. Its either a prepare qc or a precommit qc.
     //
     // # Precondition
     // qc.is_correct().

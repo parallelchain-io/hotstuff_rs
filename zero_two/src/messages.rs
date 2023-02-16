@@ -82,8 +82,8 @@ pub struct SyncRequest {
 }
 
 pub struct SyncResponse {
-    pub blocks: Option<Vec<Block>>,
-    pub highest_qc: Option<QuorumCertificate>, 
+    pub blocks: Vec<Block>,
+    pub highest_qc: QuorumCertificate, 
 }
  
 pub(crate) struct Keypair(DalekKeypair);

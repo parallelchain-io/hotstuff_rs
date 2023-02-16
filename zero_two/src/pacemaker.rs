@@ -11,6 +11,8 @@ use crate::types::*;
 pub trait Pacemaker: 'static {
     fn view_timeout(&self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> Duration;
     fn view_leader(&self, cur_view: ViewNumber, validator_set: ValidatorSet) -> PublicKeyBytes;
+    fn proposal_rebroadcast_period(&self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> u32;
+    fn sync_request_limit(&self) -> u32;
 }
 
 pub struct DefaultPacemaker;

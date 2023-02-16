@@ -98,17 +98,23 @@ impl ProgressMessageStub {
 pub(crate) struct SyncClientStub;
 
 impl SyncClientStub {
+    pub(crate) fn send_request(&self, peer: &PublicKeyBytes, msg: &SyncRequest) {
+        todo!()
+    }
 
+    pub(crate) fn recv_response(&self, peer: &PublicKeyBytes) -> SyncResponse {
+        todo!()
+    }
 }
 
 pub(crate) struct SyncServerStub;
 
 impl SyncServerStub {
-    pub(crate) fn recv(&self) -> (PublicKeyBytes, SyncRequest) {
+    pub(crate) fn recv_request(&self) -> (PublicKeyBytes, SyncRequest) {
         todo!()
     }
 
-    pub(crate) fn send(&self, peer: &PublicKeyBytes, msg: SyncResponse) {
+    pub(crate) fn send_response(&self, peer: &PublicKeyBytes, msg: SyncResponse) {
         todo!()
     }
 }

@@ -10,7 +10,7 @@ use crate::types::Keypair;
 
 #[derive(Clone)]
 pub struct Configuration {
-    pub sync_mode_execution_timeout: Duration,
+    pub sync_request_limit: u32,
     pub proposal_rebroadcast_period: Duration,
     
 }

@@ -6,6 +6,7 @@
 */
 
 use std::collections::{hash_set, HashSet, hash_map, HashMap};
+use rand::seq::SliceRandom;
 use crate::messages::Vote;
 
 pub use ed25519_dalek::{
@@ -117,6 +118,11 @@ pub struct ValidatorSet(Vec<(PublicKeyBytes, Power)>);
 impl ValidatorSet {
     pub fn contains(&self, validator: &PublicKeyBytes) -> bool {
         todo!()
+    }
+
+    pub(crate) fn random(&self) -> Option<&(PublicKeyBytes, u64)> {
+        self.0.choose(&mut rand::thread_rng())
+
     }
 }
 
