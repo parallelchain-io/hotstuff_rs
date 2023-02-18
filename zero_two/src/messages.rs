@@ -77,7 +77,7 @@ pub enum SyncMessage {
 }
 
 pub struct SyncRequest {
-    pub highest_committed_block: CryptoHash,
+    pub highest_committed_block: Option<CryptoHash>,
     pub limit: u32,
 }
 

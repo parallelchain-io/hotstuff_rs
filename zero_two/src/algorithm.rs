@@ -6,19 +6,18 @@
 */
 
 //! This module defines the algorithm thread and the procedures used in it. The algorithm thread is the driving
-//! force of a HotStuff-rs replica, it receives and sends [crate::messages::ProgressMessage](progress messages) using 
-//! the network to cause the [crate::state](Block Tree) to grow in all replicas in a safe and live manner.
+//! force of a HotStuff-rs replica, it receives and sends [progress messages](crate::messages::ProgressMessage) using 
+//! the network to cause the [Block Tree](crate::state) to grow in all replicas in a safe and live manner.
 //! 
 //! The algorithm thread is a forever loop of increasing view numbers. On initially entering this loop, the replica
-//! compares the view of the [highest qc it knows](crate::state::BlockTree::highest_qc) with the 
-//! [highest view it has previously entered](crate::state::BlockTree::highest_view_entered), selecting the higher
+//! compares the view of the highest qc it knows with the highest view it has previously entered, selecting the higher
 //! of the two, plus 1, as the view to execute.
 //! 
 //! A view proceeds in one of two modes, depending on whether the depending on whether the local replica is a
-//! [crate::replica](validator or a listener). Replicas automatically change between the two modes as the validator
+//! [validator or a listener](crate::replica). Replicas automatically change between the two modes as the validator
 //! set evolves.
 //! 
-//! The execution of a view in validator mode [execute_view](proceeds) as follows. The execution in listener view is
+//! The execution of a view in validator mode [proceeds](execute_view) as follows. The execution in listener view is
 //! exactly the validator mode flow minus all of the proposing and voting:
 //! 1. If I am the current leader (repeat this every proposal re-broadcast duration):
 //!     * If the highest qc is a generic or commit qc, call the app to produce a new block, broadcast it in a proposal,
@@ -26,32 +25,32 @@
 //!     * Otherwise, broadcast a nudge and send a vote to the next leader.
 //!     * Then, if I *am not* the next leader, move to the next view.
 //! 2. Then, poll the network for progress messages until the view timeout:
-//!     * [on_receive_proposal](On receiving a proposal):
-//!         - Call on the block tree to [crate::state::BlockTree::validate](validate) the proposed block.
+//!     * [On receiving a proposal](on_receive_proposal):
+//!         - [Call](BlockTree::block_can_be_inserted) the block tree to see if the proposed block can be inserted.
 //!         - Call on the app to validate it.
 //!         - If it passes both checks, insert the block into the block tree and send a vote for it to the next leader.
 //!         - Then, if I *am not* the next leader, move to the next view.
-//!     * [on_receive_nudge](On receiving a nudge):
-//!         - Check if its quorum certificate is higher that the block tree's highest qc.
+//!     * [On receiving a nudge](on_receive_nudge):
+//!         - Check if it is a prepare or precommit qc.
+//!         - [Call](BlockTree::qc_can_be_inserted) on the block tree to see if the qc can be set as the highest qc.
 //!         - If yes, then store it as the highest qc and send a vote for it to the next leader.
 //!         - Then, if I *am not* the next leader, move to the next view.
-//!     * [on_receive_vote](On receiving a vote):
+//!     * [On receiving a vote](on_receive_vote):
 //!         - Collect the vote.
 //!         - If enough matching votes have been collected to form a quorum certificate, store it as the highest qc.
 //!         - Then, if I *am* the next leader, move to the next view.
-//!     * [on_receive_new_view](On receving a new view):
+//!     * [On receving a new view](on_receive_new_view):
 //!         - Check if its quorum certificate is higher than the block tree's highest qc.
 //!         - If yes, then store it as the highest qc.
 //! 
-//! A view eventually times out and transitions if a transition is not triggered 'manually' by one of the steps. If a
-//! view timed out without making progress (proposing a block, sending out a vote, or collecting or receving a new 
-//! highest qc), then the algorithm thread tries to [sync](sync) with other replicas before moving on to the next view. 
+//! A view eventually times out and transitions if a transition is not triggered 'manually' by one of the steps.
+//! 
+//! ## Sync Protocol
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::cmp::{min, max};
 use std::time::{Instant, Duration};
 use std::thread::{self, JoinHandle};
-use rand::seq::SliceRandom;
 use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
 use crate::app::ProduceBlockResponse;
 use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge, SyncRequest};
@@ -69,7 +68,6 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
     proposal_rebroadcast_period: Duration,
     pm_stub: ProgressMessageStub,
     sync_stub: SyncClientStub,
-    sync_request_limit: u32,
     shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
@@ -83,9 +81,9 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
             let cur_view: ViewNumber = max(block_tree.highest_entered_view(), block_tree.highest_qc().view) + 1;
             block_tree.set_highest_entered_view(cur_view);
 
-            let progressed = execute_view(&me, cur_view, pacemaker, proposal_rebroadcast_period, &mut block_tree, &mut pm_stub, &mut app);
-            if !progressed && block_tree.highest_qc().view + 2 {
-                sync(&mut block_tree, &mut sync_stub, sync_request_limit, &mut app);
+            let view_result = execute_view(&me, cur_view, &mut pacemaker, proposal_rebroadcast_period, &mut block_tree, &mut pm_stub, &mut app);
+            if let Err(ShouldSync) = view_result {
+                sync(&mut block_tree, &mut sync_stub, &mut app, &mut pacemaker)
             }
 
             cur_view += 1;
@@ -94,17 +92,15 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns whether there was progress in the view.
-fn execute_view<'a, K: KVStore<'a>, N: Network>(
+fn execute_view<'a, K: KVStore<'a>>(
     me: &Keypair,
     view: ViewNumber,
-    pacemaker: impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
     proposal_rebroadcast_period: Duration,
     block_tree: &mut BlockTree<'a, K>,
     pm_stub: &mut ProgressMessageStub,
     app: &mut impl App<K::Snapshot>,
-) -> bool {
-    let mut progressed = false;
-
+) -> Result<(), ShouldSync> {
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
     let cur_validators: ValidatorSet = block_tree.committed_validator_set();
@@ -118,10 +114,10 @@ fn execute_view<'a, K: KVStore<'a>, N: Network>(
         if i_am_cur_leader {
             match prev_proposal_or_nudge_and_vote {
                 None => {
-                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, &mut block_tree, &pacemaker, &mut pm_stub);
+                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, &mut block_tree, pacemaker, &mut pm_stub);
                     prev_proposal_or_nudge_and_vote = Some(proposal_or_nudge_and_vote);
                     if !i_am_next_leader {
-                        return true
+                        return Ok(())
                     }
                 },
                 // Rebroadcast proposal or nudge and resend vote.
@@ -136,58 +132,58 @@ fn execute_view<'a, K: KVStore<'a>, N: Network>(
         // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
         let recv_deadline = min(Instant::now() + proposal_rebroadcast_period, view_deadline);
         loop { 
-            if let Some((origin, msg)) = pm_stub.recv(app.id(), view, recv_deadline) {
-                match msg {
+            match pm_stub.recv(app.id(), view, block_tree.highest_qc().view, recv_deadline) {
+                Ok((origin, msg)) => match msg {
                     ProgressMessage::Proposal(proposal) => {
-                        let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, &pacemaker, pm_stub);
+                        let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
                         if voted {
-                            progressed = true;
                             if !i_am_next_leader {
-                                return true
+                                return Ok(())
                             }
                         }
                     },
                     ProgressMessage::Nudge(nudge) => {
-                        let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, &pacemaker, pm_stub);
+                        let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
                         if voted {
-                            progressed = true;
                             if !i_am_next_leader {
-                                return true
+                                return Ok(())
                             }
                         }
                     },
                     ProgressMessage::Vote(vote) => {
-                        let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, &pacemaker);
-                        progressed = progressed || highest_qc_updated;
+                        let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, pacemaker);
                         if highest_qc_updated && i_am_next_leader {
-                            return true
+                            return Ok(())
                         }
                     },
                     ProgressMessage::NewView(new_view) => {
                         let highest_qc_updated = on_receive_new_view(new_view, &mut block_tree);
-                        progressed = progressed || highest_qc_updated;
                     },
-                }
+                },
+                Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture) => return Err(ShouldSync),
+                Err(ProgressMessageReceiveError::Timeout) => continue,
             }
         }
     }
 
-    return progressed
+    Ok(())
 }
+
+struct ShouldSync;
 
 /// Create a proposal or a nudge, broadcast it to the network, and then send a vote for it to the next leader.
 /// 
 /// Returns ((the broadcasted proposal or nudge, the sent vote), whether i am the next leader).
-fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
+fn propose_or_nudge<'a, K: KVStore<'a>>(
     me: &Keypair,
     cur_view: ViewNumber,
     app: &mut impl App<K::Snapshot>,
     block_tree: &mut BlockTree<'a, K>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub,
 ) -> ((ProgressMessage, ProgressMessage), bool) {
     let highest_qc = block_tree.highest_qc();
-    let (proposal_or_nudge, vote) = match highest_qc().phase {
+    let (proposal_or_nudge, vote) = match highest_qc.phase {
         // Produce a proposal.
         Phase::Generic | Phase::Commit => {
             let produce_block_request: ProduceBlockRequest<K::Snapshot>;
@@ -231,7 +227,7 @@ fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
+fn on_receive_proposal<'a, K: KVStore<'a>>(
     proposal: &Proposal,
     me: &Keypair,
     cur_view: ViewNumber,
@@ -274,13 +270,13 @@ fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_nudge<'a, K: KVStore<'a>, N: Network>(
+fn on_receive_nudge<'a, K: KVStore<'a>>(
     nudge: &Nudge,
     me: &Keypair,
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<'a, K>,
     app: &mut impl App<K::Snapshot>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub,
 ) -> (bool, bool) {
     if !nudge.justify.is_correct(&block_tree.committed_validator_set())
@@ -318,7 +314,7 @@ fn on_receive_vote<'a, K: KVStore<'a>>(
     block_tree: &mut BlockTree<'a, K>,
     cur_view: ViewNumber,
     me: &Keypair,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
 ) -> (bool, bool) {
     let highest_qc_updated = if let Some(new_qc) = votes.collect(origin, vote) {
         if block_tree.qc_can_be_inserted(&new_qc) {
@@ -340,7 +336,6 @@ fn on_receive_vote<'a, K: KVStore<'a>>(
 // Returns whether the highest qc was updated.
 fn on_receive_new_view<'a, K: KVStore<'a>>(
     new_view: NewView,
-    validator_set: &ValidatorSet,
     block_tree: &mut BlockTree<'a, K>,
 ) -> bool {
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
@@ -356,10 +351,10 @@ fn sync<'a, K: KVStore<'a>>(
     block_tree: &mut BlockTree<'a, K>, 
     sync_stub: &mut SyncClientStub,
     app: &mut impl App<K::Snapshot>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
 ) {
     // Pick random validator.
-    if let Some(peer) = block_tree.committed_vs().random() {
+    if let Some(peer) = block_tree.committed_validator_set().random() {
         sync_with(&peer, block_tree, sync_stub, app, pacemaker);
     }
 }
@@ -369,7 +364,7 @@ fn sync_with<'a, K: KVStore<'a>>(
     block_tree: &mut BlockTree<'a, K>,
     sync_stub: &mut SyncClientStub,
     app: &mut impl App<K::Snapshot>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
 ) {
     loop {
         let request = SyncRequest {
@@ -380,7 +375,7 @@ fn sync_with<'a, K: KVStore<'a>>(
 
         let response = sync_stub.recv_response(&peer);
         for block in response.blocks {
-            if !block.is_correct(&block_tree.committed_qc())
+            if !block.is_correct(&block_tree.committed_validator_set())
                 || !block_tree.block_can_be_inserted(&block) {
                 return
             }
@@ -390,7 +385,7 @@ fn sync_with<'a, K: KVStore<'a>>(
                 app_state_updates,
                 validator_set_updates
             } = app.validate_block(validate_block_request) {
-                block_tree.insert_block(&block, &app_state_updates, &validator_set_updates)
+                block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref())
             } else {
                 return
             }

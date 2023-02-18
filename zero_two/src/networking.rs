@@ -82,7 +82,13 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
 pub(crate) struct ProgressMessageStub;
 
 impl ProgressMessageStub {
-    pub(crate) fn recv(&self, app_id: AppID, cur_view: ViewNumber, deadline: Instant) -> Option<(PublicKeyBytes, ProgressMessage)> {
+    pub(crate) fn recv(
+        &self, 
+        app_id: AppID,
+        cur_view: ViewNumber, 
+        highest_qc_view: ViewNumber, 
+        deadline: Instant
+    ) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
         todo!()
     }
 
@@ -95,6 +101,10 @@ impl ProgressMessageStub {
     }
 }
 
+pub(crate) enum ProgressMessageReceiveError {
+    Timeout,
+    ReceivedQuorumFromFuture,
+}
 pub(crate) struct SyncClientStub;
 
 impl SyncClientStub {

@@ -5,7 +5,8 @@
     Authors: Alice Lim
 */
 
-use std::collections::{hash_set, HashSet, hash_map, HashMap};
+use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys, Values}, HashMap}, slice::Iter};
+use borsh::{BorshSerialize, BorshDeserialize};
 use rand::seq::SliceRandom;
 use crate::messages::Vote;
 
@@ -16,7 +17,7 @@ pub use ed25519_dalek::{
 };
 
 pub type AppID = u64;
-pub type BlockNumber = u64;
+pub type BlockHeight = u64;
 pub type ChildrenList = Vec<CryptoHash>;
 pub type CryptoHash = [u8; 32];
 pub type Data = Vec<Datum>;
@@ -24,13 +25,14 @@ pub type Datum = Vec<u8>;
 pub type Key = Vec<u8>;
 pub type Power = u64;
 pub type PublicKeyBytes = [u8; 32];
+pub type SignatureBytes = Vec<u8>;
 pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
 pub type Value = Vec<u8>;
 pub type ViewNumber = u64;
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
-    pub num: BlockNumber,
+    pub height: BlockHeight,
     pub hash: CryptoHash,
     pub justify: QuorumCertificate,
     pub data_hash: CryptoHash,
@@ -40,11 +42,11 @@ pub struct Block {
 impl Block {
     /// Checks if data_hash, hash, and justify are cryptographically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-
+        todo!()
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct QuorumCertificate {
     pub app_id: AppID,
     pub view: ViewNumber,
@@ -57,9 +59,23 @@ impl QuorumCertificate {
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
         todo!()
     }
+
+    pub const fn genesis_qc() -> QuorumCertificate {
+        QuorumCertificate { 
+            app_id: 0,
+            view: 0,
+            block: [0u8; 32],
+            phase: Phase::Generic,
+            signatures: SignatureSet,
+        }
+    }
+
+    pub fn is_genesis_qc(&self) -> bool {
+        todo!()
+    }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Phase {
     Generic,
     Prepare,
@@ -67,7 +83,7 @@ pub enum Phase {
     Commit
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet;
 
 #[derive(Clone)]
@@ -113,16 +129,44 @@ impl AppStateUpdates {
     }
 }
 
-pub struct ValidatorSet(Vec<(PublicKeyBytes, Power)>);
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct ValidatorSet {
+    map: HashMap<PublicKeyBytes, Power>,
+    // used to implement [ValidatorSet::random]
+    validators: Vec<PublicKeyBytes>,
+}
 
 impl ValidatorSet {
+    pub fn put(&mut self, validator: &PublicKeyBytes, power: Power) {
+        todo!()
+    }
+
+    pub fn get(&mut self, validator: &PublicKeyBytes) -> Power {
+        todo!()
+    }
+
     pub fn contains(&self, validator: &PublicKeyBytes) -> bool {
         todo!()
     }
 
-    pub(crate) fn random(&self) -> Option<&(PublicKeyBytes, u64)> {
-        self.0.choose(&mut rand::thread_rng())
+    pub fn delete(&self, validator: &PublicKeyBytes) {
+        todo!()
+    }
 
+    pub fn iter(&self) -> Iter<PublicKeyBytes, Power> {
+        self.map.iter()
+    }
+
+    pub fn keys(&self) -> Keys<PublicKeyBytes, Power> {
+        self.map.keys()
+    }
+
+    pub fn values(&self) -> Values<PublicKeyBytes, Power> {
+        self.map.values()
+    }
+
+    pub(crate) fn random(&self) -> Option<&PublicKeyBytes> {
+        self.validators.choose(&mut rand::thread_rng())
     }
 }
 

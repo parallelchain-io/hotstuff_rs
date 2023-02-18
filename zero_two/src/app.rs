@@ -8,7 +8,7 @@
 use crate::types::*;
 use crate::state::{BlockTreeSnapshot, KVGet};
 
-pub trait App<K: KVGet> {
+pub trait App<K: KVGet>: Send {
     fn id(&self) -> AppID;
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
     fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
