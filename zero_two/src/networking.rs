@@ -11,6 +11,8 @@
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Instant, Duration};
+use ed25519_dalek::PublicKey;
+
 use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID};
 use crate::messages::*;
 
@@ -34,9 +36,9 @@ pub trait Network: Clone + Send + 'static {
 /// or SyncRequestReceiver, or the SyncResponseReceiver according to their variant.
 pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receiver<()>) -> (
     JoinHandle<()>,
-    ProgressMessageFilter,
-    Receiver<SyncRequest>,
-    Receiver<SyncResponse>,
+    Receiver<(PublicKeyBytes, ProgressMessage)>,
+    Receiver<(PublicKeyBytes, SyncRequest)>,
+    Receiver<(PublicKeyBytes, SyncResponse)>,
 ) {
     let (to_progress_msg_filter, progress_msg_from_poller) = mpsc::channel();
     let (to_sync_request_receiver, sync_request_from_poller) = mpsc::channel();
@@ -79,9 +81,16 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
     )
 }
 
-pub(crate) struct ProgressMessageStub;
+pub(crate) struct ProgressMessageStub<N: Network> {
+    network: N,
+    receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
+}
 
-impl ProgressMessageStub {
+impl<N: Network> ProgressMessageStub<N> {
+    pub(crate) fn new(network: N, receiver: Receiver<(PublicKeyBytes, ProgressMessage)>) -> ProgressMessageStub<N> {
+        todo!()
+    }
+
     pub(crate) fn recv(
         &self, 
         app_id: AppID,
@@ -89,7 +98,7 @@ impl ProgressMessageStub {
         highest_qc_view: ViewNumber, 
         deadline: Instant
     ) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
-        todo!()
+        todo!() 
     }
 
     pub(crate) fn send(&self, peer: &PublicKeyBytes, msg: &ProgressMessage) {
@@ -105,9 +114,16 @@ pub(crate) enum ProgressMessageReceiveError {
     Timeout,
     ReceivedQuorumFromFuture,
 }
-pub(crate) struct SyncClientStub;
+pub(crate) struct SyncClientStub<N: Network> {
+    network: N,
+    responses: Receiver<(PublicKeyBytes, SyncResponse)>,
+}
 
-impl SyncClientStub {
+impl<N: Network> SyncClientStub<N> {
+    pub(crate) fn new(network: N, responses: Receiver<(PublicKeyBytes, SyncResponse)>) -> SyncClientStub<N> {
+        SyncClientStub { network, responses }
+    }
+
     pub(crate) fn send_request(&self, peer: &PublicKeyBytes, msg: &SyncRequest) {
         todo!()
     }
@@ -117,9 +133,16 @@ impl SyncClientStub {
     }
 }
 
-pub(crate) struct SyncServerStub;
+pub(crate) struct SyncServerStub<N: Network> {
+    requests: Receiver<(PublicKeyBytes, SyncRequest)>,
+    network: N,
+}
 
-impl SyncServerStub {
+impl<N: Network> SyncServerStub<N> {
+    pub(crate) fn new(requests: Receiver<(PublicKeyBytes, SyncRequest)>, network: N) -> SyncServerStub<N> {
+        SyncServerStub { requests, network }
+    }
+
     pub(crate) fn recv_request(&self) -> (PublicKeyBytes, SyncRequest) {
         todo!()
     }

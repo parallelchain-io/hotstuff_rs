@@ -33,8 +33,10 @@
 //! 
 //! ## Initial state 
 //! 
-//! All fields in the Block Tree start out empty except 3, which are set to initial values in 
+//! All fields in the Block Tree start out empty except 5, which are set to initial values in 
 //! [BlockTree::initialize]. These are:
+//! - **Committed App State** (initial state provided as an argument).
+//! - **Committed Validator Set** (initial state provided as an argument).
 //! - **Locked View** (initialized to 0). 
 //! - **Highest View Entered** (initialized to 0).
 //! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
@@ -50,10 +52,14 @@ use std::marker::PhantomData;
 pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
 impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
+    pub(crate) fn new(kv_store: K) -> BlockTree<'a, K> {
+        BlockTree(kv_store, PhantomData)
+    } 
+
     /* ↓↓↓ Initialize ↓↓↓ */
 
-    pub(crate) fn initialize(&self) {
-        todo!()
+    pub(crate) fn initialize(&mut self, initial_app_state: &AppStateUpdates, initial_validator_set: &ValidatorSetUpdates) {
+
     }
 
     /* ↓↓↓ Methods for growing the Block Tree ↓↓↓ */
@@ -378,7 +384,11 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
 impl<'a, K: KVStore<'a>> BlockTreeCamera<'a, K> {
-    fn snapshot(&self) -> BlockTreeSnapshot<'a, K::Snapshot> {
+    pub fn new(kv_store: K) -> BlockTreeCamera<'a, K> {
+        BlockTreeCamera(kv_store, PhantomData)
+    }
+
+    pub fn snapshot(&self) -> BlockTreeSnapshot<'a, K::Snapshot> {
         todo!()
     }
 }
@@ -425,7 +435,7 @@ impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
     }
 }
 
-pub trait KVStore<'a>: KVGet + Send + 'static {
+pub trait KVStore<'a>: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;
     type Snapshot: 'a + KVGet;
 

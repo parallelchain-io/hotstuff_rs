@@ -86,9 +86,13 @@ pub struct SyncResponse {
     pub highest_qc: QuorumCertificate, 
 }
  
-pub(crate) struct Keypair(DalekKeypair);
+pub(crate) struct Keypair(pub(crate) DalekKeypair);
 
 impl Keypair {
+    pub(crate) fn new(keypair: DalekKeypair) -> Keypair {
+        Keypair(keypair)
+    }
+
     // phase must be either Generic or Prepare.
     pub(crate) fn proposal(&self, app_id: AppID, view: ViewNumber, block: &Block) -> ProgressMessage {
         todo!()

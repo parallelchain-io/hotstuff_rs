@@ -18,8 +18,6 @@ pub mod app;
 
 pub mod algorithm;
 
-pub mod config;
-
 pub mod types;
 
 pub mod messages;

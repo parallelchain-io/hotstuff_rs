@@ -21,11 +21,10 @@ use std::sync::{
     mpsc::{Sender, Receiver, TryRecvError}
 };
 use crate::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBlockResponse, ValidateBlockResponse};
-use crate::config::Configuration;
 use crate::pacemaker::DefaultPacemaker;
 use crate::replica::Replica;
 use crate::state::{BlockTreeCamera, KVStore, KVGet, WriteBatch};
-use crate::types::{PublicKeyBytes, Keypair, ValidatorSetUpdates, AppID, AppStateUpdates, Power};
+use crate::types::{PublicKeyBytes, ValidatorSetUpdates, AppID, AppStateUpdates, Power};
 use crate::messages::*;
 use crate::networking::Network;
 

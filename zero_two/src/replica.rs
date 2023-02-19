@@ -14,33 +14,82 @@
 //! consensus 'validators'. HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not
 //! need to know replicas. 
 
+use std::thread::JoinHandle;
+use std::sync::mpsc::{self, Sender};
 use ed25519_dalek::Keypair;
 use crate::app::App;
-use crate::config::Configuration;
-use crate::networking::Network;
+use crate::networking::{start_polling, Network, ProgressMessageStub, SyncClientStub, SyncServerStub};
+use crate::algorithm::start_algorithm;
+use crate::sync_server::start_sync_server;
 use crate::pacemaker::Pacemaker;
-use crate::state::{BlockTreeCamera, KVStore};
+use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::types::{AppStateUpdates, ValidatorSetUpdates};
-pub struct Replica;
+use crate::messages;
+
+pub struct Replica {
+    poller: JoinHandle<()>,
+    poller_shutdown: Sender<()>,
+    algorithm: JoinHandle<()>,
+    algorithm_shutdown: Sender<()>,
+    sync_server: JoinHandle<()>,
+    sync_server_shutdown: Sender<()>,
+}
 
 impl Replica {
     pub fn initialize<'a, K: KVStore<'a>>(
-        kv_store: &mut K,
+        kv_store: K,
         initial_app_state: AppStateUpdates, 
         initial_validator_set: ValidatorSetUpdates
     ) {
-        todo!()
+        let block_tree = BlockTree::new(kv_store);
+        block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
     pub fn start<'a, K: KVStore<'a>>(
         app: impl App<K::Snapshot>,
         keypair: Keypair,
-        network_stub: impl Network,
+        network: impl Network,
         kv_store: K,
         pacemaker: impl Pacemaker,
-        configuration: Configuration,
     ) -> (Replica, BlockTreeCamera<'a, K>) {
-        todo!()
+        let block_tree = BlockTree::new(kv_store.clone());
+
+        let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
+        let (poller, progress_msgs, sync_requests, sync_responses) = start_polling(network, poller_shutdown_receiver);
+        let pm_stub = ProgressMessageStub::new(network.clone(), progress_msgs);
+        let sync_server_stub = SyncServerStub::new(sync_requests, network.clone());
+        let sync_client_stub = SyncClientStub::new(network.clone(), sync_responses);
+
+        let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
+        let sync_server = start_sync_server(block_tree, sync_server_stub, sync_server_shutdown_receiver);
+
+        let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
+        let algorithm = start_algorithm(app, messages::Keypair::new(keypair), block_tree, pacemaker, pm_stub, sync_client_stub, algorithm_shutdown_receiver);
+
+        let replica = Replica {
+            poller,
+            poller_shutdown,
+            algorithm,
+            algorithm_shutdown,
+            sync_server,
+            sync_server_shutdown
+        };
+        let block_tree_camera = BlockTreeCamera::new(kv_store);
+
+        (replica, block_tree_camera)
+    }
+}
+
+impl Drop for Replica {
+    fn drop(&mut self) {
+        self.algorithm_shutdown.send(());
+        self.algorithm.join();
+
+        self.sync_server_shutdown.send(());
+        self.sync_server.join();
+
+        self.poller_shutdown.send(());
+        self.poller.join();
     }
 }
 
