@@ -10,26 +10,36 @@
 //! 
 //! This state may be stored in a key-value store of the library user's own choosing, as long as that KV store
 //! can provide a type that implements [KVStore]. This state can be mutated through an instance of [BlockTree],
-//! and read through an instance of [BlockTreeSnapshot].
+//! and read through an instance of [BlockTreeSnapshot], which can be created using [BlockTreeCamera]. 
+//! 
+//! In normal operation, HotStuff-rs code will internally be making all writes to the Block Tree, and users can
+//! get a [BlockTreeCamera] using [crate::replica::Replica]'s [crate::replica::Replica::block_tree_camera] method.
+//! However, users may sometimes want to manually mutate the Block Tree, for example, to recover from an error
+//! that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of BlockTree using
+//! [BlockTree::new_unsafe] and an instance of the corresponding [BlockTreeWriteBatch] using 
+//! [BlockTreeWriteBatch::new_unsafe].
+//! 
+//! ## State variables
 //! 
 //! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples that sit
 //! at a particular key path or prefix in the library user's chosen KV store. These variables are:
 //! - **Blocks** ([CryptoHash] -> [Block]).
 //! - **Block Height to Block** ([BlockHeight] -> [CryptoHash]): a mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.
-//! - **Block Hash to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
+//! - **Block to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
 //! - **Committed App State** ([Key] -> [Value]).
-//! - **Committed Validator Set** ([ValidatorSet]).
 //! - **Pending App State Updates** ([CryptoHash] -> [AppStateUpdates]).
+//! - **Committed Validator Set** ([ValidatorSet]).
 //! - **Pending Validator Set Updates** ([CryptoHash] -> [ValidatorSetUpdates]).
 //! - **Locked View** ([ViewNumber]): the highest view number of a quorum certificate contained in a block that has a child. 
 //! - **Highest View Entered** ([ViewNumber]): the highest view that this validator has entered.
 //! - **Highest Quorum Certificate** ([QuorumCertificate]): among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number. 
-//! - **Highest Committed Block Hash** ([CryptoHash]).
+//! - **Highest Committed Block** ([CryptoHash]).
+//! - **Newest Block** ([CryptoHash]): the most recent block to be inserted into the block tree.
 //! 
-//! The location of each of these variables in a KV store is defined in [kv_paths]. Note that the fields of a
+//! The location of each of these variables in a KV store is defined in [paths]. Note that the fields of a
 //! block are itself stored in different tuples. This is so that user code can get a subset of a block's data
 //! without loading the entire block from storage, which may be expensive. The key suffixes on which each of
-//! block's fields are stored are also defined in [kv_paths].
+//! block's fields are stored are also defined in paths.
 //! 
 //! ## Initial state 
 //! 
@@ -43,18 +53,21 @@
 //! 
 //! ## Safety
 
-use borsh::BorshSerialize;
-
-use crate::types::*;
 use std::marker::PhantomData;
+use borsh::{BorshSerialize, BorshDeserialize};
+use crate::types::*;
 
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
-pub(crate) struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
+pub struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
-impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
+impl<'a, K: KVStore<'a>> BlockTree<'a, K> {
     pub(crate) fn new(kv_store: K) -> BlockTree<'a, K> {
         BlockTree(kv_store, PhantomData)
     } 
+
+    pub unsafe fn new_unsafe(kv_store: K) -> BlockTree<'a, K> {
+        Self::new(kv_store)
+    }
 
     /* ↓↓↓ Initialize ↓↓↓ */
 
@@ -91,6 +104,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
 
         // 1. Block: Insert block.
         wb.set_block(block);
+        wb.set_newest_block(&block.hash);
         wb.set_pending_app_state_updates(&block.hash, app_state_updates);
         wb.set_pending_validator_set_updates(&block.hash, validator_set_updates);
 
@@ -109,12 +123,12 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
 
         // 2. Parent: consider updating locked view with parent's justify's view number.
         let parent = block.justify.block;
-        let parent_justify_view = self.block_justify(&parent).unwrap().view;
+        let parent_justify_view = self.0.block_justify(&parent).unwrap().view;
         if parent_justify_view > self.locked_view() {
             wb.set_locked_view(parent_justify_view);
         }
 
-        let parent_justify = self.block_justify(&parent).unwrap(); 
+        let parent_justify = self.0.block_justify(&parent).unwrap(); 
         if parent_justify.is_genesis_qc() {
             self.write(wb);
             return
@@ -122,7 +136,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
 
         // 3. Grandparent: do nothing with it.
         let grandparent = parent_justify.block;
-        let grandparent_justify = self.block_justify(&grandparent).unwrap();
+        let grandparent_justify = self.0.block_justify(&grandparent).unwrap();
         if grandparent_justify.is_genesis_qc() {
             self.write(wb);
             return
@@ -130,7 +144,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
 
         // 4. Great-grandparent: if great-grandparent is higher than the current highest committed block, commit it. 
         let great_grandparent = grandparent_justify.block;
-        let great_grandparent_height = self.block_height(&great_grandparent).unwrap();
+        let great_grandparent_height = self.0.block_height(&great_grandparent).unwrap();
 
         match self.highest_committed_block_height() {
             Some(highest_committed_block_height) if great_grandparent_height > highest_committed_block_height => self.commit_block(&mut wb, &great_grandparent),
@@ -141,7 +155,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
             }
         }
 
-        let great_grandparent_justify = self.block_justify(&great_grandparent).unwrap();
+        let great_grandparent_justify = self.0.block_justify(&great_grandparent).unwrap();
         if great_grandparent_justify.is_genesis_qc() {
             self.write(wb);
             return
@@ -167,52 +181,17 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
         ((qc.phase == Phase::Prepare || qc.phase == Phase::Precommit || qc.phase == Phase::Commit) && self.pending_validator_set_updates(&qc.block).is_some()) &&
         (qc.phase == Phase::Generic && self.pending_validator_set_updates(&qc.block).is_none())
     }
-    pub(crate) fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
-        todo!()
+
+    pub(crate) fn set_highest_qc(&self, qc: &QuorumCertificate) {
+        let wb = BlockTreeWriteBatch::new();
+        wb.set_highest_qc(qc);
+        self.write(wb);
     }
 
-    /* ↓↓↓ Set highest view entered ↓↓↓ */
-    
-    pub(crate) fn set_highest_entered_view(&mut self, view: ViewNumber) {
-
-    }
-
-    /* ↓↓↓ State getters ↓↓↓ */
-
-    pub(crate) fn contains(&self, block: &CryptoHash) -> bool {
-        todo!()
-    }
-
-    pub(crate) fn highest_committed_block(&self) -> Option<CryptoHash> {
-        todo!()
-    }
-
-    pub(crate) fn highest_committed_block_height(&self) -> Option<BlockHeight> {
-        todo!()
-    }
-
-    pub(crate) fn highest_qc(&self) -> QuorumCertificate {
-        todo!()
-    }
-
-    pub(crate) fn highest_entered_view(&self) -> ViewNumber {
-        todo!()
-    }
-
-    pub(crate) fn committed_validator_set(&self) -> ValidatorSet {
-        todo!()
-    }
-
-    /* ↓↓↓ Snapshot ↓↓↓ */
-
-    pub(crate) fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot> {
-        todo!()
-    }
-
-    /* ↓↓↓ WriteBatch commit ↓↓↓ */
-
-    pub(crate) fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
-        todo!()
+    pub(crate) fn set_highest_entered_view(&self, view: ViewNumber) { 
+        let wb = BlockTreeWriteBatch::new();
+        wb.set_highest_view_entered(view);
+        self.write(wb);
     }
 
     /* ↓↓↓ For committing a block in insert_block ↓↓↓ */
@@ -223,7 +202,7 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
                 wb.set_committed_app_state(key, value);
             }
 
-            for key in pending_app_state_updates.deletes() {
+            for key in pending_app_state_updates.deletions() {
                 wb.delete_committed_app_state(key);
             }
         }
@@ -265,33 +244,29 @@ impl<'a, K: KVStore<'a> + KVGet> BlockTree<'a, K> {
         wb.delete_pending_validator_set_updates(tail);
     }
 
-    /* ↓↓↓ Private getters ↓↓↓ */
+    /* ↓↓↓ Extra state getters for convenience ↓↓↓ */ 
 
-    fn block_height(&self, block: &CryptoHash) -> Option<BlockHeight> {
-        todo!()
+    pub fn contains(&self, block: &CryptoHash) -> bool {
+        self.block_height(block).is_some()
     }
 
-    fn block_justify(&self, block: &CryptoHash) -> Option<QuorumCertificate> {
-        todo!()
+    pub(crate) fn highest_committed_block_height(&self) -> Option<BlockHeight> {
+        let highest_committed_block = self.highest_committed_block()?;
+        self.block_height(&highest_committed_block)
     }
 
-    fn locked_view(&self) -> ViewNumber {
-        todo!()
-    }
+    /* ↓↓↓ WriteBatch commit ↓↓↓ */
 
-    fn pending_app_state_updates(&self, block: &CryptoHash) -> Option<AppStateUpdates> {
-        todo!()
-    } 
+    pub fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
+        self.0.write(write_batch.0);
+    }  
 
-    fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-        todo!()
-    }
+    /* ↓↓↓ Snapshot ↓↓↓ */
 
-    fn children(&self, block: &CryptoHash) -> Option<ChildrenList> {
-        todo!()
+    pub fn snapshot(&self) -> BlockTreeSnapshot<'a, K::Snapshot> {
+        BlockTreeSnapshot(self.0.snapshot(), PhantomData)
     }
 }
-
 
 pub(crate) struct BlockTreeWriteBatch<W: WriteBatch>(W);
 
@@ -301,6 +276,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         BlockTreeWriteBatch(W::new())
     }
 
+    /* ↓↓↓ Block ↓↓↓  */
 
     fn set_block(&mut self, block: &Block) {
         let block_prefix = combine(&BLOCKS, &block.hash); 
@@ -318,31 +294,29 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         }
     }
 
-    fn set_block_at_height(&mut self, height: BlockHeight, block: &CryptoHash) {
-        let block_prefix = combine(&BLOCKS, block);
-
-        self.0.set(&combine(&block_prefix, &BLOCK_HEIGHT_TO_HASH), &height.try_to_vec().unwrap());
-    }
-
     fn delete_block(&mut self, block: &CryptoHash) {
         todo!()
     }
 
-    fn set_highest_committed_block(&mut self, block: &CryptoHash) {
+    /* ↓↓↓ Block Height to Block ↓↓↓ */
+
+    fn set_block_height_to_block(&mut self, height: BlockHeight, block: &CryptoHash) {
+        let block_prefix = combine(&BLOCKS, block);
+
+        self.0.set(&combine(&block_prefix, &BLOCK_HEIGHT_TO_HASH), &height.try_to_vec().unwrap());
+    } 
+
+    /* ↓↓↓ Block to Children ↓↓↓ */
+
+    fn set_children_list(&mut self, block: &CryptoHash, children: &ChildrenList) {
         todo!()
     }
 
-    fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
+    fn delete_children_list(&mut self, block: &CryptoHash) {
         todo!()
     }
 
-    fn set_highest_entered_view(&mut self, view: ViewNumber) {
-        todo!()
-    }
-
-    fn set_locked_view(&mut self, view: ViewNumber) {
-        todo!()
-    }
+    /* ↓↓↓ Committed App State ↓↓↓ */
 
     fn set_committed_app_state(&mut self, key: &[u8], value: &[u8]) {
         todo!()
@@ -350,11 +324,9 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     fn delete_committed_app_state(&mut self, key: &[u8]) {
         todo!()
-    }
+    } 
 
-    fn set_committed_validator_set(&mut self, validator_set: &ValidatorSet) {
-        todo!()
-    }
+    /* ↓↓↓ Pending App State Updates ↓↓↓ */
 
     fn set_pending_app_state_updates(&mut self, block: &CryptoHash, app_state_updates: Option<&AppStateUpdates>) {
         todo!()
@@ -364,6 +336,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         todo!()
     }
 
+    /* ↓↓↓ Commmitted Validator Set */
+
+    fn set_committed_validator_set(&mut self, validator_set: &ValidatorSet) {
+        todo!()
+    } 
+
+    /* ↓↓↓ Pending Validator Set Updates */
+
     fn set_pending_validator_set_updates(&mut self, block: &CryptoHash, validator_set_updates: Option<&ValidatorSetUpdates>) {
         todo!()
     }
@@ -372,15 +352,38 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         todo!()
     }
 
-    fn set_children_list(&mut self, block: &CryptoHash, children: &ChildrenList) {
+    /* ↓↓↓ Locked View ↓↓↓ */
+
+    fn set_locked_view(&mut self, view: ViewNumber) {
         todo!()
     }
 
-    fn delete_children_list(&mut self, block: &CryptoHash) {
+    /* ↓↓↓ Highest View Entered ↓↓↓ */
+
+    fn set_highest_view_entered(&mut self, view: ViewNumber) {
+        todo!()
+    }
+
+    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+
+    fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
+        todo!()
+    }
+    
+    /* ↓↓↓ Highest Committed Block ↓↓↓ */
+    
+    fn set_highest_committed_block(&mut self, block: &CryptoHash) {
+        todo!()
+    }
+    
+    /* ↓↓↓ Newest Block ↓↓↓ */
+
+    fn set_newest_block(&mut self, block: &CryptoHash) {
         todo!()
     }
 }
 
+#[derive(Clone)]
 pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
 
 impl<'a, K: KVStore<'a>> BlockTreeCamera<'a, K> {
@@ -397,13 +400,13 @@ impl<'a, K: KVStore<'a>> BlockTreeCamera<'a, K> {
 pub struct BlockTreeSnapshot<'a, S: 'a + KVGet>(S, PhantomData<&'a ()>);
 
 impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
-    fn state(&self) -> Value {
+    pub fn state(&self) -> Vec<u8> {
         todo!()
     }
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    pub fn blocks_from_tail(&self, tail: &CryptoHash, limit: u32) -> Option<Vec<Block>> {
+    pub(crate) fn blocks_from_tail(&self, tail: &CryptoHash, limit: u32) -> Option<Vec<Block>> {
         let mut res = Vec::with_capacity(limit as usize);
 
         // 1. Get tail block.
@@ -412,26 +415,127 @@ impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
         res.push(tail_block);
 
         // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
-        while res.len() < limit {
+        while res.len() < limit as usize {
             let child = match self.child(&cursor) {
-                Ok(block) => block,
-                Err(ChildrenNotYetCommittedError) => break,
+                Some(block) => self.block(&block).unwrap(),
+                None => break,
             };
             cursor = child.hash;
             res.push(child);
         }
 
         // 3. If limit is not yet satisfied, get speculative blocks.
-        todo!();
-        // if res.len() < limit {
-        //     if let Some(block) = self.get_top_block() {
-        //         // We reverse (.rev) uncommitted blocks so that blocks with lower heights appear first.
-        //         let uncommitted_blocks: Vec<Block> = self.get_chain_between_speculative_block_and_highest_committed_block(&block.hash).into_iter().rev().collect();
-        //         res.extend_from_slice(&uncommitted_blocks[..min(limit - res.len(), uncommitted_blocks.len())]);
-        //     }
-        // }
+        if res.len() < limit as usize {
+            if let Some(newest_block) = self.newest_block() {
+                let uncommitted_blocks = self.chain_between_speculative_block_and_highest_committed_block(&newest_block).into_iter().rev();
+                res.extend(uncommitted_blocks);
+            }
+        }
 
         Some(res)
+    }
+
+    fn chain_between_speculative_block_and_highest_committed_block(&self, head_block: &CryptoHash) -> Vec<Block> {
+        let mut res = Vec::new();
+
+        let head_block = self.block(head_block).unwrap();
+        if let Some(highest_committed_block) = self.highest_committed_block() {
+            let mut cursor = head_block.justify.block;
+            res.push(head_block);
+
+            while cursor != highest_committed_block {
+                let block = self.block(&cursor).unwrap();
+                cursor = block.justify.block;
+                res.push(block);
+            }
+        };
+
+        res
+    }
+
+    /* ↓↓↓ Get Speculative App State for ProposeBlockRequest and ValidateBlockRequest */
+
+    pub(crate) fn speculative_app_state(&self, parent: Option<&CryptoHash>) -> SpeculativeAppState<S> {
+        if parent.is_none() {
+            return SpeculativeAppState {
+                parent_app_state_updates: None,
+                grandparent_app_state_updates: None,
+                great_grandparent_app_state_updates: None,
+                block_tree: self,
+            }    
+        }
+
+        let parent_app_state_updates = self.pending_app_state_updates(parent.unwrap());
+        let parent_justify = self.block_justify(parent.unwrap()).unwrap();
+
+        if parent_justify.is_genesis_qc() {
+            return SpeculativeAppState {
+                parent_app_state_updates,
+                grandparent_app_state_updates: None,
+                great_grandparent_app_state_updates: None,
+                block_tree: self,
+            } 
+        }
+
+        let grandparent = parent_justify.block;
+        let grandparent_app_state_updates = self.pending_app_state_updates(&grandparent);
+        let grandparent_justify = self.block_justify(&grandparent).unwrap();
+
+        if grandparent_justify.is_genesis_qc() {
+            return SpeculativeAppState {
+                parent_app_state_updates,
+                grandparent_app_state_updates,
+                great_grandparent_app_state_updates: None,
+                block_tree: self
+            }
+        }
+
+        let great_grandparent = grandparent_justify.block;
+        let great_grandparent_app_state_updates = self.pending_app_state_updates(&great_grandparent);
+
+        SpeculativeAppState { 
+            parent_app_state_updates, 
+            grandparent_app_state_updates, 
+            great_grandparent_app_state_updates,
+            block_tree: self, 
+        }
+    }
+}
+
+pub(crate) struct SpeculativeAppState<'a, S: KVGet> {
+    parent_app_state_updates: Option<AppStateUpdates>,
+    grandparent_app_state_updates: Option<AppStateUpdates>,
+    great_grandparent_app_state_updates: Option<AppStateUpdates>,
+    block_tree: &'a BlockTreeSnapshot<'a, S>,
+} 
+
+impl<'a, S: KVGet> SpeculativeAppState<'a, S> {
+    pub(crate) fn get(&'a self, key: &[u8]) -> Option<&'a Vec<u8>> {
+        if let Some(parent_app_state_updates) = self.parent_app_state_updates {
+            if parent_app_state_updates.contains_delete(key) {
+                return None
+            } else if let Some(value) = parent_app_state_updates.get_insert(key) {
+                return Some(&value)
+            }
+        }
+        
+        if let Some(grandparent_app_state_changes) = self.grandparent_app_state_updates {
+            if grandparent_app_state_changes.contains_delete(key) {
+                return None
+            } else if let Some(value) = grandparent_app_state_changes.get_insert(key) {
+                return Some(&value)
+            }
+        }
+
+        if let Some(great_grandparent_app_state_changes) = self.great_grandparent_app_state_updates {
+            if great_grandparent_app_state_changes.contains_delete(key) {
+                return None
+            } else if let Some(value) = great_grandparent_app_state_changes.get_insert(key) {
+                return Some(&value)
+            }
+        } 
+
+        self.block_tree.committed_app_state(key).as_ref()
     }
 }
 
@@ -450,9 +554,162 @@ pub trait WriteBatch {
     fn delete(&mut self, key: &[u8]);
 }
 
-pub trait KVGet {
-    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>>;
+// Causes the getter methods defined by default for implementors of KVGet to also be public methods
+// of BlockTree and BlockTreeCamera.
+macro_rules! re_export_getters_from_block_tree_and_block_tree_snapshot {
+    ($self:ident, pub trait KVGet { 
+        fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
+
+        $(fn $f_name:ident(&self$(,)? $($param_name:ident: $param_type:ty),*) -> $return_type:ty $body:block)*
+    }) 
+    => {
+        pub trait KVGet {
+            fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
+            $(fn $f_name(&$self, $($param_name: $param_type),*) -> $return_type $body)*
+        }
+
+        impl<'a, K: KVStore<'a>> BlockTree<'a, K> {
+            $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
+                self.0.$f_name($($param_name),*)  
+            })*
+        }
+
+        impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
+            $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
+                self.0.$f_name($($param_name),*)  
+            })*
+        } 
+    }
 }
+
+re_export_getters_from_block_tree_and_block_tree_snapshot!(self,
+pub trait KVGet {
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
+
+    /* ↓↓↓ Block ↓↓↓  */
+
+    fn block(&self, block: &CryptoHash) -> Option<Block> {
+        let height = self.block_height(block)?; // Safety: if block height is Some, then all of the following fields are Some too.
+        let justify = self.block_justify(block).unwrap();
+        let data_hash = self.block_data_hash(block).unwrap();
+        let data = self.block_data(block).unwrap();
+
+        Some(Block {
+            height,
+            hash: *block,
+            justify,
+            data_hash,
+            data
+        })
+    }
+
+    fn block_height(&self, block: &CryptoHash) -> Option<BlockHeight> {
+        let block_key = combine(&BLOCKS, block);
+        let block_height_key = combine(&block_key, &BLOCK_HEIGHT);
+        let block_height = {
+            let bs = self.get(&block_height_key)?;
+            BlockHeight::deserialize(&mut bs.as_slice()).unwrap()
+        };
+        Some(block_height)
+    }  
+
+    fn block_justify(&self, block: &CryptoHash) -> Option<QuorumCertificate> {
+        todo!()
+    }
+
+    fn block_data_hash(&self, block: &CryptoHash) -> Option<CryptoHash> {
+        todo!()
+    }
+
+    fn block_data_len(&self, block: &CryptoHash) -> Option<DataLen> {
+        todo!()
+    }
+
+    fn block_data(&self, block: &CryptoHash) -> Option<Data> {
+        todo!()
+    }
+
+    fn block_datum(&self, block: &CryptoHash, datum_index: u32) -> Option<Datum> {
+        todo!()
+    } 
+
+    /* ↓↓↓ Block Height to Block ↓↓↓ */
+
+    fn block_at_height(&self, height: BlockHeight) -> Option<CryptoHash> {
+        let block_hash_key = combine(&BLOCK_HEIGHT_TO_HASH, &height.to_le_bytes());
+        let block_hash = {
+            let bs = self.get(&block_hash_key)?;
+            CryptoHash::deserialize(&mut bs.as_slice()).unwrap()
+        };
+
+        Some(block_hash)
+    }
+
+    /* ↓↓↓ Block to Children ↓↓↓ */
+
+    fn children(&self, block: &CryptoHash) -> Option<ChildrenList> {
+        todo!()
+    }
+
+    fn child(&self, block: &CryptoHash) -> Option<CryptoHash> {
+        todo!()
+    }
+
+    /* ↓↓↓ Committed App State ↓↓↓ */
+
+    fn committed_app_state(&self, key: &[u8]) -> Option<Vec<u8>> {
+        todo!()
+    } 
+
+    /* ↓↓↓ Pending App State Updates ↓↓↓ */
+
+    fn pending_app_state_updates(&self, block: &CryptoHash) -> Option<AppStateUpdates> {
+        todo!()
+    }
+
+    /* ↓↓↓ Commmitted Validator Set */
+
+    fn committed_validator_set(&self) -> ValidatorSet {
+        todo!()
+    } 
+
+    /* ↓↓↓ Pending Validator Set Updates */
+
+    fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
+        todo!()
+    }
+
+    /* ↓↓↓ Locked View ↓↓↓ */
+    
+    fn locked_view(&self) -> ViewNumber {
+        todo!()
+    }
+    
+    /* ↓↓↓ Highest View Entered ↓↓↓ */
+    
+    fn highest_view_entered(&self) -> ViewNumber {
+        todo!()
+    }
+
+    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+
+    fn highest_qc(&self) -> QuorumCertificate {
+        todo!()
+    } 
+
+    /* ↓↓↓ Highest Committed Block ↓↓↓ */
+
+    fn highest_committed_block(&self) -> Option<CryptoHash> {
+        todo!()
+    }
+
+    /* ↓↓↓ Newest Block ↓↓↓ */
+
+    fn newest_block(&self) -> Option<CryptoHash> {
+        todo!()
+    }
+}
+);
 
 mod paths {
     // State variables
@@ -460,8 +717,8 @@ mod paths {
     pub(super) const BLOCK_HEIGHT_TO_HASH: [u8; 1] = [1]; 
     pub(super) const BLOCK_HASH_TO_CHILDREN: [u8; 1] = [2];
     pub(super) const COMMITTED_APP_STATE: [u8; 1] = [3];
-    pub(super) const COMMITTED_VALIDATOR_SET: [u8; 1] = [4];
-    pub(super) const PENDING_APP_STATE_UPDATES: [u8; 1] = [5]; 
+    pub(super) const PENDING_APP_STATE_UPDATES: [u8; 1] = [4]; 
+    pub(super) const COMMITTED_VALIDATOR_SET: [u8; 1] = [5];
     pub(super) const PENDING_VALIDATOR_SET_UPDATES: [u8; 1] = [6];
     pub(super) const LOCKED_VIEW: [u8; 1] = [7];
     pub(super) const HIGHEST_VIEW_ENTERED: [u8; 1] = [8];

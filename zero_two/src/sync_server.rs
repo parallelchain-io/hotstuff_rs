@@ -27,7 +27,7 @@ pub(crate) fn start_sync_server<'a, K: KVStore<'a>, N: Network>(
             let (origin, SyncRequest { highest_committed_block, limit }) = sync_stub.recv();
             let bt_snapshot = block_tree.snapshot();
             let blocks = bt_snapshot.blocks_from_tail(&highest_committed_block, limit);
-            let highest_qc: QuorumCertificate = bt_snapshot.highest_qc();
+            let highest_qc = bt_snapshot.highest_qc();
             let response = SyncResponse { blocks, highest_qc };
             sync_stub.send(&origin, response);
         }   

@@ -5,7 +5,7 @@
     Authors: Alice Lim
 */
 
-use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys, Values}, HashMap}, slice::Iter};
+use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys, Values}, HashMap}};
 use borsh::{BorshSerialize, BorshDeserialize};
 use rand::seq::SliceRandom;
 use crate::messages::Vote;
@@ -21,13 +21,12 @@ pub type BlockHeight = u64;
 pub type ChildrenList = Vec<CryptoHash>;
 pub type CryptoHash = [u8; 32];
 pub type Data = Vec<Datum>;
+pub type DataLen = u32;
 pub type Datum = Vec<u8>;
-pub type Key = Vec<u8>;
 pub type Power = u64;
 pub type PublicKeyBytes = [u8; 32];
 pub type SignatureBytes = Vec<u8>;
 pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
-pub type Value = Vec<u8>;
 pub type ViewNumber = u64;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -40,6 +39,20 @@ pub struct Block {
 }
 
 impl Block {
+    pub fn new(height: BlockHeight, justify: QuorumCertificate, data_hash: CryptoHash, data: Data) -> Block {
+        Block {
+            height,
+            hash: Block::hash(height, &justify, &data_hash, &data),
+            justify,
+            data_hash,
+            data,
+        }
+    }
+
+    pub fn hash(height: BlockHeight, justify: &QuorumCertificate, data_hash: &CryptoHash, data: &Data) -> CryptoHash {
+        todo!()
+    }
+
     /// Checks if data_hash, hash, and justify are cryptographically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
         todo!()
@@ -88,8 +101,8 @@ pub struct SignatureSet;
 
 #[derive(Clone)]
 pub struct AppStateUpdates {
-    inserts: HashMap<Key, Value>,
-    deletes: HashSet<Key>, 
+    inserts: HashMap<Vec<u8>, Vec<u8>>,
+    deletes: HashSet<Vec<u8>>, 
 }
 
 impl AppStateUpdates {
@@ -100,31 +113,31 @@ impl AppStateUpdates {
         }
     }
 
-    pub fn insert(&mut self, key: Key, value: Value) {
+    pub fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
         self.deletes.remove(&key);
         self.inserts.insert(key, value);
     }
 
-    pub fn delete(&mut self, key: Key) {
+    pub fn delete(&mut self, key: Vec<u8>) {
         self.inserts.remove(&key);
         self.deletes.insert(key);
     }
 
-    pub(crate) fn get_insert(&self, key: &Key) -> Option<&Value> {
+    pub(crate) fn get_insert(&self, key: &[u8]) -> Option<&Vec<u8>> {
         self.inserts.get(key)
     } 
 
-    pub(crate) fn contains_delete(&self, key: &Key) -> bool {
+    pub(crate) fn contains_delete(&self, key: &[u8]) -> bool {
         self.deletes.contains(key)
     }
 
     /// Get an iterator over all of the key, value pairs in this WriteSet.
-    pub(crate) fn inserts(&self) -> hash_map::Iter<Key, Value> {
+    pub(crate) fn inserts(&self) -> hash_map::Iter<Vec<u8>, Vec<u8>> {
         self.inserts.iter()
     } 
 
     /// Get an iterator over all of the keys that are deleted by this WriteSet.
-    pub(crate) fn deletes(&self) -> hash_set::Iter<Key> {
+    pub(crate) fn deletions(&self) -> hash_set::Iter<Vec<u8>> {
         self.deletes.iter()
     }
 }

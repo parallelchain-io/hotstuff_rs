@@ -26,7 +26,8 @@ use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::types::{AppStateUpdates, ValidatorSetUpdates};
 use crate::messages;
 
-pub struct Replica {
+pub struct Replica<'a, K: KVStore<'a>> {
+    block_tree_camera: BlockTreeCamera<'a, K>,
     poller: JoinHandle<()>,
     poller_shutdown: Sender<()>,
     algorithm: JoinHandle<()>,
@@ -35,8 +36,8 @@ pub struct Replica {
     sync_server_shutdown: Sender<()>,
 }
 
-impl Replica {
-    pub fn initialize<'a, K: KVStore<'a>>(
+impl<'a, K: KVStore<'a>> Replica<'a, K> {
+    pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates, 
         initial_validator_set: ValidatorSetUpdates
@@ -45,13 +46,13 @@ impl Replica {
         block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
-    pub fn start<'a, K: KVStore<'a>>(
-        app: impl App<K::Snapshot>,
+    pub fn start(
+        app: impl App<'a, K::Snapshot>,
         keypair: Keypair,
         network: impl Network,
         kv_store: K,
         pacemaker: impl Pacemaker,
-    ) -> (Replica, BlockTreeCamera<'a, K>) {
+    ) -> Replica<'a, K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
@@ -66,7 +67,9 @@ impl Replica {
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
         let algorithm = start_algorithm(app, messages::Keypair::new(keypair), block_tree, pacemaker, pm_stub, sync_client_stub, algorithm_shutdown_receiver);
 
+        let block_tree_camera = BlockTreeCamera::new(kv_store);
         let replica = Replica {
+            block_tree_camera,
             poller,
             poller_shutdown,
             algorithm,
@@ -74,13 +77,16 @@ impl Replica {
             sync_server,
             sync_server_shutdown
         };
-        let block_tree_camera = BlockTreeCamera::new(kv_store);
 
-        (replica, block_tree_camera)
+        replica
+    }
+
+    pub fn block_tree_camera(&self) -> BlockTreeCamera<'a, K> {
+        self.block_tree_camera.clone()
     }
 }
 
-impl Drop for Replica {
+impl<'a, K: KVStore<'a>> Drop for Replica<'a, K> {
     fn drop(&mut self) {
         self.algorithm_shutdown.send(());
         self.algorithm.join();

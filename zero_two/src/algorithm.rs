@@ -61,7 +61,7 @@ use crate::networking::*;
 use crate::app::App;
 
 pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
-    app: impl App<K::Snapshot>,
+    app: impl App<'a, K::Snapshot>,
     me: Keypair,
     block_tree: BlockTree<'a, K>,
     pacemaker: impl Pacemaker,
@@ -77,7 +77,7 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
                 Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            let cur_view: ViewNumber = max(block_tree.highest_entered_view(), block_tree.highest_qc().view) + 1;
+            let cur_view: ViewNumber = max(block_tree.highest_view_entered(), block_tree.highest_qc().view) + 1;
             block_tree.set_highest_entered_view(cur_view);
 
             let view_result = execute_view(&me, cur_view, &mut pacemaker, &mut block_tree, &mut pm_stub, &mut app);
@@ -97,7 +97,7 @@ fn execute_view<'a, K: KVStore<'a>, N: Network>(
     pacemaker: &mut impl Pacemaker,
     block_tree: &mut BlockTree<'a, K>,
     pm_stub: &mut ProgressMessageStub<N>,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
 ) -> Result<(), ShouldSync> {
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
@@ -175,7 +175,7 @@ struct ShouldSync;
 fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
     block_tree: &mut BlockTree<'a, K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
@@ -184,15 +184,31 @@ fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
     let (proposal_or_nudge, vote) = match highest_qc.phase {
         // Produce a proposal.
         Phase::Generic | Phase::Commit => {
-            let produce_block_request: ProduceBlockRequest<K::Snapshot>;
+            let parent_block = if highest_qc.is_genesis_qc() {
+                None
+            } else {
+                Some(highest_qc.block)
+            };
+
+            let produce_block_request = ProduceBlockRequest::new(
+                cur_view, 
+                parent_block, 
+                block_tree.snapshot()
+            );
 
             let ProduceBlockResponse { 
                 data, 
+                data_hash,
                 app_state_updates, 
                 validator_set_updates 
             } = app.produce_block(produce_block_request);
 
-            let block: Block;
+            let height = if let Some(parent_block) = parent_block {
+                block_tree.block_height(&highest_qc.block).unwrap() + 1
+            } else {
+                0
+            };
+            let block = Block::new(height, highest_qc, data_hash, data);
             
             block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
 
@@ -230,7 +246,7 @@ fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<'a, K>,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
     pacemaker: &impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -241,7 +257,10 @@ fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
         return (false, i_am_next_leader)
     }
 
-    let validate_block_request: ValidateBlockRequest<K::Snapshot>;
+    let validate_block_request = ValidateBlockRequest::new(
+        proposal.block,
+        block_tree.snapshot(),
+    );
     if let ValidateBlockResponse::Valid {
         app_state_updates,
         validator_set_updates,
@@ -273,7 +292,7 @@ fn on_receive_nudge<'a, K: KVStore<'a>, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<'a, K>,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -348,7 +367,7 @@ fn on_receive_new_view<'a, K: KVStore<'a>>(
 fn sync<'a, K: KVStore<'a>, N: Network>(
     block_tree: &mut BlockTree<'a, K>, 
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
     pacemaker: &mut impl Pacemaker,
 ) {
     // Pick random validator.
@@ -361,7 +380,7 @@ fn sync_with<'a, K: KVStore<'a>, N: Network>(
     peer: &PublicKeyBytes, 
     block_tree: &mut BlockTree<'a, K>,
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<K::Snapshot>,
+    app: &mut impl App<'a, K::Snapshot>,
     pacemaker: &mut impl Pacemaker,
 ) {
     loop {
