@@ -104,9 +104,8 @@ impl MemDB {
     }
 }
 
-impl<'a> KVStore<'a> for MemDB {
+impl<'a> KVStore<MemDBSnapshot<'a>> for MemDB {
     type WriteBatch = MemWriteBatch;
-    type Snapshot = MemDBSnapshot<'a>;
 
     fn write(&mut self, wb: Self::WriteBatch) {
         let map = self.0.lock().unwrap();
@@ -119,12 +118,18 @@ impl<'a> KVStore<'a> for MemDB {
         self.0.lock().unwrap().clear();
     }
 
-    fn snapshot(&'a self) -> Self::Snapshot {
+    fn snapshot(&'a self) -> MemDBSnapshot<'a> {
         MemDBSnapshot(self.0.lock().unwrap())
     }
 } 
 
-impl<'a> KVGet for MemDB {
+trait Foo {
+    type Bar;
+
+    fn bar<'a>(&'a self) -> &'a Self::Bar;
+}
+
+impl KVGet for MemDB {
     fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
         self.0.lock().unwrap().get(key).cloned()
     }
@@ -137,22 +142,22 @@ impl WriteBatch for MemWriteBatch {
         MemWriteBatch(Vec::new())
     }
 
-    fn set(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.0.push((key, value));
+    fn set(&mut self, key: &[u8], value: &[u8]) {
+        self.0.push((key.to_vec(), value.to_vec()));
     }
 }
 
 struct MemDBSnapshot<'a>(MutexGuard<'a, HashMap<Vec<u8>, Vec<u8>>>);
 
 impl KVGet for MemDBSnapshot<'_> {
-    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         self.0.get(key).cloned()
     }
 }
 
-struct Node<'a> {
-    replica: Replica,
-    bt_camera: BlockTreeCamera<'a, MemDB>,
+struct Node<'a, K: KVStore<MemDBSnapshot<'a>>> {
+    replica: Replica<MemDBSnapshot<'a>, K>,
+    bt_camera: BlockTreeCamera<MemDBSnapshot<'a>, MemDB>,
 }
 
 #[test]

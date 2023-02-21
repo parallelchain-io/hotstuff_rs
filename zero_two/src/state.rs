@@ -54,18 +54,19 @@
 //! ## Safety
 
 use std::marker::PhantomData;
+
 use borsh::{BorshSerialize, BorshDeserialize};
 use crate::types::*;
 
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
-pub struct BlockTree<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
+pub struct BlockTree<S: KVGet, K: KVStore<S>>(K, PhantomData<S>);
 
-impl<'a, K: KVStore<'a>> BlockTree<'a, K> {
-    pub(crate) fn new(kv_store: K) -> BlockTree<'a, K> {
+impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
+    pub(crate) fn new(kv_store: K) -> Self {
         BlockTree(kv_store, PhantomData)
     } 
 
-    pub unsafe fn new_unsafe(kv_store: K) -> BlockTree<'a, K> {
+    pub unsafe fn new_unsafe(kv_store: K) -> Self {
         Self::new(kv_store)
     }
 
@@ -263,8 +264,8 @@ impl<'a, K: KVStore<'a>> BlockTree<'a, K> {
 
     /* ↓↓↓ Snapshot ↓↓↓ */
 
-    pub fn snapshot(&self) -> BlockTreeSnapshot<'a, K::Snapshot> {
-        BlockTreeSnapshot(self.0.snapshot(), PhantomData)
+    pub fn snapshot(&self) -> BlockTreeSnapshot<S> {
+        BlockTreeSnapshot(self.0.snapshot())
     }
 }
 
@@ -384,33 +385,35 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 }
 
 #[derive(Clone)]
-pub struct BlockTreeCamera<'a, K: KVStore<'a>>(K, PhantomData<&'a ()>);
+pub struct BlockTreeCamera<S: KVGet, K: KVStore<S>>(K, PhantomData<S>);
 
-impl<'a, K: KVStore<'a>> BlockTreeCamera<'a, K> {
-    pub fn new(kv_store: K) -> BlockTreeCamera<'a, K> {
+impl<S: KVGet, K: KVStore<S>> BlockTreeCamera<S, K> {
+    pub fn new(kv_store: K) -> Self {
         BlockTreeCamera(kv_store, PhantomData)
     }
 
-    pub fn snapshot(&self) -> BlockTreeSnapshot<'a, K::Snapshot> {
+    pub fn snapshot(&self) -> BlockTreeSnapshot<S> {
         todo!()
     }
 }
 
 /// A read view into the block tree that is guaranteed to stay unchanged.
-pub struct BlockTreeSnapshot<'a, S: 'a + KVGet>(S, PhantomData<&'a ()>);
+pub struct BlockTreeSnapshot<S: KVGet>(S);
 
-impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
+impl<S: KVGet> BlockTreeSnapshot<S> {
     pub fn state(&self) -> Vec<u8> {
         todo!()
     }
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    pub(crate) fn blocks_from_tail(&self, tail: &CryptoHash, limit: u32) -> Option<Vec<Block>> {
+    // 
+    pub(crate) fn blocks_from_highest_committed_block(&self, limit: u32) -> Option<Vec<Block>> {
         let mut res = Vec::with_capacity(limit as usize);
 
-        // 1. Get tail block.
-        let tail_block = self.block(tail)?;
+        // 1. Get highest committed block.
+        if let Some(tail_block) = 
+        let tail_block = self.block(highest_committed_block)?;
         let mut cursor = tail_block.hash;
         res.push(tail_block);
 
@@ -506,7 +509,7 @@ pub(crate) struct SpeculativeAppState<'a, S: KVGet> {
     parent_app_state_updates: Option<AppStateUpdates>,
     grandparent_app_state_updates: Option<AppStateUpdates>,
     great_grandparent_app_state_updates: Option<AppStateUpdates>,
-    block_tree: &'a BlockTreeSnapshot<'a, S>,
+    block_tree: &'a BlockTreeSnapshot<S>,
 } 
 
 impl<'a, S: KVGet> SpeculativeAppState<'a, S> {
@@ -539,13 +542,12 @@ impl<'a, S: KVGet> SpeculativeAppState<'a, S> {
     }
 }
 
-pub trait KVStore<'a>: KVGet + Clone + Send + 'static {
+pub trait KVStore<S: KVGet>: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;
-    type Snapshot: 'a + KVGet;
 
     fn write(&mut self, wb: Self::WriteBatch);
     fn clear(&mut self);
-    fn snapshot(&'a self) -> Self::Snapshot;
+    fn snapshot(&self) -> S;
 }
 
 pub trait WriteBatch {
@@ -568,13 +570,13 @@ macro_rules! re_export_getters_from_block_tree_and_block_tree_snapshot {
             $(fn $f_name(&$self, $($param_name: $param_type),*) -> $return_type $body)*
         }
 
-        impl<'a, K: KVStore<'a>> BlockTree<'a, K> {
+        impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
             $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
                 self.0.$f_name($($param_name),*)  
             })*
         }
 
-        impl<'a, S: 'a + KVGet> BlockTreeSnapshot<'a, S> {
+        impl<'a, S: KVGet> BlockTreeSnapshot<S> {
             $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
                 self.0.$f_name($($param_name),*)  
             })*

@@ -14,6 +14,7 @@
 //! consensus 'validators'. HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not
 //! need to know replicas. 
 
+use std::marker::PhantomData;
 use std::thread::JoinHandle;
 use std::sync::mpsc::{self, Sender};
 use ed25519_dalek::Keypair;
@@ -22,21 +23,22 @@ use crate::networking::{start_polling, Network, ProgressMessageStub, SyncClientS
 use crate::algorithm::start_algorithm;
 use crate::sync_server::start_sync_server;
 use crate::pacemaker::Pacemaker;
-use crate::state::{BlockTree, BlockTreeCamera, KVStore};
+use crate::state::{BlockTree, BlockTreeCamera, KVStore, KVGet};
 use crate::types::{AppStateUpdates, ValidatorSetUpdates};
 use crate::messages;
 
-pub struct Replica<'a, K: KVStore<'a>> {
-    block_tree_camera: BlockTreeCamera<'a, K>,
+pub struct Replica<S: KVGet, K: KVStore<S>> {
+    block_tree_camera: BlockTreeCamera<S, K>,
     poller: JoinHandle<()>,
     poller_shutdown: Sender<()>,
     algorithm: JoinHandle<()>,
     algorithm_shutdown: Sender<()>,
     sync_server: JoinHandle<()>,
     sync_server_shutdown: Sender<()>,
+    phantom_data: PhantomData<S>,
 }
 
-impl<'a, K: KVStore<'a>> Replica<'a, K> {
+impl<S: KVGet, K: KVStore<S>> Replica<S, K> {
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates, 
@@ -47,12 +49,12 @@ impl<'a, K: KVStore<'a>> Replica<'a, K> {
     }
 
     pub fn start(
-        app: impl App<'a, K::Snapshot>,
+        app: impl App<S>,
         keypair: Keypair,
         network: impl Network,
         kv_store: K,
         pacemaker: impl Pacemaker,
-    ) -> Replica<'a, K> {
+    ) -> Replica<S, K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
@@ -75,18 +77,19 @@ impl<'a, K: KVStore<'a>> Replica<'a, K> {
             algorithm,
             algorithm_shutdown,
             sync_server,
-            sync_server_shutdown
+            sync_server_shutdown,
+            phantom_data: PhantomData,
         };
 
         replica
     }
 
-    pub fn block_tree_camera(&self) -> BlockTreeCamera<'a, K> {
+    pub fn block_tree_camera(&self) -> BlockTreeCamera<S, K> {
         self.block_tree_camera.clone()
     }
 }
 
-impl<'a, K: KVStore<'a>> Drop for Replica<'a, K> {
+impl<S: KVGet, K: KVStore<S>> Drop for Replica<S, K> {
     fn drop(&mut self) {
         self.algorithm_shutdown.send(());
         self.algorithm.join();

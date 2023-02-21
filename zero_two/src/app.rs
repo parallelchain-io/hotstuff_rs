@@ -12,21 +12,21 @@
 use crate::types::*;
 use crate::state::{ BlockTreeSnapshot, KVGet, SpeculativeAppState };
 
-pub trait App<'a, K: KVGet>: Send {
+pub trait App<S: KVGet>: Send {
     fn id(&self) -> AppID;
-    fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
-    fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
+    fn produce_block(&mut self, request: ProduceBlockRequest<S>) -> ProduceBlockResponse;
+    fn validate_block(&mut self, request: ValidateBlockRequest<S>) -> ValidateBlockResponse;
 }
 
 pub struct ProduceBlockRequest<'a, S: KVGet> {
     cur_view: ViewNumber,
     parent_block: Option<CryptoHash>,
-    block_tree: BlockTreeSnapshot<'a, S>,
+    block_tree: BlockTreeSnapshot<S>,
     app_state: SpeculativeAppState<'a, S>,
 }
 
 impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
-    pub(crate) fn new(cur_view: ViewNumber, parent_block: Option<CryptoHash>, block_tree: BlockTreeSnapshot<'a, S>) -> Self {
+    pub(crate) fn new(cur_view: ViewNumber, parent_block: Option<CryptoHash>, block_tree: BlockTreeSnapshot<S>) -> Self {
         let app_state = block_tree.speculative_app_state(parent_block.as_ref());
         Self {
             cur_view,
@@ -44,7 +44,7 @@ impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
         self.parent_block
     }
 
-    pub fn block_tree(&self) -> &BlockTreeSnapshot<'a, S> {
+    pub fn block_tree(&self) -> &BlockTreeSnapshot<S> {
         &self.block_tree
     }
 
@@ -62,12 +62,12 @@ pub struct ProduceBlockResponse {
 
 pub struct ValidateBlockRequest<'a, S: KVGet> {
     proposed_block: Block,
-    block_tree: BlockTreeSnapshot<'a, S>,
+    block_tree: BlockTreeSnapshot<S>,
     app_state: SpeculativeAppState<'a, S>,
 }
 
 impl<'a, S: KVGet> ValidateBlockRequest<'a, S> {
-    pub(crate) fn new(proposed_block: Block, block_tree: BlockTreeSnapshot<'a, S>) -> Self {
+    pub(crate) fn new(proposed_block: Block, block_tree: BlockTreeSnapshot<S>) -> Self {
         let parent_block = if proposed_block.justify.is_genesis_qc() {
             None
         } else {
@@ -85,7 +85,7 @@ impl<'a, S: KVGet> ValidateBlockRequest<'a, S> {
         &self.proposed_block
     }
 
-    pub fn block_tree(&self) -> &BlockTreeSnapshot<'a, S> {
+    pub fn block_tree(&self) -> &BlockTreeSnapshot<S> {
         &self.block_tree
     }
 

@@ -8,11 +8,11 @@
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use crate::messages::{SyncRequest, SyncResponse};
-use crate::state::{BlockTree, KVStore};
+use crate::state::{BlockTree, KVStore, KVGet};
 use crate::networking::{Network, SyncServerStub};
 
-pub(crate) fn start_sync_server<'a, K: KVStore<'a>, N: Network>(
-    block_tree: BlockTree<'a, K>,
+pub(crate) fn start_sync_server<S: KVGet, K: KVStore<S>, N: Network>(
+    block_tree: BlockTree<S, K>,
     sync_stub: SyncServerStub<N>,
     shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {

@@ -49,7 +49,7 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::cmp::{min, max};
-use std::time::{Instant, Duration};
+use std::time::Instant;
 use std::thread::{self, JoinHandle};
 use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
 use crate::app::ProduceBlockResponse;
@@ -60,10 +60,10 @@ use crate::state::*;
 use crate::networking::*;
 use crate::app::App;
 
-pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
-    app: impl App<'a, K::Snapshot>,
+pub(crate) fn start_algorithm<S: KVGet, K: KVStore<S>, N: Network>(
+    app: impl App<S>,
     me: Keypair,
-    block_tree: BlockTree<'a, K>,
+    block_tree: BlockTree<S, K>,
     pacemaker: impl Pacemaker,
     pm_stub: ProgressMessageStub<N>,
     sync_stub: SyncClientStub<N>,
@@ -91,13 +91,13 @@ pub(crate) fn start_algorithm<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns whether there was progress in the view.
-fn execute_view<'a, K: KVStore<'a>, N: Network>(
+fn execute_view<S: KVGet, K: KVStore<S>, N: Network>(
     me: &Keypair,
     view: ViewNumber,
     pacemaker: &mut impl Pacemaker,
-    block_tree: &mut BlockTree<'a, K>,
+    block_tree: &mut BlockTree<S, K>,
     pm_stub: &mut ProgressMessageStub<N>,
-    app: &mut impl App<'a, K::Snapshot>,
+    app: &mut impl App<S>,
 ) -> Result<(), ShouldSync> {
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
@@ -172,11 +172,11 @@ struct ShouldSync;
 /// Create a proposal or a nudge, broadcast it to the network, and then send a vote for it to the next leader.
 /// 
 /// Returns ((the broadcasted proposal or nudge, the sent vote), whether i am the next leader).
-fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
+fn propose_or_nudge<S: KVGet, K: KVStore<S>, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
-    app: &mut impl App<'a, K::Snapshot>,
-    block_tree: &mut BlockTree<'a, K>,
+    app: &mut impl App<S>,
+    block_tree: &mut BlockTree<S, K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> ((ProgressMessage, ProgressMessage), bool) {
@@ -241,12 +241,12 @@ fn propose_or_nudge<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
+fn on_receive_proposal<S: KVGet, K: KVStore<S>, N: Network>(
     proposal: &Proposal,
     me: &Keypair,
     cur_view: ViewNumber,
-    block_tree: &mut BlockTree<'a, K>,
-    app: &mut impl App<'a, K::Snapshot>,
+    block_tree: &mut BlockTree<S, K>,
+    app: &mut impl App<S>,
     pacemaker: &impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -287,12 +287,12 @@ fn on_receive_proposal<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_nudge<'a, K: KVStore<'a>, N: Network>(
+fn on_receive_nudge<S: KVGet, K: KVStore<S>, N: Network>(
     nudge: &Nudge,
     me: &Keypair,
     cur_view: ViewNumber,
-    block_tree: &mut BlockTree<'a, K>,
-    app: &mut impl App<'a, K::Snapshot>,
+    block_tree: &mut BlockTree<S, K>,
+    app: &mut impl App<S>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -324,11 +324,11 @@ fn on_receive_nudge<'a, K: KVStore<'a>, N: Network>(
 }
 
 // Returns (whether a new highest qc was collected, i am the next leader).
-fn on_receive_vote<'a, K: KVStore<'a>>(
+fn on_receive_vote<S: KVGet, K: KVStore<S>>(
     origin: &PublicKeyBytes,
     vote: Vote,
     votes: &mut VoteCollector,
-    block_tree: &mut BlockTree<'a, K>,
+    block_tree: &mut BlockTree<S, K>,
     cur_view: ViewNumber,
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
@@ -351,9 +351,9 @@ fn on_receive_vote<'a, K: KVStore<'a>>(
 }
 
 // Returns whether the highest qc was updated.
-fn on_receive_new_view<'a, K: KVStore<'a>>(
+fn on_receive_new_view<S: KVGet, K: KVStore<S>>(
     new_view: NewView,
-    block_tree: &mut BlockTree<'a, K>,
+    block_tree: &mut BlockTree<S, K>,
 ) -> bool {
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
         if block_tree.qc_can_be_inserted(&new_view.highest_qc) {
@@ -364,10 +364,10 @@ fn on_receive_new_view<'a, K: KVStore<'a>>(
     false
 }
 
-fn sync<'a, K: KVStore<'a>, N: Network>(
-    block_tree: &mut BlockTree<'a, K>, 
+fn sync<S: KVGet, K: KVStore<S>, N: Network>(
+    block_tree: &mut BlockTree<S, K>, 
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<'a, K::Snapshot>,
+    app: &mut impl App<S>,
     pacemaker: &mut impl Pacemaker,
 ) {
     // Pick random validator.
@@ -376,11 +376,11 @@ fn sync<'a, K: KVStore<'a>, N: Network>(
     }
 }
 
-fn sync_with<'a, K: KVStore<'a>, N: Network>(
+fn sync_with<S: KVGet, K: KVStore<S>, N: Network>(
     peer: &PublicKeyBytes, 
-    block_tree: &mut BlockTree<'a, K>,
+    block_tree: &mut BlockTree<S, K>,
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<'a, K::Snapshot>,
+    app: &mut impl App<S>,
     pacemaker: &mut impl Pacemaker,
 ) {
     loop {
