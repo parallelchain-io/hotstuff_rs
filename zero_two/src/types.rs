@@ -5,7 +5,7 @@
     Authors: Alice Lim
 */
 
-use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys, Values}, HashMap}};
+use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys, Values}, HashMap}, hash::Hash};
 use borsh::{BorshSerialize, BorshDeserialize};
 use rand::seq::SliceRandom;
 use crate::messages::Vote;
@@ -26,7 +26,6 @@ pub type Datum = Vec<u8>;
 pub type Power = u64;
 pub type PublicKeyBytes = [u8; 32];
 pub type SignatureBytes = Vec<u8>;
-pub type ValidatorSetUpdates = Vec<(PublicKeyBytes, Power)>;
 pub type ViewNumber = u64;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -99,54 +98,56 @@ pub enum Phase {
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet;
 
-#[derive(Clone)]
-pub struct AppStateUpdates {
-    inserts: HashMap<Vec<u8>, Vec<u8>>,
-    deletes: HashSet<Vec<u8>>, 
+pub type AppStateUpdates = ChangeSet<Vec<u8>, Vec<u8>>;
+pub type ValidatorSetUpdates = ChangeSet<PublicKeyBytes, Power>;
+
+pub struct ChangeSet<K: Eq + Hash, V: Eq + Hash> {
+    inserts: HashMap<K, V>,
+    deletes: HashSet<K>,
 }
 
-impl AppStateUpdates {
-    pub fn new() -> AppStateUpdates {
-        AppStateUpdates {
+impl<K: Eq + Hash, V: Eq + Hash> ChangeSet<K, V> where K:  {
+    pub fn new() -> Self {
+        Self {
             inserts: HashMap::new(),
             deletes: HashSet::new(),
         }
     }
 
-    pub fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    pub fn insert(&mut self, key: K, value: V) {
         self.deletes.remove(&key);
         self.inserts.insert(key, value);
     }
 
-    pub fn delete(&mut self, key: Vec<u8>) {
+    pub fn delete(&mut self, key: K) {
         self.inserts.remove(&key);
         self.deletes.insert(key);
     }
 
-    pub(crate) fn get_insert(&self, key: &[u8]) -> Option<&Vec<u8>> {
+    pub(crate) fn get_insert(&self, key: &K) -> Option<&V> {
         self.inserts.get(key)
     } 
 
-    pub(crate) fn contains_delete(&self, key: &[u8]) -> bool {
+    pub(crate) fn contains_delete(&self, key: &K) -> bool {
         self.deletes.contains(key)
     }
 
-    /// Get an iterator over all of the key, value pairs in this WriteSet.
-    pub(crate) fn inserts(&self) -> hash_map::Iter<Vec<u8>, Vec<u8>> {
+    /// Get an iterator over all of the key-value pairs inserted by this ChangeSet.
+    pub(crate) fn inserts(&self) -> hash_map::Iter<K, V> {
         self.inserts.iter()
     } 
 
-    /// Get an iterator over all of the keys that are deleted by this WriteSet.
-    pub(crate) fn deletions(&self) -> hash_set::Iter<Vec<u8>> {
+    /// Get an iterator over all of the keys that are deleted by this ChangeSet.
+    pub(crate) fn deletions(&self) -> hash_set::Iter<K> {
         self.deletes.iter()
     }
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
-    map: HashMap<PublicKeyBytes, Power>,
-    // used to implement [ValidatorSet::random]
+    // A separate vector is used to implement [ValidatorSet::random].
     validators: Vec<PublicKeyBytes>,
+    powers: HashMap<PublicKeyBytes, Power>,
 }
 
 impl ValidatorSet {
@@ -167,15 +168,7 @@ impl ValidatorSet {
     }
 
     pub fn iter(&self) -> Iter<PublicKeyBytes, Power> {
-        self.map.iter()
-    }
-
-    pub fn keys(&self) -> Keys<PublicKeyBytes, Power> {
-        self.map.keys()
-    }
-
-    pub fn values(&self) -> Values<PublicKeyBytes, Power> {
-        self.map.values()
+        self.powers.iter()
     }
 
     pub(crate) fn random(&self) -> Option<&PublicKeyBytes> {

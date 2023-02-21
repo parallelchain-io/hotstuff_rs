@@ -24,12 +24,12 @@ pub(crate) fn start_sync_server<S: KVGet, K: KVStore<S>, N: Network>(
                 Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            let (origin, SyncRequest { highest_committed_block, limit }) = sync_stub.recv();
+            let (origin, SyncRequest { highest_committed_block, limit }) = sync_stub.recv_request();
             let bt_snapshot = block_tree.snapshot();
-            let blocks = bt_snapshot.blocks_from_tail(&highest_committed_block, limit);
+            let blocks = bt_snapshot.blocks_from_highest_committed_block(limit);
             let highest_qc = bt_snapshot.highest_qc();
             let response = SyncResponse { blocks, highest_qc };
-            sync_stub.send(&origin, response);
+            sync_stub.send_response(&origin, response);
         }   
     })
 }

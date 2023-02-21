@@ -397,7 +397,7 @@ fn sync_with<S: KVGet, K: KVStore<S>, N: Network>(
                 return
             }
 
-            let validate_block_request: ValidateBlockRequest<K::Snapshot>;
+            let validate_block_request: ValidateBlockRequest<S>;
             if let ValidateBlockResponse::Valid {
                 app_state_updates,
                 validator_set_updates

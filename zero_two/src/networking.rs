@@ -10,8 +10,7 @@
 
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
 use std::thread::{self, JoinHandle};
-use std::time::{Instant, Duration};
-use ed25519_dalek::PublicKey;
+use std::time::Instant;
 
 use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID};
 use crate::messages::*;

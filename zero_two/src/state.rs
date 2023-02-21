@@ -58,8 +58,10 @@ use std::marker::PhantomData;
 use borsh::{BorshSerialize, BorshDeserialize};
 use crate::types::*;
 
+// The inner PhantomData is a function pointer so that S does not prevent BlockTree from being Send. Idea:
+// https://stackoverflow.com/questions/50200197/how-do-i-share-a-struct-containing-a-phantom-pointer-among-threads
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
-pub struct BlockTree<S: KVGet, K: KVStore<S>>(K, PhantomData<S>);
+pub struct BlockTree<S: KVGet, K: KVStore<S>>(K, PhantomData<fn() -> S>);
 
 impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
     pub(crate) fn new(kv_store: K) -> Self {
@@ -208,6 +210,10 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
             }
         }
         wb.delete_pending_app_state_updates(block);
+
+
+        todo!();
+        // actually write into committed validator set.
         
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
             let committed_validator_set = self.committed_validator_set();
@@ -407,25 +413,24 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    // 
-    pub(crate) fn blocks_from_highest_committed_block(&self, limit: u32) -> Option<Vec<Block>> {
+    pub(crate) fn blocks_from_highest_committed_block(&self, limit: u32) -> Vec<Block> {
         let mut res = Vec::with_capacity(limit as usize);
 
         // 1. Get highest committed block.
-        if let Some(tail_block) = 
-        let tail_block = self.block(highest_committed_block)?;
-        let mut cursor = tail_block.hash;
-        res.push(tail_block);
+        if let Some(highest_committed_block) = self.highest_committed_block() {
+            let mut cursor = highest_committed_block;
+            res.push(self.block(&highest_committed_block).unwrap());
 
-        // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
-        while res.len() < limit as usize {
-            let child = match self.child(&cursor) {
-                Some(block) => self.block(&block).unwrap(),
-                None => break,
-            };
-            cursor = child.hash;
-            res.push(child);
-        }
+            // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
+            while res.len() < limit as usize {
+                let child = match self.child(&cursor) {
+                    Some(block) => self.block(&block).unwrap(),
+                    None => break,
+                };
+                cursor = child.hash;
+                res.push(child);
+            }
+        };
 
         // 3. If limit is not yet satisfied, get speculative blocks.
         if res.len() < limit as usize {
@@ -435,7 +440,7 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
             }
         }
 
-        Some(res)
+        res
     }
 
     fn chain_between_speculative_block_and_highest_committed_block(&self, head_block: &CryptoHash) -> Vec<Block> {
@@ -515,25 +520,25 @@ pub(crate) struct SpeculativeAppState<'a, S: KVGet> {
 impl<'a, S: KVGet> SpeculativeAppState<'a, S> {
     pub(crate) fn get(&'a self, key: &[u8]) -> Option<&'a Vec<u8>> {
         if let Some(parent_app_state_updates) = self.parent_app_state_updates {
-            if parent_app_state_updates.contains_delete(key) {
+            if parent_app_state_updates.contains_delete(&key.to_vec()) {
                 return None
-            } else if let Some(value) = parent_app_state_updates.get_insert(key) {
+            } else if let Some(value) = parent_app_state_updates.get_insert(&key.to_vec()) {
                 return Some(&value)
             }
         }
         
         if let Some(grandparent_app_state_changes) = self.grandparent_app_state_updates {
-            if grandparent_app_state_changes.contains_delete(key) {
+            if grandparent_app_state_changes.contains_delete(&key.to_vec()) {
                 return None
-            } else if let Some(value) = grandparent_app_state_changes.get_insert(key) {
+            } else if let Some(value) = grandparent_app_state_changes.get_insert(&key.to_vec()) {
                 return Some(&value)
             }
         }
 
         if let Some(great_grandparent_app_state_changes) = self.great_grandparent_app_state_updates {
-            if great_grandparent_app_state_changes.contains_delete(key) {
+            if great_grandparent_app_state_changes.contains_delete(&key.to_vec()) {
                 return None
-            } else if let Some(value) = great_grandparent_app_state_changes.get_insert(key) {
+            } else if let Some(value) = great_grandparent_app_state_changes.get_insert(&key.to_vec()) {
                 return Some(&value)
             }
         } 

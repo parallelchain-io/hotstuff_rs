@@ -54,10 +54,10 @@ impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
 }
 
 pub struct ProduceBlockResponse {
-    data_hash: CryptoHash,
-    data: Data,
-    app_state_updates: Option<AppStateUpdates>,
-    validator_set_updates: Option<ValidatorSetUpdates>
+    pub data_hash: CryptoHash,
+    pub data: Data,
+    pub app_state_updates: Option<AppStateUpdates>,
+    pub validator_set_updates: Option<ValidatorSetUpdates>
 }
 
 pub struct ValidateBlockRequest<'a, S: KVGet> {

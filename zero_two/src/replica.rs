@@ -84,8 +84,8 @@ impl<S: KVGet, K: KVStore<S>> Replica<S, K> {
         replica
     }
 
-    pub fn block_tree_camera(&self) -> BlockTreeCamera<S, K> {
-        self.block_tree_camera.clone()
+    pub fn block_tree_camera(&self) -> &BlockTreeCamera<S, K> {
+        &self.block_tree_camera
     }
 }
 

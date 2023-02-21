@@ -25,4 +25,12 @@ impl Pacemaker for DefaultPacemaker {
     fn view_timeout(&mut self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> Duration {
         todo!() 
     }
+
+    fn proposal_rebroadcast_period(&self) -> Duration {
+        todo!()
+    }
+
+    fn sync_request_limit(&self) -> u32 {
+        todo!()
+    }
 }
