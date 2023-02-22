@@ -149,7 +149,7 @@ impl MemDB {
     }
 }
 
-impl<'a> KVStore for MemDB {
+impl KVStore for MemDB {
     type WriteBatch = MemWriteBatch;
     type Snapshot<'a> = MemDBSnapshot<'a>;
 
@@ -167,7 +167,7 @@ impl<'a> KVStore for MemDB {
         self.0.lock().unwrap().clear();
     }
 
-    fn snapshot(&'a self) -> MemDBSnapshot<'a> {
+    fn snapshot<'b>(&'b self) -> MemDBSnapshot<'b> {
         MemDBSnapshot(self.0.lock().unwrap())
     }
 } 
@@ -221,12 +221,12 @@ enum NumberAppTransaction {
     SetValidator(PublicKeyBytes, Power),
 }
 
-impl App<MemDBSnapshot<'_>> for NumberApp {
+impl App<MemDB> for NumberApp {
     fn id(&self) -> AppID {
         0
     }
 
-    fn produce_block(&mut self, request: ProduceBlockRequest<MemDBSnapshot>) -> ProduceBlockResponse {
+    fn produce_block(&mut self, request: ProduceBlockRequest<MemDB>) -> ProduceBlockResponse {
         let initial_number = u32::from_le_bytes(request.app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
 
         let tx_queue = self.tx_queue.lock().unwrap();
@@ -249,7 +249,7 @@ impl App<MemDBSnapshot<'_>> for NumberApp {
         }
     }
 
-    fn validate_block(&mut self, request: ValidateBlockRequest<MemDBSnapshot>) -> ValidateBlockResponse {
+    fn validate_block(&mut self, request: ValidateBlockRequest<MemDB>) -> ValidateBlockResponse {
         let data = request.proposed_block().data;
         let data_hash: CryptoHash = {
             let hasher = Sha256::new();

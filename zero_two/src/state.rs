@@ -290,8 +290,8 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ Snapshot ↓↓↓ */
 
-    pub fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot<'_>> {
-        BlockTreeSnapshot(self.0.snapshot())
+    pub fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot> {
+        BlockTreeSnapshot::new(self.0.snapshot())
     }
 }
 
@@ -429,6 +429,10 @@ pub struct BlockTreeSnapshot<S: KVGet>(S);
 impl<S: KVGet> BlockTreeSnapshot<S> {
     pub fn state(&self) -> Vec<u8> {
         todo!()
+    }
+
+    pub(crate) fn new(kv_snapshot: S) -> Self {
+        BlockTreeSnapshot(kv_snapshot)
     }
 
     /* ↓↓↓ Used for syncing ↓↓↓ */

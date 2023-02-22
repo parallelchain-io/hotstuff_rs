@@ -196,7 +196,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             let produce_block_request = ProduceBlockRequest::new(
                 cur_view, 
                 parent_block, 
-                block_tree.snapshot()
+                block_tree.snapshot(),
             );
 
             let ProduceBlockResponse { 
