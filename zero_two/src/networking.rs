@@ -6,7 +6,8 @@
 */
 
 //! HotStuff-rs' has modular peer-to-peer networking, with each peer identified by a PublicKey. Networking providers
-//! interact with HotStuff-rs' threads through implementations of the [Network] trait.
+//! interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has four methods
+//! that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
 use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
 use std::thread::{self, JoinHandle};
@@ -16,18 +17,16 @@ use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID};
 use crate::messages::*;
 
 pub trait Network: Clone + Send + 'static {
+    /// Informs the networking provider of a validator set change.
     fn update_validator_set(&mut self, validator_set: ValidatorSet);
 
+    /// Send a message to all peers.
     fn broadcast(&mut self, message: Message);
 
     /// Send a message to the specified peer without blocking.
     fn send(&mut self, peer: PublicKeyBytes, message: Message);
 
     /// Receive a message from any peer.
-    ///
-    /// # Important
-    /// Messages returned from this function should be deserialized using the Message's implementation of TryFrom<Vec<u8>>,
-    /// which checks some simple invariants.
     fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
 }
 

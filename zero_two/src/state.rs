@@ -214,6 +214,7 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
 
         todo!();
         // actually write into committed validator set.
+        // inform networking provider of change to committed validator set.
         
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
             let committed_validator_set = self.committed_validator_set();

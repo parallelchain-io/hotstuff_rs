@@ -164,6 +164,9 @@ fn execute_view<S: KVGet, K: KVStore<S>, N: Network>(
         }
     }
 
+    // 3. Send a New View message.
+    todo!()
+
     Ok(())
 }
 

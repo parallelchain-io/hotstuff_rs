@@ -6,13 +6,18 @@
 */
 
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, these processes are
-//! called 'replicas', and therefore the set of all replicas is the 'replica set'. Each replica is uniquely identified
+//! called 'replicas', and therefore the set of all replicas is called the 'replica set'. Each replica is uniquely identified
 //! by an Ed25519 public key.
 //! 
-//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely keep up to consensus
+//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely keep up with consensus
 //! decisions, without having weight in them. We call these replicas 'listeners', and call the replicas that vote in
-//! consensus 'validators'. HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not
-//! need to know replicas. 
+//! consensus 'validators'. 
+//! 
+//! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need to know the identity
+//! of listeners, but for listeners to keep up with consensus decisions, they also need to receive progress messages. Concretely, 
+//! this requires that the library user's [networking provider's broadcast method](crate::networking) send progress messages to
+//! all peers it is connected to, and not only the validators. The library user is free to design and implement their own mechanism
+//! for deciding which peers, besides those in the validator set, should be connected to the network. 
 
 use std::marker::PhantomData;
 use std::thread::JoinHandle;
