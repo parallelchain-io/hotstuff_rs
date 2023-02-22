@@ -101,6 +101,7 @@ pub struct SignatureSet;
 pub type AppStateUpdates = ChangeSet<Vec<u8>, Vec<u8>>;
 pub type ValidatorSetUpdates = ChangeSet<PublicKeyBytes, Power>;
 
+#[derive(Clone)]
 pub struct ChangeSet<K: Eq + Hash, V: Eq + Hash> {
     inserts: HashMap<K, V>,
     deletes: HashSet<K>,
@@ -169,6 +170,10 @@ impl ValidatorSet {
 
     pub fn iter(&self) -> Iter<PublicKeyBytes, Power> {
         self.powers.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.validators.len() 
     }
 
     pub(crate) fn random(&self) -> Option<&PublicKeyBytes> {
