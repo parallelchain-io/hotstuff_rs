@@ -58,14 +58,12 @@ use std::marker::PhantomData;
 use borsh::{BorshSerialize, BorshDeserialize};
 use crate::types::*;
 
-// The inner PhantomData is a function pointer so that S does not prevent BlockTree from being Send. Idea:
-// https://stackoverflow.com/questions/50200197/how-do-i-share-a-struct-containing-a-phantom-pointer-among-threads
 /// A read and write handle into the block tree, exclusively owned by the algorithm thread.
-pub struct BlockTree<S: KVGet, K: KVStore<S>>(K, PhantomData<fn() -> S>);
+pub struct BlockTree<K: KVStore>(K);
 
-impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
+impl<K: KVStore> BlockTree<K> {
     pub(crate) fn new(kv_store: K) -> Self {
-        BlockTree(kv_store, PhantomData)
+        BlockTree(kv_store)
     } 
 
     pub unsafe fn new_unsafe(kv_store: K) -> Self {
@@ -292,7 +290,7 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
 
     /* ↓↓↓ Snapshot ↓↓↓ */
 
-    pub fn snapshot(&self) -> BlockTreeSnapshot<S> {
+    pub fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot<'_>> {
         BlockTreeSnapshot(self.0.snapshot())
     }
 }
@@ -413,14 +411,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 }
 
 #[derive(Clone)]
-pub struct BlockTreeCamera<S: KVGet, K: KVStore<S>>(K, PhantomData<S>);
+pub struct BlockTreeCamera<K: KVStore>(K);
 
-impl<S: KVGet, K: KVStore<S>> BlockTreeCamera<S, K> {
+impl<K: KVStore> BlockTreeCamera<K> {
     pub fn new(kv_store: K) -> Self {
-        BlockTreeCamera(kv_store, PhantomData)
+        BlockTreeCamera(kv_store)
     }
 
-    pub fn snapshot(&self) -> BlockTreeSnapshot<S> {
+    pub fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot<'_>> {
         todo!()
     }
 }
@@ -569,12 +567,13 @@ impl<'a, S: KVGet> SpeculativeAppState<'a, S> {
     }
 }
 
-pub trait KVStore<S: KVGet>: KVGet + Clone + Send + 'static {
+pub trait KVStore: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;
+    type Snapshot<'a>: 'a + KVGet;
 
     fn write(&mut self, wb: Self::WriteBatch);
     fn clear(&mut self);
-    fn snapshot(&self) -> S;
+    fn snapshot<'b>(&'b self) -> Self::Snapshot<'b>;
 }
 
 pub trait WriteBatch {
@@ -597,13 +596,13 @@ macro_rules! re_export_getters_from_block_tree_and_block_tree_snapshot {
             $(fn $f_name(&$self, $($param_name: $param_type),*) -> $return_type $body)*
         }
 
-        impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
+        impl<K: KVStore> BlockTree<K> {
             $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
                 self.0.$f_name($($param_name),*)  
             })*
         }
 
-        impl<'a, S: KVGet> BlockTreeSnapshot<S> {
+        impl<S: KVGet> BlockTreeSnapshot<S> {
             $(pub fn $f_name(&self, $($param_name: $param_type),*) -> $return_type {
                 self.0.$f_name($($param_name),*)  
             })*

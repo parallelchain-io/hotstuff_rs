@@ -16,7 +16,7 @@ use std::time::Instant;
 use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID, ValidatorSetUpdates};
 use crate::messages::*;
 
-pub trait Network: Clone + Send + 'static {
+pub trait Network: Clone + Send {
     /// Informs the networking provider of updates to the validator set.
     fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
@@ -30,17 +30,17 @@ pub trait Network: Clone + Send + 'static {
     fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
 }
 
-/// Spawn the poller thread, which polls the Network for messages and distributes them into the ProgressMessageFilter,
-/// or SyncRequestReceiver, or the SyncResponseReceiver according to their variant.
-pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receiver<()>) -> (
+/// Spawn the poller thread, which polls the Network for messages and distributes them into receivers for
+/// progress messages, sync requests, and sync responses.
+pub(crate) fn start_polling<N: Network + 'static>(mut network: N, shutdown_signal: Receiver<()>) -> (
     JoinHandle<()>,
     Receiver<(PublicKeyBytes, ProgressMessage)>,
     Receiver<(PublicKeyBytes, SyncRequest)>,
     Receiver<(PublicKeyBytes, SyncResponse)>,
 ) {
-    let (to_progress_msg_filter, progress_msg_from_poller) = mpsc::channel();
-    let (to_sync_request_receiver, sync_request_from_poller) = mpsc::channel();
-    let (to_sync_response_receiver, sync_response_from_poller) = mpsc::channel();
+    let (to_progress_msg_receiver, progress_msg_receiver) = mpsc::channel();
+    let (to_sync_request_receiver, sync_request_receiver) = mpsc::channel();
+    let (to_sync_response_receiver, sync_response_receiver) = mpsc::channel();
 
     let poller_thread = thread::spawn(move || {
         loop {
@@ -52,28 +52,20 @@ pub(crate) fn start_polling<N: Network>(mut network: N, shutdown_signal: Receive
 
             if let Some((origin, msg)) = network.recv() {
                 match msg {
-                    Message::ProgressMessage(p_msg) => to_progress_msg_filter.send((origin, p_msg)).unwrap(),
+                    Message::ProgressMessage(p_msg) => to_progress_msg_receiver.send((origin, p_msg)).unwrap(),
                     Message::SyncMessage(s_msg) => match s_msg {
                         SyncMessage::SyncRequest(s_req) => to_sync_request_receiver.send((origin, s_req)).unwrap(),
                         SyncMessage::SyncResponse(s_res) => to_sync_response_receiver.send((origin, s_res)).unwrap(),
                     }
                 }
+            } else {
+                thread::yield_now()
             }
-
-            thread::yield_now();
         }
     });
-    todo!();
-    let progress_message_filter = ProgressMessageFilter {
-        recycler: to_progress_msg_filter.clone(),
-        receiver: progress_msg_from_poller,
-    };
-    let sync_request_receiver = SyncRequestReceiver(sync_request_from_poller);
-    let sync_response_receiver = SyncResponseReceiver(sync_response_from_poller);
-
     (
         poller_thread,
-        progress_message_filter,
+        progress_msg_receiver,
         sync_request_receiver,
         sync_response_receiver,
     )

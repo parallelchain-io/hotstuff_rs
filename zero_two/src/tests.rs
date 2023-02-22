@@ -38,17 +38,17 @@ fn integration_test() {
     let keypairs: [DalekKeypair; 6]; // generate 6.
     let network_stubs = mock_network(keypairs);
     let init_as = {
-        let state = AppStateUpdates::new();
+        let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), usize::to_le_bytes(0).to_vec());
         state
     };
     let init_vs = {
-        let validator_set = ValidatorSetUpdates::new();
+        let mut validator_set = ValidatorSetUpdates::new();
         validator_set.insert(keypairs[0].public.to_bytes(), 1);
         validator_set
     };
 
-    let nodes: Vec<Node> = keypairs
+    let mut nodes: Vec<Node> = keypairs
         .into_iter()
         .zip(network_stubs)
         .map(|(keypair, network)| Node::new(keypair, network, init_as.clone(), init_vs.clone()))
@@ -149,8 +149,9 @@ impl MemDB {
     }
 }
 
-impl<'a> KVStore<MemDBSnapshot<'a>> for MemDB {
+impl<'a> KVStore for MemDB {
     type WriteBatch = MemWriteBatch;
+    type Snapshot<'a> = MemDBSnapshot<'a>;
 
     fn write(&mut self, wb: Self::WriteBatch) {
         let map = self.0.lock().unwrap();
@@ -166,7 +167,7 @@ impl<'a> KVStore<MemDBSnapshot<'a>> for MemDB {
         self.0.lock().unwrap().clear();
     }
 
-    fn snapshot(&self) -> MemDBSnapshot<'a> {
+    fn snapshot(&'a self) -> MemDBSnapshot<'a> {
         MemDBSnapshot(self.0.lock().unwrap())
     }
 } 
@@ -304,14 +305,14 @@ impl NumberApp {
         (app_state_updates, validator_set_updates)
     }
 }
-struct Node<'a> {
+struct Node {
     public_key: PublicKeyBytes,
     tx_queue: Arc<Mutex<Vec<NumberAppTransaction>>>,
-    replica: Replica<MemDBSnapshot<'a>, MemDB>,
+    replica: Replica<MemDB>,
 }
 
-impl<'a> Node<'a> {
-    fn new(keypair: DalekKeypair, network: NetworkStub, init_as: AppStateUpdates, init_vs: ValidatorSetUpdates) -> Node<'a> {
+impl Node {
+    fn new(keypair: DalekKeypair, network: NetworkStub, init_as: AppStateUpdates, init_vs: ValidatorSetUpdates) -> Node {
         let kv_store = MemDB::new();
 
         Replica::initialize(kv_store.clone(), init_as, init_vs);

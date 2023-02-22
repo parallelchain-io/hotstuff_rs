@@ -19,7 +19,6 @@
 //! all peers it is connected to, and not only the validators. The library user is free to design and implement their own mechanism
 //! for deciding which peers, besides those in the validator set, should be connected to the network. 
 
-use std::marker::PhantomData;
 use std::thread::JoinHandle;
 use std::sync::mpsc::{self, Sender};
 use ed25519_dalek::Keypair;
@@ -28,73 +27,70 @@ use crate::networking::{start_polling, Network, ProgressMessageStub, SyncClientS
 use crate::algorithm::start_algorithm;
 use crate::sync_server::start_sync_server;
 use crate::pacemaker::Pacemaker;
-use crate::state::{BlockTree, BlockTreeCamera, KVStore, KVGet};
+use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::types::{AppStateUpdates, ValidatorSetUpdates};
 use crate::messages;
 
-pub struct Replica<S: KVGet, K: KVStore<S>> {
-    block_tree_camera: BlockTreeCamera<S, K>,
+pub struct Replica<K: KVStore> {
+    block_tree_camera: BlockTreeCamera<K>,
     poller: JoinHandle<()>,
     poller_shutdown: Sender<()>,
     algorithm: JoinHandle<()>,
     algorithm_shutdown: Sender<()>,
     sync_server: JoinHandle<()>,
     sync_server_shutdown: Sender<()>,
-    phantom_data: PhantomData<S>,
 }
 
-impl<S: KVGet, K: KVStore<S>> Replica<S, K> {
+impl<K: KVStore> Replica<K> {
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates, 
         initial_validator_set: ValidatorSetUpdates
     ) {
-        let block_tree = BlockTree::new(kv_store);
+        let mut block_tree = BlockTree::new(kv_store);
         block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
     pub fn start(
-        app: impl App<S>,
+        app: impl App<K> + 'static,
         keypair: Keypair,
-        network: impl Network,
+        network: impl Network + 'static,
         kv_store: K,
-        pacemaker: impl Pacemaker,
-    ) -> Replica<S, K> {
+        pacemaker: impl Pacemaker + 'static,
+    ) -> Replica<K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
-        let (poller, progress_msgs, sync_requests, sync_responses) = start_polling(network, poller_shutdown_receiver);
+        let (poller, progress_msgs, sync_requests, sync_responses) = start_polling(network.clone(), poller_shutdown_receiver);
         let pm_stub = ProgressMessageStub::new(network.clone(), progress_msgs);
         let sync_server_stub = SyncServerStub::new(sync_requests, network.clone());
-        let sync_client_stub = SyncClientStub::new(network.clone(), sync_responses);
+        let sync_client_stub = SyncClientStub::new(network, sync_responses);
 
         let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
-        let sync_server = start_sync_server(block_tree, sync_server_stub, sync_server_shutdown_receiver);
+        let sync_server = start_sync_server(BlockTreeCamera::new(kv_store.clone()), sync_server_stub, sync_server_shutdown_receiver);
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
         let algorithm = start_algorithm(app, messages::Keypair::new(keypair), block_tree, pacemaker, pm_stub, sync_client_stub, algorithm_shutdown_receiver);
 
-        let block_tree_camera = BlockTreeCamera::new(kv_store);
         let replica = Replica {
-            block_tree_camera,
+            block_tree_camera: BlockTreeCamera::new(kv_store.clone()),
             poller,
             poller_shutdown,
             algorithm,
             algorithm_shutdown,
             sync_server,
             sync_server_shutdown,
-            phantom_data: PhantomData,
         };
 
         replica
     }
 
-    pub fn block_tree_camera(&self) -> &BlockTreeCamera<S, K> {
+    pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }
 }
 
-impl<S: KVGet, K: KVStore<S>> Drop for Replica<S, K> {
+impl<K: KVStore> Drop for Replica<K> {
     fn drop(&mut self) {
         self.algorithm_shutdown.send(());
         self.algorithm.join();

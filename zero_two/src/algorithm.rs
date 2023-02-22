@@ -60,11 +60,11 @@ use crate::state::*;
 use crate::networking::*;
 use crate::app::App;
 
-pub(crate) fn start_algorithm<S: KVGet, K: KVStore<S>, N: Network>(
-    app: impl App<S>,
+pub(crate) fn start_algorithm<K: KVStore, N: Network>(
+    app: impl App<K> + 'static,
     me: Keypair,
-    block_tree: BlockTree<S, K>,
-    pacemaker: impl Pacemaker,
+    block_tree: BlockTree<K>,
+    pacemaker: impl Pacemaker + 'static,
     pm_stub: ProgressMessageStub<N>,
     sync_stub: SyncClientStub<N>,
     shutdown_signal: Receiver<()>,
@@ -91,13 +91,13 @@ pub(crate) fn start_algorithm<S: KVGet, K: KVStore<S>, N: Network>(
 }
 
 // Returns whether there was progress in the view.
-fn execute_view<S: KVGet, K: KVStore<S>, N: Network>(
+fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
     view: ViewNumber,
     pacemaker: &mut impl Pacemaker,
-    block_tree: &mut BlockTree<S, K>,
+    block_tree: &mut BlockTree<K>,
     pm_stub: &mut ProgressMessageStub<N>,
-    app: &mut impl App<S>,
+    app: &mut impl App<K>,
 ) -> Result<(), ShouldSync> {
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
@@ -112,7 +112,7 @@ fn execute_view<S: KVGet, K: KVStore<S>, N: Network>(
         if i_am_cur_leader {
             match prev_proposal_or_nudge_and_vote {
                 None => {
-                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, &mut block_tree, pacemaker, &mut pm_stub);
+                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, block_tree, pacemaker, &mut pm_stub);
                     prev_proposal_or_nudge_and_vote = Some(proposal_or_nudge_and_vote);
                     if !i_am_next_leader {
                         return Ok(())
@@ -175,11 +175,11 @@ struct ShouldSync;
 /// Create a proposal or a nudge, broadcast it to the network, and then send a vote for it to the next leader.
 /// 
 /// Returns ((the broadcasted proposal or nudge, the sent vote), whether i am the next leader).
-fn propose_or_nudge<S: KVGet, K: KVStore<S>, N: Network>(
+fn propose_or_nudge<K: KVStore, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
-    app: &mut impl App<S>,
-    block_tree: &mut BlockTree<S, K>,
+    app: &mut impl App<K>,
+    block_tree: &mut BlockTree<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> ((ProgressMessage, ProgressMessage), bool) {
@@ -247,12 +247,12 @@ fn propose_or_nudge<S: KVGet, K: KVStore<S>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_proposal<S: KVGet, K: KVStore<S>, N: Network>(
+fn on_receive_proposal<K: KVStore, N: Network>(
     proposal: &Proposal,
     me: &Keypair,
     cur_view: ViewNumber,
-    block_tree: &mut BlockTree<S, K>,
-    app: &mut impl App<S>,
+    block_tree: &mut BlockTree<K>,
+    app: &mut impl App<K>,
     pacemaker: &impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -293,12 +293,12 @@ fn on_receive_proposal<S: KVGet, K: KVStore<S>, N: Network>(
 }
 
 // Returns (whether I voted, whether I am the next leader).
-fn on_receive_nudge<S: KVGet, K: KVStore<S>, N: Network>(
+fn on_receive_nudge<K: KVStore, N: Network>(
     nudge: &Nudge,
     me: &Keypair,
     cur_view: ViewNumber,
-    block_tree: &mut BlockTree<S, K>,
-    app: &mut impl App<S>,
+    block_tree: &mut BlockTree<K>,
+    app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
@@ -330,11 +330,11 @@ fn on_receive_nudge<S: KVGet, K: KVStore<S>, N: Network>(
 }
 
 // Returns (whether a new highest qc was collected, i am the next leader).
-fn on_receive_vote<S: KVGet, K: KVStore<S>>(
+fn on_receive_vote<K: KVStore>(
     origin: &PublicKeyBytes,
     vote: Vote,
     votes: &mut VoteCollector,
-    block_tree: &mut BlockTree<S, K>,
+    block_tree: &mut BlockTree<K>,
     cur_view: ViewNumber,
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
@@ -357,9 +357,9 @@ fn on_receive_vote<S: KVGet, K: KVStore<S>>(
 }
 
 // Returns whether the highest qc was updated.
-fn on_receive_new_view<S: KVGet, K: KVStore<S>>(
+fn on_receive_new_view<K: KVStore>(
     new_view: NewView,
-    block_tree: &mut BlockTree<S, K>,
+    block_tree: &mut BlockTree<K>,
 ) -> bool {
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
         if block_tree.qc_can_replace_highest(&new_view.highest_qc) {
@@ -370,10 +370,10 @@ fn on_receive_new_view<S: KVGet, K: KVStore<S>>(
     false
 }
 
-fn on_view_timeout<S: KVGet, K: KVStore<S>, N: Network>(
+fn on_view_timeout<K: KVStore, N: Network>(
     cur_view: ViewNumber,
-    app: &impl App<S>,
-    block_tree: &BlockTree<S, K>,
+    app: &impl App<K>,
+    block_tree: &BlockTree<K>,
     pacemaker: &impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) {
@@ -384,10 +384,10 @@ fn on_view_timeout<S: KVGet, K: KVStore<S>, N: Network>(
     pm_stub.send(&next_leader, &new_view);
 }
 
-fn sync<S: KVGet, K: KVStore<S>, N: Network>(
-    block_tree: &mut BlockTree<S, K>, 
+fn sync<K: KVStore, N: Network>(
+    block_tree: &mut BlockTree<K>, 
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<S>,
+    app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
 ) {
     // Pick random validator.
@@ -396,11 +396,11 @@ fn sync<S: KVGet, K: KVStore<S>, N: Network>(
     }
 }
 
-fn sync_with<S: KVGet, K: KVStore<S>, N: Network>(
+fn sync_with<K: KVStore, N: Network>(
     peer: &PublicKeyBytes, 
-    block_tree: &mut BlockTree<S, K>,
+    block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
-    app: &mut impl App<S>,
+    app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
 ) {
     loop {
@@ -417,7 +417,7 @@ fn sync_with<S: KVGet, K: KVStore<S>, N: Network>(
                 return
             }
 
-            let validate_block_request: ValidateBlockRequest<S>;
+            let validate_block_request: ValidateBlockRequest<K> = todo!();
             if let ValidateBlockResponse::Valid {
                 app_state_updates,
                 validator_set_updates
