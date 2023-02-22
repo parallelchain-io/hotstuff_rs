@@ -164,8 +164,8 @@ fn execute_view<S: KVGet, K: KVStore<S>, N: Network>(
         }
     }
 
-    // 3. Send a New View message.
-    todo!()
+    // 3. If the view times out, send a New View message.
+    on_view_timeout(view, app, block_tree, pacemaker, pm_stub);
 
     Ok(())
 }
@@ -213,10 +213,13 @@ fn propose_or_nudge<S: KVGet, K: KVStore<S>, N: Network>(
             };
             let block = Block::new(height, highest_qc, data_hash, data);
             
-            block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+            let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+            if let Some(updates) = validator_set_updates_because_of_commit {
+                pm_stub.update_validator_set(updates);
+            }
 
-            let proposal = me.proposal(app.id(), cur_view, &block);
-            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Generic };
+            let proposal = ProgressMessage::proposal(app.id(), cur_view, &block);
+            let vote_phase = if validator_set_updates_because_of_commit.is_some() { Phase::Prepare } else { Phase::Generic };
             let vote = me.vote(app.id(), cur_view, block.hash, vote_phase);
 
             (proposal, vote)
@@ -224,7 +227,7 @@ fn propose_or_nudge<S: KVGet, K: KVStore<S>, N: Network>(
 
         // Produce a nudge.
         Phase::Prepare | Phase::Precommit => {
-            let nudge = me.nudge(app.id(), cur_view, &highest_qc);
+            let nudge = ProgressMessage::nudge(app.id(), cur_view, &highest_qc);
             let vote_phase = if highest_qc.phase == Phase::Prepare { Phase::Precommit } else { Phase::Commit };
             let vote  = me.vote(app.id(), cur_view, highest_qc.block, vote_phase);
 
@@ -300,7 +303,7 @@ fn on_receive_nudge<S: KVGet, K: KVStore<S>, N: Network>(
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
     if !nudge.justify.is_correct(&block_tree.committed_validator_set())
-        || !block_tree.qc_can_be_inserted(&nudge.justify) {
+        || !block_tree.qc_can_replace_highest(&nudge.justify) {
             let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
             let i_am_next_leader = me.public() == next_leader;
             return (false, i_am_next_leader)
@@ -337,7 +340,7 @@ fn on_receive_vote<S: KVGet, K: KVStore<S>>(
     pacemaker: &mut impl Pacemaker,
 ) -> (bool, bool) {
     let highest_qc_updated = if let Some(new_qc) = votes.collect(origin, vote) {
-        if block_tree.qc_can_be_inserted(&new_qc) {
+        if block_tree.qc_can_replace_highest(&new_qc) {
             block_tree.set_highest_qc(&new_qc);
             true
         } else {
@@ -359,12 +362,26 @@ fn on_receive_new_view<S: KVGet, K: KVStore<S>>(
     block_tree: &mut BlockTree<S, K>,
 ) -> bool {
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
-        if block_tree.qc_can_be_inserted(&new_view.highest_qc) {
+        if block_tree.qc_can_replace_highest(&new_view.highest_qc) {
             block_tree.set_highest_qc(&new_view.highest_qc);
             return true
         }
     }
     false
+}
+
+fn on_view_timeout<S: KVGet, K: KVStore<S>, N: Network>(
+    cur_view: ViewNumber,
+    app: &impl App<S>,
+    block_tree: &BlockTree<S, K>,
+    pacemaker: &impl Pacemaker,
+    pm_stub: &mut ProgressMessageStub<N>,
+) {
+    let new_view = ProgressMessage::new_view(app.id(), cur_view, &block_tree.highest_qc());
+
+    let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+
+    pm_stub.send(&next_leader, &new_view);
 }
 
 fn sync<S: KVGet, K: KVStore<S>, N: Network>(
@@ -405,13 +422,17 @@ fn sync_with<S: KVGet, K: KVStore<S>, N: Network>(
                 app_state_updates,
                 validator_set_updates
             } = app.validate_block(validate_block_request) {
-                block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref())
+                let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+
+                if let Some(updates) = validator_set_updates_because_of_commit {
+                    sync_stub.update_validator_set(updates);
+                }
             } else {
                 return
             }
         }
 
-        if block_tree.qc_can_be_inserted(&response.highest_qc) {
+        if block_tree.qc_can_replace_highest(&response.highest_qc) {
             block_tree.set_highest_qc(&response.highest_qc)
         }
 

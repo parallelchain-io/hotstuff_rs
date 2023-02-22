@@ -95,6 +95,8 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         /* 3 */ block.justify.phase == Phase::Commit && block.justify.phase == Phase::Generic
     }
 
+    // If the insertion causes a block to be committed, returns the changes that this causes of the validator set, if any.
+    // 
     // # Precondition
     // [Self::block_can_be_inserted]
     pub(crate) fn insert_block(
@@ -102,7 +104,7 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         block: &Block, 
         app_state_updates: Option<&AppStateUpdates>, 
         validator_set_updates: Option<&ValidatorSetUpdates>
-    ) {
+    ) -> Option<ValidatorSetUpdates> {
         let mut wb = BlockTreeWriteBatch::new();
 
         // 1. Block: Insert block.
@@ -115,13 +117,13 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         siblings.push(block.hash);
         wb.set_children_list(&block.justify.block, &siblings);
 
-        if self.qc_can_be_inserted(&block.justify) {
+        if self.qc_can_replace_highest(&block.justify) {
             wb.set_highest_qc(&block.justify);
         }
 
         if block.justify.is_genesis_qc() {
             self.write(wb);
-            return
+            return None
         }
 
         // 2. Parent: consider updating locked view with parent's justify's view number.
@@ -134,7 +136,7 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         let parent_justify = self.0.block_justify(&parent).unwrap(); 
         if parent_justify.is_genesis_qc() {
             self.write(wb);
-            return
+            return None
         } 
 
         // 3. Grandparent: do nothing with it.
@@ -142,26 +144,26 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         let grandparent_justify = self.0.block_justify(&grandparent).unwrap();
         if grandparent_justify.is_genesis_qc() {
             self.write(wb);
-            return
+            return None
         }
 
         // 4. Great-grandparent: if great-grandparent is higher than the current highest committed block, commit it. 
         let great_grandparent = grandparent_justify.block;
         let great_grandparent_height = self.0.block_height(&great_grandparent).unwrap();
 
-        match self.highest_committed_block_height() {
+        let validator_set_changes = match self.highest_committed_block_height() {
             Some(highest_committed_block_height) if great_grandparent_height > highest_committed_block_height => self.commit_block(&mut wb, &great_grandparent),
             None => self.commit_block(&mut wb, &great_grandparent),
             _ => {
                 self.write(wb);
-                return
+                return None
             }
-        }
+        };
 
         let great_grandparent_justify = self.0.block_justify(&great_grandparent).unwrap();
         if great_grandparent_justify.is_genesis_qc() {
             self.write(wb);
-            return
+            return validator_set_changes 
         }
 
         // 4. Great-great-grandparent: delete all children of except great-grandparent.
@@ -169,13 +171,15 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         self.delete_children_of(&mut wb, &great_great_grandparent, &great_grandparent);
 
         self.write(wb);
+        return validator_set_changes
     } 
 
-    // Returns whether a qc can be safely set as highest_qc. For this, it is necessary that:
+    // Returns whether a qc be inserted into the block tree as part of a block. For this, it is necessary that:
     // 1. It justifies a known block.
     // 2. Its view number is greater than or equal to locked view.
     // 3. If it is a prepare, precommit, or commit qc, the block it justifies has a pending validator state update.
     // 4. If its qc is a generic qc, the block it justifies *does not* have a pending validator set update.
+    //
     // # Precondition
     // [QuorumCertificate::is_correct]
     pub(crate) fn qc_can_be_inserted(&self, qc: &QuorumCertificate) -> bool {
@@ -183,6 +187,19 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
         qc.view >= self.locked_view() &&
         ((qc.phase == Phase::Prepare || qc.phase == Phase::Precommit || qc.phase == Phase::Commit) && self.pending_validator_set_updates(&qc.block).is_some()) &&
         (qc.phase == Phase::Generic && self.pending_validator_set_updates(&qc.block).is_none())
+    }
+
+    // Returns whether a qc can be set as the highest qc in the block tree. For this, it is necessary that:
+    // 1. self.qc_can_be_inserted(qc).
+    // 2. Its view number is greater than the view number of the current highest qc.
+    // 
+    // This function evaluates [Self::qc_can_be_inserted], and then checks 2.
+    //
+    // # Precondition
+    // [QuorumCertificate::is_correct]
+    pub(crate) fn qc_can_replace_highest(&self, qc: &QuorumCertificate) -> bool {
+        self.qc_can_be_inserted(qc) &&
+        qc.view > self.highest_qc().view
     }
 
     pub(crate) fn set_highest_qc(&self, qc: &QuorumCertificate) {
@@ -199,7 +216,8 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
 
     /* ↓↓↓ For committing a block in insert_block ↓↓↓ */
 
-    fn commit_block(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, block: &CryptoHash) {
+    // Returns the validator set updates that become committed when the block becomes committed, if any.
+    fn commit_block(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
         if let Some(pending_app_state_updates) = self.pending_app_state_updates(block) {
             for (key, value) in pending_app_state_updates.inserts() {
                 wb.set_committed_app_state(key, value);
@@ -208,25 +226,28 @@ impl<'a, S: KVGet, K: KVStore<S>> BlockTree<S, K> {
             for key in pending_app_state_updates.deletions() {
                 wb.delete_committed_app_state(key);
             }
+
+            wb.delete_pending_app_state_updates(block);
         }
-        wb.delete_pending_app_state_updates(block);
-
-
-        todo!();
-        // actually write into committed validator set.
-        // inform networking provider of change to committed validator set.
         
+
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
             let committed_validator_set = self.committed_validator_set();
-            for (peer, new_power) in pending_validator_set_updates {
-                if new_power == 0 {
-                    committed_validator_set.delete(&peer);
-                } else {
-                    committed_validator_set.put(&peer, new_power);
-                }
+            for (peer, new_power) in pending_validator_set_updates.inserts() {
+                committed_validator_set.put(&peer, *new_power);
             }
+
+            for peer in pending_validator_set_updates.deletions() {
+                committed_validator_set.delete(peer);
+            }
+
+            wb.set_committed_validator_set(&committed_validator_set);
+            wb.delete_pending_validator_set_updates(block);
+
+            return Some(pending_validator_set_updates)
         }
-        wb.delete_pending_validator_set_updates(block);
+
+        None
     }
 
     /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */

@@ -101,7 +101,7 @@ struct NetworkStub {
 }
 
 impl Network for NetworkStub {
-    fn update_validator_set(&mut self, validator_set: crate::types::ValidatorSet) {
+    fn update_validator_set(&mut self, validator_set: ValidatorSetUpdates) {
         ()
     }
 

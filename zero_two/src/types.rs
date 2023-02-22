@@ -98,16 +98,16 @@ pub enum Phase {
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet;
 
-pub type AppStateUpdates = ChangeSet<Vec<u8>, Vec<u8>>;
-pub type ValidatorSetUpdates = ChangeSet<PublicKeyBytes, Power>;
+pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
+pub type ValidatorSetUpdates = UpdateSet<PublicKeyBytes, Power>;
 
 #[derive(Clone)]
-pub struct ChangeSet<K: Eq + Hash, V: Eq + Hash> {
+pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {
     inserts: HashMap<K, V>,
     deletes: HashSet<K>,
 }
 
-impl<K: Eq + Hash, V: Eq + Hash> ChangeSet<K, V> where K:  {
+impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
     pub fn new() -> Self {
         Self {
             inserts: HashMap::new(),

@@ -13,12 +13,12 @@ use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, Re
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID};
+use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID, ValidatorSetUpdates};
 use crate::messages::*;
 
 pub trait Network: Clone + Send + 'static {
-    /// Informs the networking provider of a validator set change.
-    fn update_validator_set(&mut self, validator_set: ValidatorSet);
+    /// Informs the networking provider of updates to the validator set.
+    fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
     /// Send a message to all peers.
     fn broadcast(&mut self, message: Message);
@@ -90,7 +90,7 @@ impl<N: Network> ProgressMessageStub<N> {
     }
 
     pub(crate) fn recv(
-        &self, 
+        &mut self, 
         app_id: AppID,
         cur_view: ViewNumber, 
         highest_qc_view: ViewNumber, 
@@ -99,11 +99,15 @@ impl<N: Network> ProgressMessageStub<N> {
         todo!() 
     }
 
-    pub(crate) fn send(&self, peer: &PublicKeyBytes, msg: &ProgressMessage) {
+    pub(crate) fn send(&mut self, peer: &PublicKeyBytes, msg: &ProgressMessage) {
         todo!()
     }
 
-    pub(crate) fn broadcast(&self, msg: &ProgressMessage) {
+    pub(crate) fn broadcast(&mut self, msg: &ProgressMessage) {
+        todo!()
+    }
+
+    pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
         todo!()
     }
 }
@@ -127,6 +131,10 @@ impl<N: Network> SyncClientStub<N> {
     }
 
     pub(crate) fn recv_response(&self, peer: &PublicKeyBytes) -> SyncResponse {
+        todo!()
+    }
+
+    pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
         todo!()
     }
 }

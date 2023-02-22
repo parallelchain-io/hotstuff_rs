@@ -20,6 +20,20 @@ pub enum ProgressMessage {
 }
 
 impl ProgressMessage {
+    pub fn proposal(app_id: AppID, view: ViewNumber, block: &Block) -> ProgressMessage {
+        todo!()
+    }
+
+    /// # Panics
+    /// justify.phase must be Prepare or Precommit. This function panics otherwise.
+    pub fn nudge(app_id: AppID, view: ViewNumber, justify: &QuorumCertificate) -> ProgressMessage {
+        todo!()
+    }
+
+    pub fn new_view(app_id: AppID, view: ViewNumber, highest_qc: &QuorumCertificate) -> ProgressMessage {
+        todo!()
+    }
+
     pub fn app_id(&self) -> AppID {
         match self {
             ProgressMessage::Proposal(Proposal { app_id, .. }) => *app_id,
@@ -91,25 +105,11 @@ pub(crate) struct Keypair(pub(crate) DalekKeypair);
 impl Keypair {
     pub(crate) fn new(keypair: DalekKeypair) -> Keypair {
         Keypair(keypair)
-    }
-
-    // phase must be either Generic or Prepare.
-    pub(crate) fn proposal(&self, app_id: AppID, view: ViewNumber, block: &Block) -> ProgressMessage {
-        todo!()
-    }
-
-    // justify.phase must be either Prepare or Precommit.
-    pub(crate) fn nudge(&self, app_id: AppID, view: ViewNumber, justify: &QuorumCertificate) -> ProgressMessage {
-        todo!()
-    }
+    } 
 
     pub(crate) fn vote(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, phase: Phase) -> ProgressMessage {
         todo!()
-    }
-
-    pub(crate) fn new_view(&self, app_id: AppID, view: ViewNumber, highest_qc: &QuorumCertificate) -> ProgressMessage {
-        todo!()
-    }
+    } 
 
     pub(crate) fn public(&self) -> PublicKeyBytes {
         self.0.public.to_bytes()
