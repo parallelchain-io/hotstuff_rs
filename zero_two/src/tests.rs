@@ -13,16 +13,18 @@
 //! [crate::pacemaker::DefaultPacemaker]. These use channels to simulate communication, and a hashmap to simulate
 //! to simulate persistence, and thus never leaves any artifacts.
 
+extern crate rand;
 use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc,
     Mutex,
     MutexGuard,
-    mpsc::{Sender, Receiver, TryRecvError}
+    mpsc::{self, Sender, Receiver, TryRecvError}
 };
 use std::thread;
 use std::time::Duration;
 use borsh::{BorshSerialize, BorshDeserialize};
+use rand::rngs::OsRng;
 use sha2::{Sha256, Digest};
 use ed25519_dalek::Keypair as DalekKeypair;
 use crate::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBlockResponse, ValidateBlockResponse};
@@ -35,8 +37,8 @@ use crate::networking::Network;
 
 #[test]
 fn integration_test() {
-    let keypairs: [DalekKeypair; 6]; // generate 6.
-    let network_stubs = mock_network(keypairs);
+    let mut csprg = OsRng{};
+    let keypairs: Vec<DalekKeypair> = (0..6).map(|_| DalekKeypair::generate(&mut csprg)).collect();
     let init_as = {
         let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), usize::to_le_bytes(0).to_vec());
@@ -47,7 +49,8 @@ fn integration_test() {
         validator_set.insert(keypairs[0].public.to_bytes(), 1);
         validator_set
     };
-
+    let network_stubs = mock_network(&keypairs);
+    
     let mut nodes: Vec<Node> = keypairs
         .into_iter()
         .zip(network_stubs)
@@ -65,9 +68,12 @@ fn integration_test() {
     }
 
     // Submit an set validators transaction to each of the 3 initial validators to register the rest (3) of the peers.
-    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(nodes[3].public_key(), 1));
-    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(nodes[4].public_key(), 1));
-    nodes[2].submit_transaction(NumberAppTransaction::SetValidator(nodes[5].public_key(), 1));
+    let node_3 = nodes[3].public_key();
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_3, 1));
+    let node_4 = nodes[4].public_key();
+    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_4, 1));
+    let node_5 = nodes[5].public_key();
+    nodes[2].submit_transaction(NumberAppTransaction::SetValidator(node_5, 1));
 
     // Poll the validator set of every replica until we have 6 validators.
     while nodes[0].committed_validator_set().len() != 6 || nodes[1].committed_validator_set().len() != 6 || nodes[2].committed_validator_set().len() != 6
@@ -101,19 +107,23 @@ struct NetworkStub {
 }
 
 impl Network for NetworkStub {
+    fn init_validator_set(&mut self, validator_set: ValidatorSet) {
+        ()
+    }
+
     fn update_validator_set(&mut self, validator_set: ValidatorSetUpdates) {
         ()
     }
 
     fn send(&mut self, peer: PublicKeyBytes, message: Message) {
         if let Some(peer) = self.all_peers.get(&peer) {
-            peer.send((self.my_public_key, message));
+            peer.send((self.my_public_key, message)).unwrap();
         }
     }
 
     fn broadcast(&mut self, message: Message) {
-        for (_, peer) in self.all_peers {
-            peer.send((self.my_public_key, message));
+        for (_, peer) in &self.all_peers {
+            peer.send((self.my_public_key, message.clone())).unwrap();
         }        
     }
 
@@ -126,8 +136,25 @@ impl Network for NetworkStub {
     }
 }
 
-fn mock_network<const N: usize>(peers: [DalekKeypair; N]) -> [NetworkStub; N] {
-    todo!()
+fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
+    let mut all_peers = HashMap::new();
+    let peer_and_mailbox: Vec<([u8; 32], Receiver<([u8; 32], Message)>)> = peers.iter().map(|peer| {
+        let my_public_key = peer.public.to_bytes();
+        let (sender, receiver) = mpsc::channel();
+        all_peers.insert(my_public_key, sender);
+
+        (my_public_key, receiver)
+    }).collect();
+
+    let network_stubs = peer_and_mailbox.into_iter().map(|(my_public_key, inbox)| 
+        NetworkStub {
+            my_public_key,
+            all_peers: all_peers.clone(),
+            inbox: Arc::new(Mutex::new(inbox)),
+        }
+    ).collect();
+
+    network_stubs
 }
 
 /// Things the Nodes will have in common:
@@ -154,7 +181,7 @@ impl KVStore for MemDB {
     type Snapshot<'a> = MemDBSnapshot<'a>;
 
     fn write(&mut self, wb: Self::WriteBatch) {
-        let map = self.0.lock().unwrap();
+        let mut map = self.0.lock().unwrap();
         for (key, value) in wb.insertions {
             map.insert(key, value); 
         } 
@@ -227,15 +254,15 @@ impl App<MemDB> for NumberApp {
     }
 
     fn produce_block(&mut self, request: ProduceBlockRequest<MemDB>) -> ProduceBlockResponse {
-        let initial_number = u32::from_le_bytes(request.app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
+        let initial_number = u32::from_le_bytes(request.block_tree().app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
 
-        let tx_queue = self.tx_queue.lock().unwrap();
+        let mut tx_queue = self.tx_queue.lock().unwrap();
 
         let (app_state_updates, validator_set_updates) = self.execute(initial_number, &tx_queue);
         let data = vec![tx_queue.try_to_vec().unwrap()];
         let data_hash = {
-            let hasher = Sha256::new();
-            hasher.update(data[0]);
+            let mut hasher = Sha256::new();
+            hasher.update(&data[0]);
             hasher.finalize().into()
         };
         
@@ -250,17 +277,17 @@ impl App<MemDB> for NumberApp {
     }
 
     fn validate_block(&mut self, request: ValidateBlockRequest<MemDB>) -> ValidateBlockResponse {
-        let data = request.proposed_block().data;
+        let data = &request.proposed_block().data;
         let data_hash: CryptoHash = {
-            let hasher = Sha256::new();
-            hasher.update(data[0]);
+            let mut hasher = Sha256::new();
+            hasher.update(&data[0]);
             hasher.finalize().into()
         };
 
         if !(request.proposed_block().data_hash == data_hash) {
             ValidateBlockResponse::Invalid
         } else {
-            let initial_number = u32::from_le_bytes(request.app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
+            let initial_number = u32::from_le_bytes(request.block_tree().app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
 
             if let Ok(transactions) = Vec::<NumberAppTransaction>::deserialize(&mut &*request.proposed_block().data[0]) {
                 let (app_state_updates, validator_set_updates) = self.execute(initial_number, &transactions);
@@ -279,8 +306,8 @@ impl NumberApp {
         }
     }
 
-    fn execute(&mut self, initial_number: u32, transactions: &Vec<NumberAppTransaction>) -> (Option<AppStateUpdates>, Option<ValidatorSetUpdates>) {
-        let number = initial_number;
+    fn execute(&self, initial_number: u32, transactions: &Vec<NumberAppTransaction>) -> (Option<AppStateUpdates>, Option<ValidatorSetUpdates>) {
+        let mut number = initial_number;
         
         let mut validator_set_updates: Option<ValidatorSetUpdates> = None;
         for transaction in transactions {
@@ -289,8 +316,8 @@ impl NumberApp {
                     number += 1;
                 },
                 NumberAppTransaction::SetValidator(validator, power) => {
-                    if let Some(validator_set_updates) = validator_set_updates {
-                        validator_set_updates.insert(*validator, *power);
+                    if let Some(updates) = &mut validator_set_updates {
+                        updates.insert(*validator, *power);
                     } else {
                         let mut vsu = ValidatorSetUpdates::new();
                         vsu.insert(*validator, *power);
@@ -299,8 +326,13 @@ impl NumberApp {
                 }
             }
         }
-        let mut app_state_updates: Option<AppStateUpdates> = None;
-        app_state_updates.unwrap().insert(NUMBER_KEY.to_vec(), number.try_to_vec().unwrap());
+        let app_state_updates = if number != initial_number {
+            let mut updates = AppStateUpdates::new();
+            updates.insert(NUMBER_KEY.to_vec(), number.try_to_vec().unwrap());
+            Some(updates)
+        } else {
+            None
+        };
         
         (app_state_updates, validator_set_updates)
     }
@@ -319,7 +351,8 @@ impl Node {
 
         let public_key = *keypair.public.as_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
-        let replica = Replica::start(NumberApp::new(tx_queue.clone()), keypair, network, kv_store, DefaultPacemaker);
+        let pacemaker = DefaultPacemaker::new(Duration::from_secs(1), Duration::from_millis(500), 10, Duration::from_secs(1));
+        let replica = Replica::start(NumberApp::new(tx_queue.clone()), keypair, network, kv_store, pacemaker);
 
         Node {
             public_key,
@@ -329,18 +362,18 @@ impl Node {
     }
 
     fn submit_transaction(&mut self, txn: NumberAppTransaction) {
-        todo!()
+        self.tx_queue.lock().unwrap().push(txn);
     }
 
     fn number(&self) -> u32 {
-        todo!()
+        u32::deserialize(&mut &*self.replica.block_tree_camera().snapshot().committed_app_state(&NUMBER_KEY).unwrap()).unwrap()
     }
 
     fn committed_validator_set(&self) -> ValidatorSet {
-        todo!()
+        self.replica.block_tree_camera().snapshot().committed_validator_set()
     }
 
     fn public_key(&self) -> PublicKeyBytes {
-        todo!()
+        self.public_key
     }
 }

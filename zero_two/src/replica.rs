@@ -33,11 +33,11 @@ use crate::messages;
 
 pub struct Replica<K: KVStore> {
     block_tree_camera: BlockTreeCamera<K>,
-    poller: JoinHandle<()>,
+    poller: Option<JoinHandle<()>>,
     poller_shutdown: Sender<()>,
-    algorithm: JoinHandle<()>,
+    algorithm: Option<JoinHandle<()>>,
     algorithm_shutdown: Sender<()>,
-    sync_server: JoinHandle<()>,
+    sync_server: Option<JoinHandle<()>>,
     sync_server_shutdown: Sender<()>,
 }
 
@@ -54,12 +54,13 @@ impl<K: KVStore> Replica<K> {
     pub fn start(
         app: impl App<K> + 'static,
         keypair: Keypair,
-        network: impl Network + 'static,
+        mut network: impl Network + 'static,
         kv_store: K,
         pacemaker: impl Pacemaker + 'static,
     ) -> Replica<K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
+        network.init_validator_set(block_tree.committed_validator_set());
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
         let (poller, progress_msgs, sync_requests, sync_responses) = start_polling(network.clone(), poller_shutdown_receiver);
         let pm_stub = ProgressMessageStub::new(network.clone(), progress_msgs);
@@ -74,11 +75,11 @@ impl<K: KVStore> Replica<K> {
 
         let replica = Replica {
             block_tree_camera: BlockTreeCamera::new(kv_store.clone()),
-            poller,
+            poller: Some(poller),
             poller_shutdown,
-            algorithm,
+            algorithm: Some(algorithm),
             algorithm_shutdown,
-            sync_server,
+            sync_server: Some(sync_server),
             sync_server_shutdown,
         };
 
@@ -92,14 +93,14 @@ impl<K: KVStore> Replica<K> {
 
 impl<K: KVStore> Drop for Replica<K> {
     fn drop(&mut self) {
-        self.algorithm_shutdown.send(());
-        self.algorithm.join();
+        self.algorithm_shutdown.send(()).unwrap();
+        self.algorithm.take().unwrap().join().unwrap();
 
-        self.sync_server_shutdown.send(());
-        self.sync_server.join();
+        self.sync_server_shutdown.send(()).unwrap();
+        self.sync_server.take().unwrap().join().unwrap();
 
-        self.poller_shutdown.send(());
-        self.poller.join();
+        self.poller_shutdown.send(()).unwrap();
+        self.poller.take().unwrap().join().unwrap();
     }
 }
 

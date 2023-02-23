@@ -10,29 +10,26 @@
 //! ## Timing
 
 use crate::types::*;
-use crate::state::{ BlockTreeSnapshot, KVGet, SpeculativeAppState };
+use crate::state::{AppBlockTreeView, KVStore};
 
-pub trait App<S: KVGet>: Send {
+pub trait App<K: KVStore>: Send {
     fn id(&self) -> AppID;
-    fn produce_block(&mut self, request: ProduceBlockRequest<S>) -> ProduceBlockResponse;
-    fn validate_block(&mut self, request: ValidateBlockRequest<S>) -> ValidateBlockResponse;
+    fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
+    fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
 }
 
-pub struct ProduceBlockRequest<'a, S: KVGet> {
+pub struct ProduceBlockRequest<'a, K: KVStore> {
     cur_view: ViewNumber,
     parent_block: Option<CryptoHash>,
-    block_tree: BlockTreeSnapshot<S>,
-    app_state: SpeculativeAppState<'a, S>,
+    block_tree_view: AppBlockTreeView<'a, K>,
 }
 
-impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
-    pub(crate) fn new(cur_view: ViewNumber, parent_block: Option<CryptoHash>, block_tree: BlockTreeSnapshot<S>) -> Self {
-        let app_state = block_tree.speculative_app_state(parent_block.as_ref());
+impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
+    pub(crate) fn new(cur_view: ViewNumber, parent_block: Option<CryptoHash>, block_tree_view: AppBlockTreeView<'a, K>) -> Self {
         Self {
             cur_view,
             parent_block,
-            block_tree,
-            app_state,
+            block_tree_view,
         }
     }
 
@@ -44,12 +41,8 @@ impl<'a, S: KVGet> ProduceBlockRequest<'a, S> {
         self.parent_block
     }
 
-    pub fn block_tree(&self) -> &BlockTreeSnapshot<S> {
-        &self.block_tree
-    }
-
-    pub fn app_state(&self, key: &[u8]) -> Option<&Vec<u8>> {
-        self.app_state.get(key)
+    pub fn block_tree(&self) -> &AppBlockTreeView<'a, K> {
+        &self.block_tree_view
     }
 }
 
@@ -60,24 +53,16 @@ pub struct ProduceBlockResponse {
     pub validator_set_updates: Option<ValidatorSetUpdates>
 }
 
-pub struct ValidateBlockRequest<'a, S: KVGet> {
-    proposed_block: Block,
-    block_tree: BlockTreeSnapshot<S>,
-    app_state: SpeculativeAppState<'a, S>,
+pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
+    proposed_block: &'a Block,
+    block_tree_view: AppBlockTreeView<'b, K>,
 }
 
-impl<'a, S: KVGet> ValidateBlockRequest<'a, S> {
-    pub(crate) fn new(proposed_block: Block, block_tree: BlockTreeSnapshot<S>) -> Self {
-        let parent_block = if proposed_block.justify.is_genesis_qc() {
-            None
-        } else {
-            Some(proposed_block.justify.block)
-        };
-        let app_state = block_tree.speculative_app_state(parent_block.as_ref());
+impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
+    pub(crate) fn new(proposed_block: &'a Block, block_tree_view: AppBlockTreeView<'b, K>) -> Self {
         Self {
             proposed_block,
-            block_tree,
-            app_state
+            block_tree_view,
         }
     }
 
@@ -85,12 +70,8 @@ impl<'a, S: KVGet> ValidateBlockRequest<'a, S> {
         &self.proposed_block
     }
 
-    pub fn block_tree(&self) -> &BlockTreeSnapshot<S> {
-        &self.block_tree
-    }
-
-    pub fn app_state(&self, key: &[u8]) -> Option<&Vec<u8>> {
-        self.app_state.get(key)
+    pub fn block_tree(&self) -> &AppBlockTreeView<K> {
+        &self.block_tree_view
     }
 }
 

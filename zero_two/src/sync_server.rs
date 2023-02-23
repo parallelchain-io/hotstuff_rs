@@ -8,12 +8,12 @@
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use crate::messages::{SyncRequest, SyncResponse};
-use crate::state::{BlockTreeCamera, KVStore, KVGet};
+use crate::state::{BlockTreeCamera, KVStore};
 use crate::networking::{Network, SyncServerStub};
 
-pub(crate) fn start_sync_server<K: KVStore, N: Network>(
+pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
-    sync_stub: SyncServerStub<N>,
+    mut sync_stub: SyncServerStub<N>,
     shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
@@ -30,7 +30,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network>(
             let blocks = bt_snapshot.blocks_from_highest_committed_block(limit);
             let highest_qc = bt_snapshot.highest_qc();
 
-            sync_stub.send_response(&origin, SyncResponse { blocks, highest_qc });
+            sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
         }   
     })
 }

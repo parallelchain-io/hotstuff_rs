@@ -60,16 +60,18 @@ use crate::state::*;
 use crate::networking::*;
 use crate::app::App;
 
-pub(crate) fn start_algorithm<K: KVStore, N: Network>(
-    app: impl App<K> + 'static,
+pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
+    mut app: impl App<K> + 'static,
     me: Keypair,
-    block_tree: BlockTree<K>,
-    pacemaker: impl Pacemaker + 'static,
-    pm_stub: ProgressMessageStub<N>,
-    sync_stub: SyncClientStub<N>,
+    mut block_tree: BlockTree<K>,
+    mut pacemaker: impl Pacemaker + 'static,
+    mut pm_stub: ProgressMessageStub<N>,
+    mut sync_stub: SyncClientStub<N>,
     shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
+        let mut cur_view = 0;
+
         loop {
             match shutdown_signal.try_recv() {
                 Ok(()) => return,
@@ -77,15 +79,13 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network>(
                 Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            let cur_view: ViewNumber = max(block_tree.highest_view_entered(), block_tree.highest_qc().view) + 1;
+            cur_view = max(cur_view, max(block_tree.highest_view_entered(), block_tree.highest_qc().view)) + 1;
             block_tree.set_highest_entered_view(cur_view);
 
             let view_result = execute_view(&me, cur_view, &mut pacemaker, &mut block_tree, &mut pm_stub, &mut app);
             if let Err(ShouldSync) = view_result {
                 sync(&mut block_tree, &mut sync_stub, &mut app, &mut pacemaker)
             }
-
-            cur_view += 1;
         }
     })
 }
@@ -95,19 +95,19 @@ fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
     view: ViewNumber,
     pacemaker: &mut impl Pacemaker,
-    block_tree: &mut BlockTree<K>,
-    pm_stub: &mut ProgressMessageStub<N>,
+    mut block_tree: &mut BlockTree<K>,
+    mut pm_stub: &mut ProgressMessageStub<N>,
     app: &mut impl App<K>,
 ) -> Result<(), ShouldSync> {
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
     let cur_validators: ValidatorSet = block_tree.committed_validator_set();
 
-    let i_am_cur_leader = me.public() == pacemaker.view_leader(view, cur_validators);
+    let i_am_cur_leader = me.public() == pacemaker.view_leader(view, &cur_validators);
 
-    let prev_proposal_or_nudge_and_vote = None;
-    let mut votes = VoteCollector::new(view, &cur_validators);
-    while Instant::now() < view_deadline {
+    let mut prev_proposal_or_nudge_and_vote = None;
+    let mut votes = VoteCollector::new(app.id(), view, &cur_validators);
+    'out: while Instant::now() < view_deadline {
         // 1. If I am the current leader, propose a block.
         if i_am_cur_leader {
             match prev_proposal_or_nudge_and_vote {
@@ -119,10 +119,10 @@ fn execute_view<K: KVStore, N: Network>(
                     }
                 },
                 // Rebroadcast proposal or nudge and resend vote.
-                Some((proposal_or_nudge, vote)) => {
-                    pm_stub.broadcast(&proposal_or_nudge);
-                    let next_leader = pacemaker.view_leader(view + 1, block_tree.committed_validator_set());
-                    pm_stub.send(&next_leader, &vote);
+                Some((ref proposal_or_nudge, ref vote)) => {
+                    pm_stub.broadcast(proposal_or_nudge.clone());
+                    let next_leader = pacemaker.view_leader(view + 1, &block_tree.committed_validator_set());
+                    pm_stub.send(next_leader, vote.clone());
                 }
             }
         }
@@ -130,7 +130,7 @@ fn execute_view<K: KVStore, N: Network>(
         // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
         let recv_deadline = min(Instant::now() + pacemaker.proposal_rebroadcast_period(), view_deadline);
         loop { 
-            match pm_stub.recv(app.id(), view, block_tree.highest_qc().view, recv_deadline) {
+            match pm_stub.recv(app.id(), view, recv_deadline) {
                 Ok((origin, msg)) => match msg {
                     ProgressMessage::Proposal(proposal) => {
                         let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
@@ -155,11 +155,11 @@ fn execute_view<K: KVStore, N: Network>(
                         }
                     },
                     ProgressMessage::NewView(new_view) => {
-                        let highest_qc_updated = on_receive_new_view(new_view, &mut block_tree);
+                        on_receive_new_view(new_view, &mut block_tree);
                     },
                 },
                 Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture) => return Err(ShouldSync),
-                Err(ProgressMessageReceiveError::Timeout) => continue,
+                Err(ProgressMessageReceiveError::Timeout) => continue 'out,
             }
         }
     }
@@ -187,16 +187,16 @@ fn propose_or_nudge<K: KVStore, N: Network>(
     let (proposal_or_nudge, vote) = match highest_qc.phase {
         // Produce a proposal.
         Phase::Generic | Phase::Commit => {
-            let parent_block = if highest_qc.is_genesis_qc() {
-                None
+            let (parent_block, height) = if highest_qc.is_genesis_qc() {
+                (None, 0) 
             } else {
-                Some(highest_qc.block)
+                (Some(highest_qc.block), block_tree.block_height(&highest_qc.block).unwrap() + 1)
             };
 
             let produce_block_request = ProduceBlockRequest::new(
                 cur_view, 
                 parent_block, 
-                block_tree.snapshot(),
+                block_tree.app_view(parent_block.as_ref()),
             );
 
             let ProduceBlockResponse { 
@@ -206,40 +206,41 @@ fn propose_or_nudge<K: KVStore, N: Network>(
                 validator_set_updates 
             } = app.produce_block(produce_block_request);
 
-            let height = if let Some(parent_block) = parent_block {
-                block_tree.block_height(&highest_qc.block).unwrap() + 1
-            } else {
-                0
-            };
             let block = Block::new(height, highest_qc, data_hash, data);
             
             let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+
+            let proposed_block_hash = block.hash;
+            let proposal = ProgressMessage::proposal(app.id(), cur_view, block);
+
+            let vote_phase = if validator_set_updates_because_of_commit.is_some() { Phase::Prepare } else { Phase::Generic };
+            let vote = me.vote(app.id(), cur_view, proposed_block_hash, vote_phase);
+
             if let Some(updates) = validator_set_updates_because_of_commit {
                 pm_stub.update_validator_set(updates);
             }
-
-            let proposal = ProgressMessage::proposal(app.id(), cur_view, &block);
-            let vote_phase = if validator_set_updates_because_of_commit.is_some() { Phase::Prepare } else { Phase::Generic };
-            let vote = me.vote(app.id(), cur_view, block.hash, vote_phase);
 
             (proposal, vote)
         },
 
         // Produce a nudge.
         Phase::Prepare | Phase::Precommit => {
-            let nudge = ProgressMessage::nudge(app.id(), cur_view, &highest_qc);
-            let vote_phase = if highest_qc.phase == Phase::Prepare { Phase::Precommit } else { Phase::Commit };
-            let vote  = me.vote(app.id(), cur_view, highest_qc.block, vote_phase);
+            let nudged_block_hash = highest_qc.block;
+            let highest_qc_phase = highest_qc.phase;
+            let nudge = ProgressMessage::nudge(app.id(), cur_view, highest_qc);
+
+            let vote_phase = if highest_qc_phase == Phase::Prepare { Phase::Precommit } else { Phase::Commit };
+            let vote  = me.vote(app.id(), cur_view, nudged_block_hash, vote_phase);
 
             (nudge, vote)
         }
     };
 
-    pm_stub.broadcast(&proposal_or_nudge);
+    pm_stub.broadcast(proposal_or_nudge.clone());
 
-    let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
 
-    pm_stub.send(&next_leader, &vote);
+    pm_stub.send(next_leader, vote.clone());
 
     let i_am_next_leader = me.public() == next_leader;
 
@@ -253,19 +254,24 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<K>,
     app: &mut impl App<K>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
     if !proposal.block.is_correct(&block_tree.committed_validator_set()) 
         || !block_tree.block_can_be_inserted(&proposal.block) {
-        let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         let i_am_next_leader = me.public() == next_leader;
         return (false, i_am_next_leader)
     }
 
+    let parent_block = if proposal.block.justify.is_genesis_qc() {
+        None
+    } else {
+        Some(&proposal.block.justify.block)
+    };
     let validate_block_request = ValidateBlockRequest::new(
-        proposal.block,
-        block_tree.snapshot(),
+        &proposal.block,
+        block_tree.app_view(parent_block),
     );
     if let ValidateBlockResponse::Valid {
         app_state_updates,
@@ -274,18 +280,18 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref()); 
 
         let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
-        let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         if i_am_validator {
             let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Precommit };
             let vote = me.vote(app.id(), cur_view, proposal.block.hash, vote_phase);
 
-            pm_stub.send(&next_leader, &vote);
+            pm_stub.send(next_leader, vote.clone());
         }
         let i_am_next_leader = me.public() == next_leader;
 
         (true, i_am_next_leader)
     } else {
-        let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         let i_am_next_leader = me.public() == next_leader;
 
         (false, i_am_next_leader)
@@ -304,7 +310,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
 ) -> (bool, bool) {
     if !nudge.justify.is_correct(&block_tree.committed_validator_set())
         || !block_tree.qc_can_replace_highest(&nudge.justify) {
-            let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+            let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
             let i_am_next_leader = me.public() == next_leader;
             return (false, i_am_next_leader)
         }
@@ -318,12 +324,12 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     };
     let vote = me.vote(app.id(), cur_view, nudge.justify.block, vote_phase);
 
-    let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
     let i_am_next_leader = me.public() == next_leader;
     
     let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
     if i_am_validator {
-        pm_stub.send(&next_leader, &vote);
+        pm_stub.send(next_leader, vote.clone());
     }
 
     (true, i_am_next_leader)
@@ -350,7 +356,7 @@ fn on_receive_vote<K: KVStore>(
         false
     };
 
-    let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set()); 
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set()); 
     let i_am_next_leader = me.public() == next_leader;
 
     (highest_qc_updated, i_am_next_leader)
@@ -360,28 +366,26 @@ fn on_receive_vote<K: KVStore>(
 fn on_receive_new_view<K: KVStore>(
     new_view: NewView,
     block_tree: &mut BlockTree<K>,
-) -> bool {
+) {
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
         if block_tree.qc_can_replace_highest(&new_view.highest_qc) {
             block_tree.set_highest_qc(&new_view.highest_qc);
-            return true
         }
     }
-    false
 }
 
 fn on_view_timeout<K: KVStore, N: Network>(
     cur_view: ViewNumber,
     app: &impl App<K>,
     block_tree: &BlockTree<K>,
-    pacemaker: &impl Pacemaker,
+    pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) {
-    let new_view = ProgressMessage::new_view(app.id(), cur_view, &block_tree.highest_qc());
+    let new_view = ProgressMessage::new_view(app.id(), cur_view, block_tree.highest_qc());
 
-    let next_leader = pacemaker.view_leader(cur_view + 1, block_tree.committed_validator_set());
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
 
-    pm_stub.send(&next_leader, &new_view);
+    pm_stub.send(next_leader, new_view.clone());
 }
 
 fn sync<K: KVStore, N: Network>(
@@ -392,52 +396,60 @@ fn sync<K: KVStore, N: Network>(
 ) {
     // Pick random validator.
     if let Some(peer) = block_tree.committed_validator_set().random() {
-        sync_with(&peer, block_tree, sync_stub, app, pacemaker);
+        sync_with(block_tree, sync_stub, app, pacemaker);
     }
 }
 
 fn sync_with<K: KVStore, N: Network>(
-    peer: &PublicKeyBytes, 
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
 ) {
     loop {
+        let sync_peer = *block_tree.committed_validator_set().random().unwrap();
         let request = SyncRequest {
             highest_committed_block: block_tree.highest_committed_block(),
             limit: pacemaker.sync_request_limit(),
         };
-        sync_stub.send_request(&peer, &request);
+        sync_stub.send_request(sync_peer, request);
 
-        let response = sync_stub.recv_response(&peer);
-        for block in response.blocks {
-            if !block.is_correct(&block_tree.committed_validator_set())
-                || !block_tree.block_can_be_inserted(&block) {
+        if let Some(response) = sync_stub.recv_response(sync_peer, Instant::now() + pacemaker.sync_response_timeout()) {
+            if response.blocks.len() == 0 {
                 return
             }
-
-            let validate_block_request: ValidateBlockRequest<K> = todo!();
-            if let ValidateBlockResponse::Valid {
-                app_state_updates,
-                validator_set_updates
-            } = app.validate_block(validate_block_request) {
-                let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
-
-                if let Some(updates) = validator_set_updates_because_of_commit {
-                    sync_stub.update_validator_set(updates);
+            for block in response.blocks {
+                if !block.is_correct(&block_tree.committed_validator_set())
+                    || !block_tree.block_can_be_inserted(&block) {
+                    return
                 }
-            } else {
-                return
+
+                let parent_block = if block.justify.is_genesis_qc() {
+                    Some(&block.justify.block)
+                } else {
+                    None
+                };
+                let validate_block_request = ValidateBlockRequest::new(
+                    &block,
+                    block_tree.app_view(parent_block)
+                );
+                if let ValidateBlockResponse::Valid {
+                    app_state_updates,
+                    validator_set_updates
+                } = app.validate_block(validate_block_request) {
+                    let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+
+                    if let Some(updates) = validator_set_updates_because_of_commit {
+                        sync_stub.update_validator_set(updates);
+                    }
+                } else {
+                    return
+                }
             }
-        }
 
-        if block_tree.qc_can_replace_highest(&response.highest_qc) {
-            block_tree.set_highest_qc(&response.highest_qc)
-        }
-
-        if response.blocks.len() == 0 {
-            return
+            if block_tree.qc_can_replace_highest(&response.highest_qc) {
+                block_tree.set_highest_qc(&response.highest_qc)
+            }
         }
     }
 }

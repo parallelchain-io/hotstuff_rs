@@ -17,6 +17,9 @@ use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID, ValidatorSet
 use crate::messages::*;
 
 pub trait Network: Clone + Send {
+    /// Informs the network provider the validator set on wake-up.
+    fn init_validator_set(&mut self, validator_set: ValidatorSet);
+
     /// Informs the networking provider of updates to the validator set.
     fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
@@ -78,29 +81,56 @@ pub(crate) struct ProgressMessageStub<N: Network> {
 
 impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn new(network: N, receiver: Receiver<(PublicKeyBytes, ProgressMessage)>) -> ProgressMessageStub<N> {
-        todo!()
+        Self {
+            network,
+            receiver
+        }
     }
 
     pub(crate) fn recv(
         &mut self, 
         app_id: AppID,
         cur_view: ViewNumber, 
-        highest_qc_view: ViewNumber, 
         deadline: Instant
     ) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
-        todo!() 
+        while Instant::now() < deadline {
+            match self.receiver.recv_timeout(deadline - Instant::now()) {
+                Ok((sender, msg)) => {
+                    if msg.app_id() != app_id {
+                        continue
+                    }
+
+                    let received_qc_from_future = match &msg {
+                        ProgressMessage::Proposal(Proposal { block, .. }) => block.justify.view > cur_view,
+                        ProgressMessage::Nudge(Nudge { justify, .. }) => justify.view > cur_view,
+                        ProgressMessage::NewView(NewView { highest_qc, .. }) => highest_qc.view > cur_view,
+                        _ => false,
+                    };
+
+                    if received_qc_from_future {
+                        return Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture)
+                    } else {
+                        return Ok((sender, msg))
+                    }
+                },
+                Err(RecvTimeoutError::Timeout) => thread::yield_now(),
+                Err(RecvTimeoutError::Disconnected) => panic!()
+            }
+        }
+
+        Err(ProgressMessageReceiveError::Timeout)
     }
 
-    pub(crate) fn send(&mut self, peer: &PublicKeyBytes, msg: &ProgressMessage) {
-        todo!()
+    pub(crate) fn send(&mut self, peer: PublicKeyBytes, msg: ProgressMessage) {
+        self.network.send(peer, Message::ProgressMessage(msg))
     }
 
-    pub(crate) fn broadcast(&mut self, msg: &ProgressMessage) {
-        todo!()
+    pub(crate) fn broadcast(&mut self, msg: ProgressMessage) {
+        self.network.broadcast(Message::ProgressMessage(msg))
     }
 
     pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
-        todo!()
+        self.network.update_validator_set(updates)
     }
 }
 
@@ -118,16 +148,28 @@ impl<N: Network> SyncClientStub<N> {
         SyncClientStub { network, responses }
     }
 
-    pub(crate) fn send_request(&self, peer: &PublicKeyBytes, msg: &SyncRequest) {
-        todo!()
+    pub(crate) fn send_request(&mut self, peer: PublicKeyBytes, msg: SyncRequest) {
+        self.network.send(peer, Message::SyncMessage(SyncMessage::SyncRequest(msg)));
     }
 
-    pub(crate) fn recv_response(&self, peer: &PublicKeyBytes) -> SyncResponse {
-        todo!()
+    pub(crate) fn recv_response(&self, peer: PublicKeyBytes, deadline: Instant) -> Option<SyncResponse> {
+        while Instant::now() < deadline {
+            match self.responses.recv_timeout(deadline - Instant::now()) {
+                Ok((sender, sync_response)) => {
+                    if sender == peer {
+                        return Some(sync_response);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => thread::yield_now(),
+                Err(RecvTimeoutError::Disconnected) => panic!(),
+            }
+        }
+
+        None
     }
 
     pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
-        todo!()
+        self.network.update_validator_set(updates)
     }
 }
 
@@ -142,10 +184,10 @@ impl<N: Network> SyncServerStub<N> {
     }
 
     pub(crate) fn recv_request(&self) -> (PublicKeyBytes, SyncRequest) {
-        todo!()
+        self.requests.recv().unwrap()
     }
 
-    pub(crate) fn send_response(&self, peer: &PublicKeyBytes, msg: SyncResponse) {
-        todo!()
+    pub(crate) fn send_response(&mut self, peer: PublicKeyBytes, msg: SyncResponse) {
+        self.network.send(peer, Message::SyncMessage(SyncMessage::SyncResponse(msg)));
     }
 }
