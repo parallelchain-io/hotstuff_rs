@@ -194,6 +194,13 @@ pub struct ValidatorSet {
 }
 
 impl ValidatorSet {
+    pub fn new() -> ValidatorSet {
+        Self {
+            validators: Vec::new(),
+            powers: HashMap::new(),
+        }
+    }
+
     pub fn put(&mut self, validator: &PublicKeyBytes, power: Power) {
         if !self.powers.contains_key(validator) {
             let insert_pos = self.validators.binary_search(validator).unwrap_err();
@@ -201,6 +208,16 @@ impl ValidatorSet {
         }
 
         self.powers.insert(*validator, power);
+    }
+
+    pub fn apply_updates(&mut self, updates: &ValidatorSetUpdates) {
+        for (peer, new_power) in updates.inserts() {
+            self.put(&peer, *new_power);
+        }
+
+        for peer in updates.deletions() {
+            self.remove(peer);
+        }
     }
 
     pub fn power(&self, validator: &PublicKeyBytes) -> Option<&Power> {

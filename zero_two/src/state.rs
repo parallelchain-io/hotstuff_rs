@@ -71,7 +71,21 @@ impl<K: KVStore> BlockTree<K> {
     /* ↓↓↓ Initialize ↓↓↓ */
 
     pub(crate) fn initialize(&mut self, initial_app_state: &AppStateUpdates, initial_validator_set: &ValidatorSetUpdates) {
+        let mut wb = BlockTreeWriteBatch::new();
 
+        wb.apply_app_state_updates(initial_app_state);
+
+        let mut validator_set = ValidatorSet::new();
+        validator_set.apply_updates(initial_validator_set);
+        wb.set_committed_validator_set(&validator_set);
+
+        wb.set_locked_view(0);
+
+        wb.set_highest_view_entered(0);
+
+        wb.set_highest_qc(&QuorumCertificate::genesis_qc());
+
+        self.write(wb);
     }
 
     /* ↓↓↓ Methods for growing the Block Tree ↓↓↓ */
@@ -215,27 +229,14 @@ impl<K: KVStore> BlockTree<K> {
     // Returns the validator set updates that become committed when the block becomes committed, if any.
     fn commit_block(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
         if let Some(pending_app_state_updates) = self.pending_app_state_updates(block) {
-            for (key, value) in pending_app_state_updates.inserts() {
-                wb.set_committed_app_state(key, value);
-            }
-
-            for key in pending_app_state_updates.deletions() {
-                wb.delete_committed_app_state(key);
-            }
-
+            wb.apply_app_state_updates(&pending_app_state_updates); 
             wb.delete_pending_app_state_updates(block);
         }
         
 
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
             let mut committed_validator_set = self.committed_validator_set();
-            for (peer, new_power) in pending_validator_set_updates.inserts() {
-                committed_validator_set.put(&peer, *new_power);
-            }
-
-            for peer in pending_validator_set_updates.deletions() {
-                committed_validator_set.remove(peer);
-            }
+            committed_validator_set.apply_updates(&pending_validator_set_updates);
 
             wb.set_committed_validator_set(&committed_validator_set);
             wb.delete_pending_validator_set_updates(block);
@@ -476,7 +477,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         self.0.delete(&combine(&BLOCK_HASH_TO_CHILDREN, block));
     }
 
-    /* ↓↓↓ Committed App State ↓↓↓ */
+    /* ↓↓↓ Committed App State ↓↓↓ */ 
 
     pub fn set_committed_app_state(&mut self, key: &[u8], value: &[u8]) {
         self.0.set(&combine(&COMMITTED_APP_STATE, key), value);
@@ -490,6 +491,16 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_pending_app_state_updates(&mut self, block: &CryptoHash, app_state_updates: Option<&AppStateUpdates>) {
         self.0.set(&combine(block, &PENDING_APP_STATE_UPDATES), &app_state_updates.try_to_vec().unwrap());
+    }
+
+    pub fn apply_app_state_updates(&mut self, app_state_updates: &AppStateUpdates) {
+        for (key, value) in app_state_updates.inserts() {
+            self.set_committed_app_state(key, value);
+        }
+
+        for key in app_state_updates.deletions() {
+            self.delete_committed_app_state(key);
+        }   
     }
 
     pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
