@@ -41,7 +41,7 @@ fn integration_test() {
     let keypairs: Vec<DalekKeypair> = (0..6).map(|_| DalekKeypair::generate(&mut csprg)).collect();
     let init_as = {
         let mut state = AppStateUpdates::new();
-        state.insert(NUMBER_KEY.to_vec(), usize::to_le_bytes(0).to_vec());
+        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
         state
     };
     let init_vs = {

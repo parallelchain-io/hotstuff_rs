@@ -577,24 +577,27 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    pub(crate) fn blocks_from_highest_committed_block(&self, limit: u32) -> Vec<Block> {
+    pub(crate) fn blocks_from_tail_to_newest_block(&self, tail: Option<&CryptoHash>, limit: u32) -> Vec<Block> {
         let mut res = Vec::with_capacity(limit as usize);
 
-        // 1. Get highest committed block.
-        if let Some(highest_committed_block) = self.highest_committed_block() {
-            res.push(self.block(&highest_committed_block).unwrap());
-
-            // 2. Walk through tail block's descendants until limit is satisfied or we hit uncommitted blocks.
-            while res.len() < limit as usize {
-                let child = match self.block_at_height(res.last().unwrap().height + 1) {
-                    Some(block) => self.block(&block).unwrap(),
-                    None => break,
-                };
-                res.push(child);
+        // Get committed blocks, extending from tail.
+        if let Some(tail) = tail {
+            if let Some(tail_block) = self.block(tail) {
+                res.push(tail_block);
+    
+                while res.len() < limit as usize {
+                    let child = match self.block_at_height(res.last().unwrap().height + 1) {
+                        Some(block_hash) => self.block(&block_hash).unwrap(),
+                        None => break,
+                    };
+                    res.push(child);
+                }
+            } else {
+                return Vec::new()
             }
-        };
+        }
 
-        // 3. If limit is not yet satisfied, get speculative blocks.
+        // Get speculative blocks.
         if res.len() < limit as usize {
             if let Some(newest_block) = self.newest_block() {
                 let uncommitted_blocks = self.chain_between_speculative_block_and_highest_committed_block(&newest_block).into_iter().rev();

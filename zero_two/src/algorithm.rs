@@ -396,25 +396,25 @@ fn sync<K: KVStore, N: Network>(
 ) {
     // Pick random validator.
     if let Some(peer) = block_tree.committed_validator_set().random() {
-        sync_with(block_tree, sync_stub, app, pacemaker);
+        sync_with(peer, block_tree, sync_stub, app, pacemaker);
     }
 }
 
 fn sync_with<K: KVStore, N: Network>(
+    peer: &PublicKeyBytes,
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
 ) {
     loop {
-        let sync_peer = *block_tree.committed_validator_set().random().unwrap();
         let request = SyncRequest {
             highest_committed_block: block_tree.highest_committed_block(),
             limit: pacemaker.sync_request_limit(),
         };
-        sync_stub.send_request(sync_peer, request);
+        sync_stub.send_request(*peer, request);
 
-        if let Some(response) = sync_stub.recv_response(sync_peer, Instant::now() + pacemaker.sync_response_timeout()) {
+        if let Some(response) = sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout()) {
             if response.blocks.len() == 0 {
                 return
             }
