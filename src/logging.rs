@@ -15,7 +15,7 @@ use crate::types::*;
 pub mod info {
     use super::*;
 
-    pub const PROPOSING: &str = "Proposing";
+    pub const Proposed: &str = "Proposed";
     pub const NUDGING: &str = "Nudged";
     pub const VOTED: &str = "Voted";
     pub const COMMITTING: &str = "Committing";
@@ -24,12 +24,12 @@ pub mod info {
         log::info!("{}, {}, {}", COMMITTING, succinct(block), height);
     }
 
-    pub(crate) fn proposing(block: &CryptoHash, height: BlockHeight) {
-        log::info!("{}, {}, {}", PROPOSING, succinct(block), height);
+    pub(crate) fn proposed(block: &CryptoHash, height: BlockHeight) {
+        log::info!("{}, {}, {}", Proposed, succinct(block), height);
     }
 
-    pub(crate) fn nudged(block: &CryptoHash, height: BlockHeight, next_phase: Phase) {
-        log::info!("{}, {}, {}, {:?}", NUDGING, succinct(block), height, next_phase);
+    pub(crate) fn nudged(block: &CryptoHash, height: BlockHeight, justify_phase: Phase) {
+        log::info!("{}, {}, {}, {:?}", NUDGING, succinct(block), height, justify_phase);
     }
 
     pub(crate) fn voted(block: &CryptoHash, height: BlockHeight, phase: Phase) {

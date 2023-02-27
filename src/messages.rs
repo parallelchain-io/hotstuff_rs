@@ -38,15 +38,16 @@ impl ProgressMessage {
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
     pub fn nudge(app_id: AppID, view: ViewNumber, justify: QuorumCertificate) -> ProgressMessage {
-        if !(justify.phase == Phase::Prepare || justify.phase == Phase::Precommit) {
-            panic!()
+        match justify.phase {
+            Phase::Generic | Phase::Commit(_) => panic!(),
+            Phase::Prepare | Phase::Precommit(_) => {
+                ProgressMessage::Nudge(Nudge {
+                    app_id,
+                    view,
+                    justify
+                })
+            }
         }
-
-        ProgressMessage::Nudge(Nudge {
-            app_id,
-            view,
-            justify
-        })
     }
 
     pub fn new_view(app_id: AppID, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {

@@ -12,11 +12,9 @@
 //!    consensus progress, how long should I stay in the current view to wait for messages?
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
 //!    the current leader?
-//! 3. [Proposal rebroadcast period](Pacemaker::proposal_rebroadcast_period): if I am the leader, how long should I wait
-//!    between broadcasts of my proposal or nudge?
-//! 4. [Sync request limit](Pacemaker::sync_request_limit): when I'm syncing, how many blocks should I request my sync peer
+//! 3. [Sync request limit](Pacemaker::sync_request_limit): when I'm syncing, how many blocks should I request my sync peer
 //!    send in a single response?
-//! 5. [Sync response timeout](Pacemaker::sync_response_timeout): how long should I wait for a response to a sync request
+//! 4. [Sync response timeout](Pacemaker::sync_response_timeout): how long should I wait for a response to a sync request
 //!    that I make? 
 
 use std::cmp::min;
@@ -27,7 +25,6 @@ use crate::types::*;
 pub trait Pacemaker: Send {
     fn view_timeout(&mut self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> Duration;
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet) -> PublicKeyBytes;
-    fn proposal_rebroadcast_period(&self) -> Duration;
     fn sync_request_limit(&self) -> u32;
     fn sync_response_timeout(&self) -> Duration;
 }
@@ -61,10 +58,6 @@ impl Pacemaker for DefaultPacemaker {
     fn view_timeout(&mut self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> Duration {
         let exp = min(u32::MAX as u64, cur_view - highest_qc_view_number) as u32;
         self.minimum_view_timeout + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
-    }
-
-    fn proposal_rebroadcast_period(&self) -> Duration {
-        self.proposal_rebroadcast_period
     }
 
     fn sync_request_limit(&self) -> u32 {

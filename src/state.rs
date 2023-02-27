@@ -26,19 +26,19 @@
 //! - **Blocks** ([CryptoHash] -> [Block]).
 //! - **Block Height to Block** ([BlockHeight] -> [CryptoHash]): a mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.
 //! - **Block to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
-//! - **Committed App State** ([Key] -> [Value]).
+//! - **Committed App State** ([Vec<u8>] -> [Vec<u8>]).
 //! - **Pending App State Updates** ([CryptoHash] -> [AppStateUpdates]).
 //! - **Committed Validator Set** ([ValidatorSet]).
 //! - **Pending Validator Set Updates** ([CryptoHash] -> [ValidatorSetUpdates]).
 //! - **Locked View** ([ViewNumber]): the highest view number of a quorum certificate contained in a block that has a child. 
-//! - **Highest View Entered** ([ViewNumber]): the highest view that this validator has entered.
+//! - **Highest Voted View** ([ViewNumber]): the highest view that this validator has voted in.
 //! - **Highest Quorum Certificate** ([QuorumCertificate]): among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number. 
 //! - **Highest Committed Block** ([CryptoHash]).
 //! - **Newest Block** ([CryptoHash]): the most recent block to be inserted into the block tree.
 //! 
 //! The location of each of these variables in a KV store is defined in [paths]. Note that the fields of a
 //! block are itself stored in different tuples. This is so that user code can get a subset of a block's data
-//! without loading the entire block from storage, which may be expensive. The key suffixes on which each of
+//! without loading the entire block from storage, which can be expensive. The key suffixes on which each of
 //! block's fields are stored are also defined in paths.
 //! 
 //! ## Initial state 
@@ -75,7 +75,7 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ Initialize ↓↓↓ */
 
-    pub(crate) fn initialize(&mut self, initial_app_state: &AppStateUpdates, initial_validator_set: &ValidatorSetUpdates) {
+    pub fn initialize(&mut self, initial_app_state: &AppStateUpdates, initial_validator_set: &ValidatorSetUpdates) {
         let mut wb = BlockTreeWriteBatch::new();
 
         wb.apply_app_state_updates(initial_app_state);
@@ -95,26 +95,26 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ Methods for growing the Block Tree ↓↓↓ */
 
-    // Returns whether a block can be safely inserted. For this, it is necessary that:
-    // 1. self.qc_can_be_inserted(&block.justify).
-    // 2. No block with the same block hash is already in the block tree. 
-    // 3. Its qc's must be either a generic qc or a commit qc.
-    //
-    // This function evaluates [Self::qc_can_be_inserted], then checks 2 and 3.
-    //
-    // # Precondition
-    // [Block::is_correct]
-    pub(crate) fn block_can_be_inserted(&self, block: &Block) -> bool {
+    /// Returns whether a block can be safely inserted. For this, it is necessary that:
+    /// 1. self.qc_can_be_inserted(&block.justify).
+    /// 2. No block with the same block hash is already in the block tree. 
+    /// 3. Its qc's must be either a generic qc or a commit qc.
+    ///
+    /// This function evaluates [Self::qc_can_be_inserted], then checks 2 and 3.
+    ///
+    /// # Precondition
+    /// [Block::is_correct]
+    pub fn block_can_be_inserted(&self, block: &Block) -> bool {
         /* 1 */ self.qc_can_be_inserted(&block.justify) &&
         /* 2 */ !self.contains(&block.hash)  &&
-        /* 3 */ (block.justify.phase == Phase::Commit || block.justify.phase == Phase::Generic)
+        /* 3 */ (block.justify.phase.is_generic() || block.justify.phase.is_commit())
     }
 
-    // If the insertion causes a block to be committed, returns the changes that this causes of the validator set, if any.
-    // 
-    // # Precondition
-    // [Self::block_can_be_inserted]
-    pub(crate) fn insert_block(
+    /// If the insertion causes a block to be committed, returns the changes that this causes of the validator set, if any.
+    /// 
+    /// # Precondition
+    /// [Self::block_can_be_inserted]
+    pub fn insert_block(
         &mut self, 
         block: &Block, 
         app_state_updates: Option<&AppStateUpdates>, 
@@ -193,19 +193,19 @@ impl<K: KVStore> BlockTree<K> {
         return validator_state_updates
     } 
 
-    // Returns whether a qc be inserted into the block tree as part of a block. For this, it is necessary that:
-    // 1. It justifies a known block, or is the genesis qc.
-    // 2. Its view number is greater than or equal to locked view.
-    // 3. If it is a prepare, precommit, or commit qc, the block it justifies has a pending validator state update.
-    // 4. If its qc is a generic qc, the block it justifies *does not* have a pending validator set update.
-    //
-    // # Precondition
-    // [QuorumCertificate::is_correct]
-    pub(crate) fn qc_can_be_inserted(&self, qc: &QuorumCertificate) -> bool {
+    /// Returns whether a qc can be inserted into the block tree. For this, it is necessary that:
+    /// 1. It justifies a known block, or is the genesis qc.
+    /// 2. Its view number is greater than or equal to locked view.
+    /// 3. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
+    /// 4. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
+    ///
+    /// # Precondition
+    /// [QuorumCertificate::is_correct]
+    pub fn qc_can_be_inserted(&self, qc: &QuorumCertificate) -> bool {
         /* 1 */ (self.contains(&qc.block) || qc.is_genesis_qc()) &&
         /* 2 */ qc.view >= self.locked_view() &&
-        /* 3 */ ((qc.phase == Phase::Prepare || qc.phase == Phase::Precommit || qc.phase == Phase::Commit) && self.pending_validator_set_updates(&qc.block).is_some()) ||
-        /* 4 */ (qc.phase == Phase::Generic && self.pending_validator_set_updates(&qc.block).is_none())
+        /* 3 */ ((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit()) && self.pending_validator_set_updates(&qc.block).is_some()) ||
+        /* 4 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none())
     }
 
     // Returns whether a qc can be set as the highest qc in the block tree. For this, it is necessary that:
@@ -832,7 +832,7 @@ mod paths {
     pub(super) const COMMITTED_VALIDATOR_SET: [u8; 1] = [5];
     pub(super) const PENDING_VALIDATOR_SET_UPDATES: [u8; 1] = [6];
     pub(super) const LOCKED_VIEW: [u8; 1] = [7];
-    pub(super) const HIGHEST_VIEW_ENTERED: [u8; 1] = [8];
+    pub(super) const HIGHEST_VOTED_VIEW: [u8; 1] = [8];
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
     pub(super) const HIGHEST_COMMITTED_BLOCK: [u8; 1] = [10];
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];

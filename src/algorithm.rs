@@ -23,10 +23,9 @@
 //! The execution of a view in validator mode [proceeds](execute_view) as follows. The execution in listener view is
 //! exactly the validator mode flow minus all of the proposing and voting:
 //! 1. If I am the current leader (repeat this every proposal re-broadcast duration):
-//!     * If the highest qc is a generic or commit qc, call the app to produce a new block, broadcast it in a proposal,
-//!       and send a vote to the next leader.
-//!     * Otherwise, broadcast a nudge and send a vote to the next leader.
-//!     * Then, if I *am not* the next leader, move to the next view.
+//!     * If the highest qc is a generic or commit qc, call the app to produce a new block, then, broadcast it in a
+//!       proposal.
+//!     * Otherwise, broadcast a nudge.
 //! 2. Then, poll the network for progress messages until the view timeout:
 //!     * [On receiving a proposal](on_receive_proposal):
 //!         - [Call](BlockTree::block_can_be_inserted) on the block tree to see if the proposed block can be inserted.
@@ -108,68 +107,51 @@ fn execute_view<K: KVStore, N: Network>(
     
     let cur_validators: ValidatorSet = block_tree.committed_validator_set();
     
+    let cur_leader = pacemaker.view_leader(view, &cur_validators);
     let i_am_cur_leader = me.public() == pacemaker.view_leader(view, &cur_validators);
 
-    let mut prev_proposal_or_nudge_and_vote = None;
+    // 1. If I am the current leader, broadcast a proposal or a nudge.
+    if i_am_cur_leader {
+        propose_or_nudge(&me, view, app, block_tree, pacemaker, &mut pm_stub);
+    }
+
+    // 2. If I am a voter or the next leader, receive and progress messages until view timeout.     
     let mut votes = VoteCollector::new(app.id(), view, &cur_validators);
-    'view: while Instant::now() < view_deadline {
-        // 1. If I am the current leader, propose a block.
-        if i_am_cur_leader {
-            match prev_proposal_or_nudge_and_vote {
-                None => {
-                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, block_tree, pacemaker, &mut pm_stub);
-                    prev_proposal_or_nudge_and_vote = Some(proposal_or_nudge_and_vote);
-                    if !i_am_next_leader {
+    while Instant::now() < view_deadline { 
+        match pm_stub.recv(app.id(), view, view_deadline) {
+            Ok((origin, msg)) => match msg {
+                ProgressMessage::Proposal(proposal) => if origin == cur_leader {
+                    debug::received_proposal(&origin, &proposal.block.hash, proposal.block.height);
+                    let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                    if voted {
+                        if !i_am_next_leader {
+                            return Ok(())
+                        }
+                    }
+                },
+                ProgressMessage::Nudge(nudge) => if origin == cur_leader {
+                    debug::received_nudge(&origin, &nudge.justify.block, nudge.justify.phase);
+                    let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                    if voted {
+                        if !i_am_next_leader {
+                            return Ok(())
+                        }
+                    }
+                },
+                ProgressMessage::Vote(vote) => {
+                    debug::received_vote(&origin, &vote.block, vote.phase);
+                    let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, pacemaker);
+                    if highest_qc_updated && i_am_next_leader {
                         return Ok(())
                     }
                 },
-                // Rebroadcast proposal or nudge and resend vote.
-                Some((ref proposal_or_nudge, ref vote)) => {
-                    pm_stub.broadcast(proposal_or_nudge.clone());
-                    let next_leader = pacemaker.view_leader(view + 1, &block_tree.committed_validator_set());
-                    pm_stub.send(next_leader, vote.clone());
-                }
-            }
-        }
-
-        // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
-        let recv_deadline = min(Instant::now() + pacemaker.proposal_rebroadcast_period(), view_deadline);
-        '_wait: loop { 
-            match pm_stub.recv(app.id(), view, recv_deadline) {
-                Ok((origin, msg)) => match msg {
-                    ProgressMessage::Proposal(proposal) => {
-                        debug::received_proposal(&origin, &proposal.block.hash, proposal.block.height);
-                        let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
-                        if voted {
-                            if !i_am_next_leader {
-                                return Ok(())
-                            }
-                        }
-                    },
-                    ProgressMessage::Nudge(nudge) => {
-                        debug::received_nudge(&origin, &nudge.justify.block, nudge.justify.phase);
-                        let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
-                        if voted {
-                            if !i_am_next_leader {
-                                return Ok(())
-                            }
-                        }
-                    },
-                    ProgressMessage::Vote(vote) => {
-                        debug::received_vote(&origin, &vote.block, vote.phase);
-                        let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, pacemaker);
-                        if highest_qc_updated && i_am_next_leader {
-                            return Ok(())
-                        }
-                    },
-                    ProgressMessage::NewView(new_view) => {
-                        debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
-                        on_receive_new_view(new_view, &mut block_tree);
-                    },
+                ProgressMessage::NewView(new_view) => {
+                    debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
+                    on_receive_new_view(new_view, &mut block_tree);
                 },
-                Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture) => return Err(ShouldSync),
-                Err(ProgressMessageReceiveError::Timeout) => continue 'view,
-            }
+            },
+            Err(ProgressMessageReceiveError::ReceivedQCFromFuture) => return Err(ShouldSync),
+            Err(ProgressMessageReceiveError::Timeout) => continue,
         }
     }
 
@@ -181,9 +163,7 @@ fn execute_view<K: KVStore, N: Network>(
 
 struct ShouldSync;
 
-/// Create a proposal or a nudge, broadcast it to the network, and then send a vote for it to the next leader.
-/// 
-/// Returns ((the broadcasted proposal or nudge, the sent vote), whether i am the next leader).
+/// Create a proposal or a nudge and broadcast it to the network.
 fn propose_or_nudge<K: KVStore, N: Network>(
     me: &Keypair,
     cur_view: ViewNumber,
@@ -191,11 +171,11 @@ fn propose_or_nudge<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
-) -> ((ProgressMessage, ProgressMessage), bool) {
+) {
     let highest_qc = block_tree.highest_qc();
-    let (proposal_or_nudge, vote) = match highest_qc.phase {
+    match () {
         // Produce a proposal.
-        Phase::Generic | Phase::Commit => {
+        () if highest_qc.phase.is_generic() || highest_qc.phase.is_commit() => {
             let (parent_block, height) = if highest_qc.is_genesis_qc() {
                 (None, 0) 
             } else {
@@ -222,41 +202,26 @@ fn propose_or_nudge<K: KVStore, N: Network>(
                 pm_stub.update_validator_set(updates);
             }
 
-            info::proposing(&block.hash, block.height);
             let proposed_block_hash = block.hash;
             let proposal = ProgressMessage::proposal(app.id(), cur_view, block);
 
-            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Generic };
-            let vote = me.vote(app.id(), cur_view, proposed_block_hash, vote_phase);
-
-            (proposal, vote)
+            pm_stub.broadcast(proposal);
+            info::proposed(&block.hash, block.height);
         },
 
         // Produce a nudge.
-        Phase::Prepare | Phase::Precommit => {
+        () if highest_qc.phase.is_prepare() || highest_qc.phase.is_precommit() => {
             let nudged_block_hash = highest_qc.block;
 
             let highest_qc_phase = highest_qc.phase;
             let nudge = ProgressMessage::nudge(app.id(), cur_view, highest_qc);
 
-            let vote_phase = if highest_qc_phase == Phase::Prepare { Phase::Precommit } else { Phase::Commit };
-            info::nudged(&nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), vote_phase);
-            let vote  = me.vote(app.id(), cur_view, nudged_block_hash, vote_phase);
-            info::voted(&nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), vote_phase);
+            pm_stub.broadcast(nudge);
+            info::nudged(&nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), highest_qc_phase);
+        },
 
-            (nudge, vote)
-        }
+        _ => unreachable!()
     };
-
-    pm_stub.broadcast(proposal_or_nudge.clone());
-
-    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
-
-    pm_stub.send(next_leader, vote.clone());
-
-    let i_am_next_leader = me.public() == next_leader;
-
-    ((proposal_or_nudge, vote), i_am_next_leader)
 }
 
 // Returns (whether I voted, whether I am the next leader).
@@ -296,11 +261,12 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
         let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         if i_am_validator {
-            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Precommit };
+            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Generic };
             let vote = me.vote(app.id(), cur_view, proposal.block.hash, vote_phase);
 
             pm_stub.send(next_leader, vote.clone());
         }
+
         let i_am_next_leader = me.public() == next_leader;
 
         (true, i_am_next_leader)
@@ -322,8 +288,8 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
-    let next_phase = nudge.justify.phase.next();
-    if next_phase.is_none() 
+    if nudge.justify.phase.is_generic() 
+        || nudge.justify.phase.is_commit()
         || !nudge.justify.is_correct(&block_tree.committed_validator_set()) 
         || block_tree.qc_can_be_inserted(&nudge.justify) {
         let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
@@ -331,7 +297,12 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         return (false, i_am_next_leader) 
     }
 
-    let vote = me.vote(app.id(), cur_view, nudge.justify.block, next_phase.unwrap());
+    let vote_phase = match nudge.justify.phase {
+        Phase::Prepare => Phase::Precommit(nudge.justify.view),
+        Phase::Precommit(prepare_qc_view) => Phase::Commit(prepare_qc_view),
+        _ => unreachable!(),
+    };
+    let vote = me.vote(app.id(), cur_view, nudge.justify.block, vote_phase);
 
     if block_tree.qc_can_replace_highest(&nudge.justify) {
         block_tree.set_highest_qc(&nudge.justify);

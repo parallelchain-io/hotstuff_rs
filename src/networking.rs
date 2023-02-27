@@ -112,7 +112,7 @@ impl<N: Network> ProgressMessageStub<N> {
                     };
 
                     if received_qc_from_future {
-                        return Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture)
+                        return Err(ProgressMessageReceiveError::ReceivedQCFromFuture)
                     } else {
                         if msg.view() == cur_view {
                             return Ok((sender, msg))
@@ -142,7 +142,7 @@ impl<N: Network> ProgressMessageStub<N> {
 
 pub(crate) enum ProgressMessageReceiveError {
     Timeout,
-    ReceivedQuorumFromFuture,
+    ReceivedQCFromFuture,
 }
 pub(crate) struct SyncClientStub<N: Network> {
     network: N,

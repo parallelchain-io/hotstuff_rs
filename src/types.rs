@@ -143,18 +143,35 @@ impl QuorumCertificate {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
     Generic,
-    Prepare,
-    Precommit,
-    Commit
+
+    // The ViewNumber inside Precommit and Commit is the view of the prepare qc that this precommit or commit qc extends.
+    Prepare, 
+    Precommit(ViewNumber),
+    Commit(ViewNumber),
 }
 
 impl Phase {
-    pub fn next(&self) -> Option<Phase> {
-        match self {
-            Phase::Generic => None,
-            Phase::Prepare => Some(Phase::Precommit),
-            Phase::Precommit => Some(Phase::Commit),
-            Phase::Commit => None,
+    pub fn is_generic(self) -> bool {
+        self == Phase::Generic
+    }
+
+    pub fn is_prepare(self) -> bool {
+        self == Phase::Prepare
+    }
+
+    pub fn is_precommit(self) -> bool {
+        if let Phase::Precommit(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_commit(self) -> bool {
+        if let Phase::Commit(_) = self {
+            true
+        } else {
+            false
         }
     }
 }
