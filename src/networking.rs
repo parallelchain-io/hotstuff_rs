@@ -5,11 +5,14 @@
     Authors: Alice Lim
 */
 
-//! HotStuff-rs' has modular peer-to-peer networking, with each peer identified by a PublicKey. Networking providers
-//! interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has four methods
+//! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and functions
+//! that replicas use to interact with the network.
+//!
+//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their PublicKey. Networking providers
+//! interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has five methods
 //! that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
-use std::sync::mpsc::{self, Sender, Receiver, RecvTimeoutError, TryRecvError, RecvError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -23,7 +26,7 @@ pub trait Network: Clone + Send {
     /// Informs the networking provider of updates to the validator set.
     fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
-    /// Send a message to all peers.
+    /// Send a message to all peers (including listeners).
     fn broadcast(&mut self, message: Message);
 
     /// Send a message to the specified peer without blocking.
@@ -87,6 +90,7 @@ impl<N: Network> ProgressMessageStub<N> {
         }
     }
 
+    // Receive a message matching the given app id and current view.
     pub(crate) fn recv(
         &mut self, 
         app_id: AppID,
@@ -110,7 +114,9 @@ impl<N: Network> ProgressMessageStub<N> {
                     if received_qc_from_future {
                         return Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture)
                     } else {
-                        return Ok((sender, msg))
+                        if msg.view() == cur_view {
+                            return Ok((sender, msg))
+                        }
                     }
                 },
                 Err(RecvTimeoutError::Timeout) => thread::yield_now(),

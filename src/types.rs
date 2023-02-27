@@ -5,6 +5,8 @@
     Authors: Alice Lim
 */
 
+//! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
+
 use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys}, HashMap}, hash::Hash};
 use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::Verifier;
@@ -79,38 +81,44 @@ pub struct QuorumCertificate {
 impl QuorumCertificate {
     /// Checks if all of the signatures in the certificate are correct, and if there's the right amount of signatures:
     /// the sum of the powers of the signers must be a quorum, and no strict subset of the signers must be a quorum.
+    /// 
+    /// If the qc is a genesis qc, it is automatically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-        if self.signatures.len() != validator_set.len() {
-            return false
-        }
+        if self.is_genesis_qc() {
+            true
+        } else {
+            if self.signatures.len() != validator_set.len() {
+                return false
+            }
 
-        let quorum = Self::quorum(validator_set.total_power());
-        let mut signature_set_power = 0;
-        let mut is_already_quorum = false; 
-        for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.iter()) {
-            if let Some(signature) = signature {
-                let signer = PublicKey::from_bytes(signer).unwrap();
-                if let Ok(signature) = Signature::from_bytes(signature) {
-                    if signer.verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
-                        signature_set_power += power;
-                        
-                        if is_already_quorum {
-                            return true 
-                        }                        
+            let quorum = Self::quorum(validator_set.total_power());
+            let mut signature_set_power = 0;
+            let mut is_already_quorum = false; 
+            for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.iter()) {
+                if let Some(signature) = signature {
+                    let signer = PublicKey::from_bytes(signer).unwrap();
+                    if let Ok(signature) = Signature::from_bytes(signature) {
+                        if signer.verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
+                            signature_set_power += power;
+                            
+                            if is_already_quorum {
+                                return true 
+                            }                        
 
-                        if signature_set_power >= quorum {
-                            is_already_quorum = true;
+                            if signature_set_power >= quorum {
+                                is_already_quorum = true;
+                            }
+                        } else {
+                            return false
                         }
                     } else {
                         return false
                     }
-                } else {
-                    return false
                 }
             }
-        }
 
-        is_already_quorum
+            is_already_quorum
+        }
     }
 
     pub const fn genesis_qc() -> QuorumCertificate {
@@ -132,7 +140,7 @@ impl QuorumCertificate {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
     Generic,
     Prepare,
@@ -304,24 +312,33 @@ impl<'a> VoteCollector<'a> {
             panic!()
         }
 
+        // Check if the signer is actually in the validator set.
         if let Some(pos) = self.validator_set.position(signer) {
-            if let Some((signature_set, power)) = self.signature_sets.get_mut(&(vote.block, vote.phase)) {
-                if signature_set.get(pos).is_none() {
-                    signature_set[pos] = Some(vote.signature);
-                    *power += self.validator_set.power(signer).unwrap();
 
-                    if *power >= QuorumCertificate::quorum(self.validator_set_power) {
-                        let (signatures, _) = self.signature_sets.remove(&(vote.block, vote.phase)).unwrap();
-                        let collected_qc = QuorumCertificate {
-                            app_id: self.app_id,
-                            view: self.view,
-                            block: vote.block,
-                            phase: vote.phase,
-                            signatures,
-                        };
+            // If the vote is for a new (block, phase) pair, prepare an empty signature set.
+            if !self.signature_sets.contains_key(&(vote.block, vote.phase)) { 
+                self.signature_sets.insert((vote.block, vote.phase), (vec![None; self.validator_set.len()], 0));
+            }
 
-                        return Some(collected_qc)
-                    }
+            let (signature_set, power) = self.signature_sets.get_mut(&(vote.block, vote.phase)).unwrap();
+
+            // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
+            if signature_set[pos].is_none() {
+                signature_set[pos] = Some(vote.signature);
+                *power += self.validator_set.power(signer).unwrap();
+
+                // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
+                if *power >= QuorumCertificate::quorum(self.validator_set_power) {
+                    let (signatures, _) = self.signature_sets.remove(&(vote.block, vote.phase)).unwrap();
+                    let collected_qc = QuorumCertificate {
+                        app_id: self.app_id,
+                        view: self.view,
+                        block: vote.block,
+                        phase: vote.phase,
+                        signatures,
+                    };
+
+                    return Some(collected_qc)
                 }
             }
         }

@@ -5,8 +5,8 @@
     Authors: Alice Lim
 */
 
-//! This module defines types and methods used to access and mutate the persistent state that a HotStuff-rs
-//! validator keeps track for the operation of the protocol, and for its application.
+//! Types and methods used to access and mutate the persistent state that a replica keeps track for the operation
+//! of the protocol, and for its application.
 //! 
 //! This state may be stored in a key-value store of the library user's own choosing, as long as that KV store
 //! can provide a type that implements [KVStore]. This state can be mutated through an instance of [BlockTree],
@@ -52,11 +52,15 @@
 //! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
 //! 
 //! ## Safety
+//! 
+//! - [BlockTree::block_can_be_inserted]
+//! - [BlockTree::qc_can_be_inserted]
+//! - [BlockTree::qc_can_replace_highest]
 
 use borsh::{BorshSerialize, BorshDeserialize};
 use crate::types::*;
 
-/// A read and write handle into the block tree, exclusively owned by the algorithm thread.
+/// A read and write handle into the block tree exclusively owned by the algorithm thread.
 pub struct BlockTree<K: KVStore>(K);
 
 impl<K: KVStore> BlockTree<K> {
@@ -101,8 +105,8 @@ impl<K: KVStore> BlockTree<K> {
     // [Block::is_correct]
     pub(crate) fn block_can_be_inserted(&self, block: &Block) -> bool {
         /* 1 */ self.qc_can_be_inserted(&block.justify) &&
-        /* 2 */ self.contains(&block.hash)  &&
-        /* 3 */ block.justify.phase == Phase::Commit && block.justify.phase == Phase::Generic
+        /* 2 */ !self.contains(&block.hash)  &&
+        /* 3 */ (block.justify.phase == Phase::Commit || block.justify.phase == Phase::Generic)
     }
 
     // If the insertion causes a block to be committed, returns the changes that this causes of the validator set, if any.
@@ -120,8 +124,12 @@ impl<K: KVStore> BlockTree<K> {
         // 1. Block: Insert block.
         wb.set_block(block);
         wb.set_newest_block(&block.hash);
-        wb.set_pending_app_state_updates(&block.hash, app_state_updates);
-        wb.set_pending_validator_set_updates(&block.hash, validator_set_updates);
+        if let Some(app_state_updates) = app_state_updates {
+            wb.set_pending_app_state_updates(&block.hash, app_state_updates);
+        }
+        if let Some(validator_set_updates) = validator_set_updates {
+            wb.set_pending_validator_set_updates(&block.hash, validator_set_updates);
+        }
 
         let mut siblings = self.children(&block.justify.block).unwrap_or(ChildrenList::new());
         siblings.push(block.hash);
@@ -161,7 +169,7 @@ impl<K: KVStore> BlockTree<K> {
         let great_grandparent = grandparent_justify.block;
         let great_grandparent_height = self.0.block_height(&great_grandparent).unwrap();
 
-        let validator_set_changes = match self.highest_committed_block_height() {
+        let validator_state_updates = match self.highest_committed_block_height() {
             Some(highest_committed_block_height) if great_grandparent_height > highest_committed_block_height => self.commit_block(&mut wb, &great_grandparent),
             None => self.commit_block(&mut wb, &great_grandparent),
             _ => {
@@ -173,7 +181,7 @@ impl<K: KVStore> BlockTree<K> {
         let great_grandparent_justify = self.0.block_justify(&great_grandparent).unwrap();
         if great_grandparent_justify.is_genesis_qc() {
             self.write(wb);
-            return validator_set_changes 
+            return validator_state_updates 
         }
 
         // 4. Great-great-grandparent: delete all children of except great-grandparent.
@@ -181,11 +189,11 @@ impl<K: KVStore> BlockTree<K> {
         self.delete_children_of(&mut wb, &great_great_grandparent, &great_grandparent);
 
         self.write(wb);
-        return validator_set_changes
+        return validator_state_updates
     } 
 
     // Returns whether a qc be inserted into the block tree as part of a block. For this, it is necessary that:
-    // 1. It justifies a known block.
+    // 1. It justifies a known block, or is the genesis qc.
     // 2. Its view number is greater than or equal to locked view.
     // 3. If it is a prepare, precommit, or commit qc, the block it justifies has a pending validator state update.
     // 4. If its qc is a generic qc, the block it justifies *does not* have a pending validator set update.
@@ -193,10 +201,10 @@ impl<K: KVStore> BlockTree<K> {
     // # Precondition
     // [QuorumCertificate::is_correct]
     pub(crate) fn qc_can_be_inserted(&self, qc: &QuorumCertificate) -> bool {
-        (self.contains(&qc.block) || qc.is_genesis_qc()) &&
-        qc.view >= self.locked_view() &&
-        ((qc.phase == Phase::Prepare || qc.phase == Phase::Precommit || qc.phase == Phase::Commit) && self.pending_validator_set_updates(&qc.block).is_some()) &&
-        (qc.phase == Phase::Generic && self.pending_validator_set_updates(&qc.block).is_none())
+        /* 1 */ (self.contains(&qc.block) || qc.is_genesis_qc()) &&
+        /* 2 */ qc.view >= self.locked_view() &&
+        /* 3 */ ((qc.phase == Phase::Prepare || qc.phase == Phase::Precommit || qc.phase == Phase::Commit) && self.pending_validator_set_updates(&qc.block).is_some()) ||
+        /* 4 */ (qc.phase == Phase::Generic && self.pending_validator_set_updates(&qc.block).is_none())
     }
 
     // Returns whether a qc can be set as the highest qc in the block tree. For this, it is necessary that:
@@ -233,7 +241,6 @@ impl<K: KVStore> BlockTree<K> {
             wb.delete_pending_app_state_updates(block);
         }
         
-
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
             let mut committed_validator_set = self.committed_validator_set();
             committed_validator_set.apply_updates(&pending_validator_set_updates);
@@ -243,6 +250,8 @@ impl<K: KVStore> BlockTree<K> {
 
             return Some(pending_validator_set_updates)
         }
+
+        wb.set_highest_committed_block(block);
 
         None
     }
@@ -489,8 +498,8 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Pending App State Updates ↓↓↓ */
 
-    pub fn set_pending_app_state_updates(&mut self, block: &CryptoHash, app_state_updates: Option<&AppStateUpdates>) {
-        self.0.set(&combine(block, &PENDING_APP_STATE_UPDATES), &app_state_updates.try_to_vec().unwrap());
+    pub fn set_pending_app_state_updates(&mut self, block: &CryptoHash, app_state_updates: &AppStateUpdates) {
+        self.0.set(&combine(&PENDING_APP_STATE_UPDATES, block), &app_state_updates.try_to_vec().unwrap());
     }
 
     pub fn apply_app_state_updates(&mut self, app_state_updates: &AppStateUpdates) {
@@ -504,7 +513,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     }
 
     pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(block, &PENDING_APP_STATE_UPDATES));
+        self.0.delete(&combine(&PENDING_APP_STATE_UPDATES, block));
     }
 
     /* ↓↓↓ Commmitted Validator Set */
@@ -515,7 +524,8 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Pending Validator Set Updates */
 
-    pub fn set_pending_validator_set_updates(&mut self, block: &CryptoHash, validator_set_updates: Option<&ValidatorSetUpdates>) {
+    pub fn set_pending_validator_set_updates(&mut self, block: &CryptoHash, validator_set_updates: &ValidatorSetUpdates) {
+        log::trace!("set_pending_validator_set_updates: for block: {:?}", &block[0..2]);
         self.0.set(&combine(&PENDING_VALIDATOR_SET_UPDATES, block), &validator_set_updates.try_to_vec().unwrap())
     }
 
@@ -598,30 +608,33 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         }
 
         // Get speculative blocks.
-        if res.len() < limit as usize {
-            if let Some(newest_block) = self.newest_block() {
-                let uncommitted_blocks = self.chain_between_speculative_block_and_highest_committed_block(&newest_block).into_iter().rev();
-                res.extend(uncommitted_blocks);
-            }
-        }
+        res.extend(self.chain_from_newest_block_to_highest_committed_block_or_beginning());
 
         res
     }
 
-    fn chain_between_speculative_block_and_highest_committed_block(&self, head_block: &CryptoHash) -> Vec<Block> {
+    fn chain_from_newest_block_to_highest_committed_block_or_beginning(&self) -> Vec<Block> {
         let mut res = Vec::new();
-
-        let head_block = self.block(head_block).unwrap();
-        if let Some(highest_committed_block) = self.highest_committed_block() {
-            let mut cursor = head_block.justify.block;
-            res.push(head_block);
-
-            while cursor != highest_committed_block {
+        if let Some(newest_block) = self.newest_block(){
+            let mut cursor = newest_block;
+            loop { 
                 let block = self.block(&cursor).unwrap();
-                cursor = block.justify.block;
+                let block_justify = block.justify.clone();
                 res.push(block);
+
+                if let Some(highest_committed_block) = self.highest_committed_block() {
+                    if block_justify.block == highest_committed_block {
+                        break
+                    }
+                }
+
+                if block_justify == QuorumCertificate::genesis_qc() {
+                    break
+                }
+
+                cursor = block_justify.block;
             }
-        };
+        }
 
         res
     }
@@ -766,7 +779,7 @@ pub trait KVGet {
     /* ↓↓↓ Pending Validator Set Updates */
 
     fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-        Some(ValidatorSetUpdates::deserialize(&mut &*self.get(&combine(&PENDING_APP_STATE_UPDATES, block))?).unwrap())
+        Some(ValidatorSetUpdates::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?).unwrap())
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */

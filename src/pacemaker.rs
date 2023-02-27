@@ -5,6 +5,20 @@
     Authors: Alice Lim
 */
 
+//! [Trait definition](Pacemaker) for pacemakers: user-provided types that determine the 'liveness' behavior of replicas.
+//! 
+//! Specifically, pacemakers tell replica code five things:
+//! 1. [View timeout](Pacemaker::view_timeout): given the current view, and the highest view I (the replica) has seen
+//!    consensus progress, how long should I stay in the current view to wait for messages?
+//! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
+//!    the current leader?
+//! 3. [Proposal rebroadcast period](Pacemaker::proposal_rebroadcast_period): if I am the leader, how long should I wait
+//!    between broadcasts of my proposal or nudge?
+//! 4. [Sync request limit](Pacemaker::sync_request_limit): when I'm syncing, how many blocks should I request my sync peer
+//!    send in a single response?
+//! 5. [Sync response timeout](Pacemaker::sync_response_timeout): how long should I wait for a response to a sync request
+//!    that I make? 
+
 use std::cmp::min;
 use std::convert::identity;
 use std::time::Duration;
@@ -18,6 +32,8 @@ pub trait Pacemaker: Send {
     fn sync_response_timeout(&self) -> Duration;
 }
 
+/// A pacemaker which selects leaders in a round-robin fashion, and prescribes exponentially increasing view timeouts to
+/// eventually bring replicas into the same view.
 pub struct DefaultPacemaker {
     minimum_view_timeout: Duration,
     proposal_rebroadcast_period: Duration,
@@ -26,8 +42,13 @@ pub struct DefaultPacemaker {
 }
 
 impl DefaultPacemaker {
-    pub fn new(minimum_view_timeout: Duration, proposal_rebroadcast_period: Duration, sync_request_limit: u32, sync_response_timeout: Duration) -> DefaultPacemaker {
-        Self { minimum_view_timeout, proposal_rebroadcast_period, sync_request_limit, sync_response_timeout }
+    pub fn new(minimum_view_timeout: Duration, sync_request_limit: u32, sync_response_timeout: Duration) -> DefaultPacemaker {
+        Self { 
+            minimum_view_timeout,
+            proposal_rebroadcast_period: minimum_view_timeout,
+            sync_request_limit, 
+            sync_response_timeout 
+        }
     }
 }
 

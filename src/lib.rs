@@ -1,36 +1,66 @@
-//! HotStuff-rs is a Rust Programming Language implementation of the HotStuff consensus protocol. It offers:
-//! 1. Guaranteed Safety and Liveness in the face of up to 1/3rd of Voting Power being Byzantine at any given moment,
-//! 2. A small API (`App`) for plugging in arbitrary state machine-based applications like blockchains, and
-//! 3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
 
+//! A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
+//! systems. 
+//!  
+//! HotStuff-rs implements a variant of the HotStuff consensus protocol, but with extensions like block-sync and dynamic
+//! validator sets that makes this library suited for real-world use-cases (and not just research systems). Some desirable
+//! properties that HotStuff-rs has are:
+//! 1. **Provable Safety** in the face of up to 1/3rd of voting power being Byzantine at any given moment.
+//! 2. **Optimal Performance**: consensus in (amortized) 1 round trip time.
+//! 3. **Simplicity**: A small API [app](app::App) for plugging in arbitrary stateful applications.
+//! 4. **Modularity**: pluggable [networking], [state persistence](state), and [view-synchronization mechanism](pacemaker).
+//! 5. **Dynamic Validator Sets** that can update without any downtime based on state updates: a must for PoS blockchain
+//!    applications.
+//! 6. **Batteries included**: comes with a block-sync protocol and (coming soon) default implementations for networking,
+//!    state, and pacemaker: you write the app, we handle the replication.
+//! 
+//! ## Terminology
+//!  
+//! - **App**: user code which implements the [app trait](app::App). This can be any business logic that can be expressed
+//!   as a deterministic state machine, i.e., a pure function of kind: `(Blockchain, App State, Validator Set, Block) ->
+//!   (Next Blockchain, Next App State, Next Validator Set)`.
+//! - **Replica**: a public-key-identified process that hosts an implementation of the HotStuff-rs protocol, e.g., this
+//!   library. There are [two kinds of Replicas](replica): validators, and listeners. 
+//! - **Blockchain**: a growing sequence of **Blocks**, which can be thought of as instructions to update a replica's App
+//!   State and Validator Set.
+//! - **App State**: a key-value store that applications can use to store anything; two replicas with the same Blockchain
+//!   are guaranteed to have the same app state.
+//! - **Validator Set**: the set of replicas who can vote in a consensus decision.
+//! - **Progress protocol**: the protocol replicas use to create new blocks through consensus and grow the blockchain.
+//! - **Sync protocol**: the protocol new or previously offline replicas use to quickly catch up to the head of the
+//!   blockchain.
+//! 
+//! ## Getting started
+//! 
+//! If you're trying to learn about HotStuff-rs by reading the source code or Cargo docs, we recommend starting from
+//! the [replica](replica) module. This is the entry-point of user code into this library.
+//! 
+//! ## Logging
+//! 
+//! ### Info level events
+//! 
+//! ### Debug level events
 
-/// Defines the HotStuff struct, your Apps' point of entry into HotStuff-rs' threads and business logic. Calling the struct's `start`
-/// associated function starts up HotStuff-rs's Consensus State Machine.
-pub mod hotstuff;
-
-/// Defines the [App](app::App) trait, which your types are required to implement in order to serve as HotStuff-rs' deterministic state 
-/// transition function. The Ethereum Virtual Machine (EVM), for example, is a classic example of a deterministic state transition function
-/// which could implement the App trait.
 pub mod app;
 
-/// Defines structures whose fields configure the behavior of the protocol Participant. This includes the pace at which consensus should
-/// proceed, how Participants should contact each other, etc. If you are building a distributed system using HotStuff-rs, you would want to
-/// tweak these knobs to modify the system's behavior to meet your needs.
-pub mod config;
+pub mod algorithm;
 
-/// Defines the 'Block Tree', the object of state machine replication. Consensus works to extend the Block Tree with new Blocks, causing
-/// the distributed state machine's Storage to evolve over time. The 'Block Tree' is a generalization of the concept of a 'blockchain'.
-pub mod block_tree;
+pub mod types;
 
-/// Defines an HTTP server that serves the 'Block Tree HTTP API' (endpoints documented in '/docs'). The `GET /blocks` route of this API
-/// is used by the protocol state machine's 'Sync Mode' to catch-up lagging Participants to the global head of the Block Tree, and therefore
-/// is a required part of the protocol. The rest of the routes are optional.
-pub(crate) mod rest_api;
+pub mod messages;
 
-/// Defines HotStuff-rs' Algorithm State Machine, the component which actually drives the growth of the Block Tree through Byzantine Fault
-/// Tolerant consensus. 
-pub(crate) mod algorithm;
+pub mod pacemaker;
 
-/// Defines types and routines that interact with network I/O to enable this Participant to contact other Participants in Progress Mode.
-/// Sync Mode networking involves types defined in the rest_api module.
-pub(crate) mod ipc;
+pub mod state;
+
+pub mod networking;
+
+pub mod sync_server;
+
+pub mod replica;

@@ -5,13 +5,13 @@
     Authors: Alice Lim
 */
 
-//! The test suite for HotStuff-rs involves an [NumberApp](app) that keeps track of a single number in its state, which
+//! The test suite for HotStuff-rs involves an [app](NumberApp) that keeps track of a single number in its state, which
 //! is initially 0. Tests push transactions to this app to increase this number, or change its validator set, and then
 //! query its state to check if consensus is proceeding.
 //! 
 //! The replicas used in this test suite use a mock [NetworkStub], a mock [MemDB](key-value store), and the
-//! [crate::pacemaker::DefaultPacemaker]. These use channels to simulate communication, and a hashmap to simulate
-//! to simulate persistence, and thus never leaves any artifacts.
+//! [default pacemaker](hotstuff_rs::pacemaker::DefaultPacemaker). These use channels to simulate communication, and a
+//! hashmap to simulate persistence, and thus never leaves any artifacts.
 
 extern crate rand;
 use std::collections::{HashMap, HashSet};
@@ -23,22 +23,26 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Duration;
+use std::io;
 use borsh::{BorshSerialize, BorshDeserialize};
+use log::LevelFilter;
 use rand::rngs::OsRng;
 use sha2::{Sha256, Digest};
 use ed25519_dalek::Keypair as DalekKeypair;
-use crate::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBlockResponse, ValidateBlockResponse};
-use crate::pacemaker::DefaultPacemaker;
-use crate::replica::Replica;
-use crate::state::{KVStore, KVGet, WriteBatch};
-use crate::types::{PublicKeyBytes, ValidatorSetUpdates, AppID, AppStateUpdates, Power, CryptoHash, ValidatorSet};
-use crate::messages::*;
-use crate::networking::Network;
+use hotstuff_rs::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBlockResponse, ValidateBlockResponse};
+use hotstuff_rs::pacemaker::DefaultPacemaker;
+use hotstuff_rs::replica::Replica;
+use hotstuff_rs::state::{KVStore, KVGet, WriteBatch};
+use hotstuff_rs::types::{PublicKeyBytes, ValidatorSetUpdates, AppID, AppStateUpdates, Power, CryptoHash, ValidatorSet};
+use hotstuff_rs::messages::*;
+use hotstuff_rs::networking::Network;
 
 #[test]
 fn integration_test() {
+    setup_trace_logger();
+
     let mut csprg = OsRng{};
-    let keypairs: Vec<DalekKeypair> = (0..6).map(|_| DalekKeypair::generate(&mut csprg)).collect();
+    let keypairs: Vec<DalekKeypair> = (0..3).map(|_| DalekKeypair::generate(&mut csprg)).collect();
     let init_as = {
         let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
@@ -57,46 +61,58 @@ fn integration_test() {
         .map(|(keypair, network)| Node::new(keypair, network, init_as.clone(), init_vs.clone()))
         .collect();
     
-    // Submit an Increment transaction to each of the 3 initial validators.
+    // Submit an Increment transaction to the initial validator.
+    log::debug!("Integration test: submit an Increment transaction to the initial validator.");
+    nodes[0].submit_transaction(NumberAppTransaction::Increment);
+
+    // Poll the app state of every replica until the value is 1.
+    log::debug!("Integration test: poll the app state of every replica until the value is 1.");
+    while nodes[0].number() != 1 || nodes[1].number() != 1 || nodes[2].number() != 1 {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    // Submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.
+    log::debug!("Integration test: submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
+    let node_1 = nodes[1].public_key();
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, 1));
+    let node_2 = nodes[2].public_key();
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, 1));
+
+    // Poll the validator set of every replica until we have 3 validators.
+    log::debug!("Integration test: poll the validator set of every replica until we have 3 validators.");
+    while nodes[0].committed_validator_set().len() != 3 || nodes[1].committed_validator_set().len() != 3 || nodes[2].committed_validator_set().len() != 3 {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    // Push an Increment transaction to each of the 3 validators we have now.
+    log::debug!("Integration test: submit an increment transaction to each of the 3 validators we have now.");
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
     nodes[1].submit_transaction(NumberAppTransaction::Increment);
     nodes[2].submit_transaction(NumberAppTransaction::Increment);
 
-    // Poll the app state of every replica until the value is 3.
-    while nodes[0].number() != 3 || nodes[1].number() != 3 || nodes[2].number() != 3 {
+    // Poll the app state of every replica until the value is 4.
+    log::debug!("Integration test: poll the app state of every replica until the value is 4");
+    while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 { 
         thread::sleep(Duration::from_millis(500));
     }
-
-    // Submit an set validators transaction to each of the 3 initial validators to register the rest (3) of the peers.
-    let node_3 = nodes[3].public_key();
-    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_3, 1));
-    let node_4 = nodes[4].public_key();
-    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_4, 1));
-    let node_5 = nodes[5].public_key();
-    nodes[2].submit_transaction(NumberAppTransaction::SetValidator(node_5, 1));
-
-    // Poll the validator set of every replica until we have 6 validators.
-    while nodes[0].committed_validator_set().len() != 6 || nodes[1].committed_validator_set().len() != 6 || nodes[2].committed_validator_set().len() != 6
-        || nodes[3].committed_validator_set().len() != 6 || nodes[4].committed_validator_set().len() != 6 || nodes[5].committed_validator_set().len() != 6 {
-        thread::sleep(Duration::from_millis(500));
-    }
-
-    // Push an Increment transaction to each of the 6 validators we have now.
-    nodes[0].submit_transaction(NumberAppTransaction::Increment);
-    nodes[1].submit_transaction(NumberAppTransaction::Increment);
-    nodes[2].submit_transaction(NumberAppTransaction::Increment);
-    nodes[3].submit_transaction(NumberAppTransaction::Increment);
-    nodes[4].submit_transaction(NumberAppTransaction::Increment);
-    nodes[5].submit_transaction(NumberAppTransaction::Increment);
-
-    // Poll the app state of every replica until the value is 9.
-    while nodes[0].number() != 9 || nodes[1].number() != 9 || nodes[2].number() != 9 || 
-        nodes[3].number() != 9 || nodes[4].number() != 9 || nodes[5].number() != 9 {
-        thread::sleep(Duration::from_millis(500));
-    }
-
 }
 
+// Set up a logger that logs all log messages with level Trace and above.
+fn setup_trace_logger() {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{:?}][{}] {}",
+                thread::current().id(),
+                record.level(),
+                message
+            ))
+        })
+        .level(LevelFilter::Trace)
+        .chain(io::stdout())
+        .apply()
+        .unwrap();
+}
 
 /// A mock network stub which passes messages from and to threads using channels.  
 #[derive(Clone)]
@@ -107,11 +123,11 @@ struct NetworkStub {
 }
 
 impl Network for NetworkStub {
-    fn init_validator_set(&mut self, validator_set: ValidatorSet) {
+    fn init_validator_set(&mut self, _: ValidatorSet) {
         ()
     }
 
-    fn update_validator_set(&mut self, validator_set: ValidatorSetUpdates) {
+    fn update_validator_set(&mut self, _: ValidatorSetUpdates) {
         ()
     }
 
@@ -138,7 +154,7 @@ impl Network for NetworkStub {
 
 fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
     let mut all_peers = HashMap::new();
-    let peer_and_mailbox: Vec<([u8; 32], Receiver<([u8; 32], Message)>)> = peers.iter().map(|peer| {
+    let peer_and_inboxes: Vec<([u8; 32], Receiver<([u8; 32], Message)>)> = peers.iter().map(|peer| {
         let my_public_key = peer.public.to_bytes();
         let (sender, receiver) = mpsc::channel();
         all_peers.insert(my_public_key, sender);
@@ -146,7 +162,7 @@ fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
         (my_public_key, receiver)
     }).collect();
 
-    let network_stubs = peer_and_mailbox.into_iter().map(|(my_public_key, inbox)| 
+    let network_stubs = peer_and_inboxes.into_iter().map(|(my_public_key, inbox)| 
         NetworkStub {
             my_public_key,
             all_peers: all_peers.clone(),
@@ -254,6 +270,7 @@ impl App<MemDB> for NumberApp {
     }
 
     fn produce_block(&mut self, request: ProduceBlockRequest<MemDB>) -> ProduceBlockResponse {
+        thread::sleep(Duration::from_millis(250));
         let initial_number = u32::from_le_bytes(request.block_tree().app_state(&NUMBER_KEY).unwrap().to_owned().try_into().unwrap());
 
         let mut tx_queue = self.tx_queue.lock().unwrap();
@@ -277,6 +294,7 @@ impl App<MemDB> for NumberApp {
     }
 
     fn validate_block(&mut self, request: ValidateBlockRequest<MemDB>) -> ValidateBlockResponse {
+        thread::sleep(Duration::from_millis(250));
         let data = &request.proposed_block().data;
         let data_hash: CryptoHash = {
             let mut hasher = Sha256::new();
@@ -351,7 +369,7 @@ impl Node {
 
         let public_key = *keypair.public.as_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
-        let pacemaker = DefaultPacemaker::new(Duration::from_secs(1), Duration::from_millis(500), 10, Duration::from_secs(1));
+        let pacemaker = DefaultPacemaker::new(Duration::from_secs(1), 10, Duration::from_secs(3));
         let replica = Replica::start(NumberApp::new(tx_queue.clone()), keypair, network, kv_store, pacemaker);
 
         Node {

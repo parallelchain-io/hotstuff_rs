@@ -1,816 +1,462 @@
-use std::convert::identity;
-use std::time::{Instant, Duration};
+/*
+    Copyright © 2023, ParallelChain Lab 
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+    
+    Authors: Alice Lim
+*/
+
+//! Functions that implement the progress protocol and sync protocol.
+//!
+//! This module defines the algorithm thread and the procedures used in it. The algorithm thread is the driving
+//! force of a HotStuff-rs replica. It receives and sends [progress messages](crate::messages::ProgressMessage) using 
+//! the network to cause the [Block Tree](crate::state) to grow in all replicas in a safe and live manner, as well as
+//! sends out [sync requests](crate::messages::SyncRequest) to catch the replica up to the head of the block tree.
+//! 
+//! The algorithm thread is a forever loop of increasing view numbers. On initially entering this loop, the replica
+//! compares the view of the highest qc it knows with the highest view it has previously entered, selecting the higher
+//! of the two, plus 1, as the view to execute.
+//! 
+//! A view proceeds in one of two modes, depending on whether the depending on whether the local replica is a
+//! [validator, or a listener](crate::replica). Replicas automatically change between the two modes as the validator
+//! set evolves.
+//! 
+//! The execution of a view in validator mode [proceeds](execute_view) as follows. The execution in listener view is
+//! exactly the validator mode flow minus all of the proposing and voting:
+//! 1. If I am the current leader (repeat this every proposal re-broadcast duration):
+//!     * If the highest qc is a generic or commit qc, call the app to produce a new block, broadcast it in a proposal,
+//!       and send a vote to the next leader.
+//!     * Otherwise, broadcast a nudge and send a vote to the next leader.
+//!     * Then, if I *am not* the next leader, move to the next view.
+//! 2. Then, poll the network for progress messages until the view timeout:
+//!     * [On receiving a proposal](on_receive_proposal):
+//!         - [Call](BlockTree::block_can_be_inserted) the block tree to see if the proposed block can be inserted.
+//!         - Call on the app to validate it.
+//!         - If it passes both checks, insert the block into the block tree and send a vote for it to the next leader.
+//!         - Then, if I *am not* the next leader, move to the next view.
+//!     * [On receiving a nudge](on_receive_nudge):
+//!         - Check if it is a prepare or precommit qc.
+//!         - [Call](BlockTree::qc_can_be_inserted) on the block tree to see if the qc can be set as the highest qc.
+//!         - If yes, then store it as the highest qc and send a vote for it to the next leader.
+//!         - Then, if I *am not* the next leader, move to the next view.
+//!     * [On receiving a vote](on_receive_vote):
+//!         - Collect the vote.
+//!         - If enough matching votes have been collected to form a quorum certificate, store it as the highest qc.
+//!         - Then, if I *am* the next leader, move to the next view.
+//!     * [On receving a new view](on_receive_new_view):
+//!         - Check if its quorum certificate is higher than the block tree's highest qc.
+//!         - If yes, then store it as the highest qc.
+//! 
+//! A view eventually times out and transitions if a transition is not triggered 'manually' by one of the steps. 
+
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::cmp::{min, max};
-use std::thread;
-use hotstuff_rs_types::messages::{Block as MsgBlock, ViewNumber, QuorumCertificate, ConsensusMsg, QuorumCertificateAggregator, BlockHash};
-use hotstuff_rs_types::identity::{PublicKeyBytes, ParticipantSet};
-use hotstuff_rs_types::base64url::Base64URL;
-use log;
-use crate::app::{App, Block as AppBlock, SpeculativeStorageReader, ExecuteError};
-use crate::config::{AlgorithmConfig, NetworkingConfiguration, IdentityConfig};
-use crate::block_tree::BlockTreeWriter;
-use crate::ipc::{Handle as IPCHandle, AbstractHandle, RecvFromError};
-use crate::rest_api::{SyncModeClient, AbstractSyncModeClient, GetBlocksFromTailError};
+use std::time::Instant;
+use std::thread::{self, JoinHandle};
+use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
+use crate::app::ProduceBlockResponse;
+use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge, SyncRequest};
+use crate::pacemaker::Pacemaker;
+use crate::types::*;
+use crate::state::*;
+use crate::networking::*;
+use crate::app::App;
 
-pub(crate) struct Algorithm<A: App, I: AbstractHandle, S: AbstractSyncModeClient> {
-    // # Mutable state variables.
-    cur_view: ViewNumber,
-    // top_qc is the cryptographically correct QC with the highest ViewNumber that this Participant is aware of.
-    top_qc: QuorumCertificate, 
-    block_tree: BlockTreeWriter,
-
-    // # Pacemaker
-    pacemaker: Pacemaker,
-
-    // # World State transition function.
-    app: A,
-
-    // # Networking utilities.
-    ipc_handle: I,
-    sync_mode_client: S,
-    round_robin_idx: usize,
-
-    // # Configuration variables.
-    networking_config: NetworkingConfiguration,
-    identity_config: IdentityConfig,
-    algorithm_config: AlgorithmConfig,
-}
-
-pub(crate) enum State {
-    Leader,
-    Replica,
-
-    /// BlockHash is the Block that we expect to Justify in the next
-    /// View, when we become Leader.
-    NextLeader(BlockHash),
-    NewView,
-    Sync,
-}
-
-impl<A: App> Algorithm<A, IPCHandle, SyncModeClient> {
-    pub(crate) fn initialize(
-        block_tree: BlockTreeWriter,
-        app: A,
-        algorithm_config: AlgorithmConfig,
-        identity_config: IdentityConfig,
-        networking_config: NetworkingConfiguration
-    ) -> Algorithm<A, IPCHandle, SyncModeClient> {
-        let (cur_view, top_qc) = match block_tree.get_top_block() {
-            Some(block) => (block.justify.view_number + 1, block.justify),
-            None => (1, QuorumCertificate::genesis_qc(identity_config.static_participant_set.len())),
-        };
-        let pacemaker = Pacemaker::new(algorithm_config.target_block_time, identity_config.static_participant_set.clone(), networking_config.progress_mode.expected_worst_case_net_latency);
-        let ipc_handle = IPCHandle::new(identity_config.static_participant_set.clone(), identity_config.my_public_key, networking_config.clone());
-        let sync_mode_client = SyncModeClient::new(networking_config.sync_mode.clone(), identity_config.static_participant_set.clone());
-
-        Algorithm {
-            top_qc,
-            cur_view,
-            block_tree,
-            pacemaker,
-            ipc_handle,
-            sync_mode_client,
-            round_robin_idx: 0,
-            networking_config,
-            identity_config,
-            algorithm_config,
-            app
-        }
-    }
-
-}
-
-impl<A: App, I: AbstractHandle, S: AbstractSyncModeClient> Algorithm<A, I, S> {
-    pub(crate) fn start(&mut self) {
-        log::debug!("start: in");
-
-        let mut next_state = self.do_sync();       
+pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
+    mut app: impl App<K> + 'static,
+    me: Keypair,
+    mut block_tree: BlockTree<K>,
+    mut pacemaker: impl Pacemaker + 'static,
+    mut pm_stub: ProgressMessageStub<N>,
+    mut sync_stub: SyncClientStub<N>,
+    shutdown_signal: Receiver<()>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut cur_view = 0;
 
         loop {
-            next_state = match next_state {
-                State::Leader => self.do_leader(),
-                State::Replica => self.do_replica(),
-                State::NextLeader(block_hash) => self.do_next_leader(block_hash),
-                State::NewView => self.do_new_view(),
-                State::Sync => self.do_sync(),
-            }
-        }
-    }
-
-    fn do_leader(&mut self) -> State {
-        log::debug!("do_leader: in; cur_view: {}", self.cur_view);
-
-        // Phase 1: Produce a new Block.
-
-        // 1. Call App to produce a new leaf Block.
-        let (new_leaf, writes) = {
-            let parent_state = if self.top_qc.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
-                // parent_block and storage are None if the BlockTree does not have a genesis Block.
-                None
-            } else {
-                let msg_block = self.block_tree.get_block(&self.top_qc.block_hash).unwrap();
-                let storage = SpeculativeStorageReader::open(self.block_tree.clone(), &msg_block.hash);
-                let app_block = AppBlock::new(msg_block, self.block_tree.clone());
-                Some((app_block, storage))
-            };
-            let (block_height, data, data_hash, writes) = {
-                let block_height = match &parent_state {
-                    Some(parent_state) => parent_state.0.height + 1,
-                    None => MsgBlock::GENESIS_BLOCK_HEIGHT
-                };
-
-                let (data, data_hash, writes) = self.app.propose_block(
-                    parent_state, 
-                    Instant::now() + self.pacemaker.execute_timeout()
-                );
-
-                (block_height, data, data_hash, writes)
-            };
-
-            let block = MsgBlock::new(self.algorithm_config.app_id, block_height, self.top_qc.clone(), data_hash, data);
-
-            (block, writes)
-        };
-        
-        // 2. Write new leaf into BlockTree.
-        self.block_tree.insert_block(&new_leaf, &writes);
-
-        // Phase 2: Propose the new Block.
-
-        // 1. Broadcast a PROPOSE message containing the Block to every participant.
-        let leaf_hash = new_leaf.hash;
-        let proposal = ConsensusMsg::Propose(self.cur_view, new_leaf);
-        self.ipc_handle.broadcast(&proposal);
-
-        // 2. Send a VOTE for our own proposal to the next leader.
-        let vote = ConsensusMsg::new_vote(self.cur_view, leaf_hash,&self.identity_config.my_keypair);
-        let next_leader = self.pacemaker.leader(self.cur_view + 1);
-        let _ = self.ipc_handle.send_to(&self.pacemaker.leader(self.cur_view + 1), &vote);
-
-        // Phase 3: Wait for Replicas to send a vote for our proposal to the next Leader.
-
-        if next_leader == self.identity_config.my_public_key.to_bytes() {
-            // If we are the next Leader, transition to State::NextLeader and do the waiting there.
-            return State::NextLeader(leaf_hash)
-
-        } else {
-            thread::sleep(self.pacemaker.execute_timeout());
-
-            self.cur_view += 1;
-            return State::Replica
-        }
-    }
-
-    fn do_replica(&mut self) -> State {
-        log::debug!("do_replica: in; cur_view: {}", self.cur_view);
-
-        let cur_leader = self.pacemaker.leader(self.cur_view);
-
-        // Phase 1: Wait for a proposal.
-        let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
-        let proposed_block;
-        loop { 
-            if Instant::now() >= deadline {
-                return State::NewView 
+            match shutdown_signal.try_recv() {
+                Ok(()) => return,
+                Err(TryRecvError::Empty) => (),
+                Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            match self.ipc_handle.recv_from(&cur_leader, deadline - Instant::now()) {
-                Err(RecvFromError::Timeout) => continue,
-                Err(RecvFromError::NotConnected) => continue,
-                Ok(ConsensusMsg::Vote(_, _, _)) => continue,
-                Ok(ConsensusMsg::NewView(vn, qc)) => {
-                    if vn < self.cur_view - 1 {
-                        continue
-                    } else if qc.view_number > self.top_qc.view_number {
-                        if !qc.is_valid(&self.identity_config.static_participant_set) {
-                            // The Leader is Byzantine.
-                            log::warn!("do_replica: received NewView that includes an invalid QuorumCertificate. Origin: {} (Leader)", Base64URL::encode(&cur_leader).as_str());
-                            return State::Sync
-                        } else {
-                            return State::Sync
-                        }
-                    } else {
-                        continue
+            cur_view = max(cur_view, max(block_tree.highest_view_entered(), block_tree.highest_qc().view)) + 1;
+            block_tree.set_highest_entered_view(cur_view);
+
+            let view_result = execute_view(&me, cur_view, &mut pacemaker, &mut block_tree, &mut pm_stub, &mut app);
+            if let Err(ShouldSync) = view_result {
+                sync(&mut block_tree, &mut sync_stub, &mut app, &mut pacemaker)
+            }
+        }
+    })
+}
+
+// Returns whether there was progress in the view.
+fn execute_view<K: KVStore, N: Network>(
+    me: &Keypair,
+    view: ViewNumber,
+    pacemaker: &mut impl Pacemaker,
+    mut block_tree: &mut BlockTree<K>,
+    mut pm_stub: &mut ProgressMessageStub<N>,
+    app: &mut impl App<K>,
+) -> Result<(), ShouldSync> {
+    let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
+    
+    let cur_validators: ValidatorSet = block_tree.committed_validator_set();
+    
+    let i_am_cur_leader = me.public() == pacemaker.view_leader(view, &cur_validators);
+
+    let mut prev_proposal_or_nudge_and_vote = None;
+    let mut votes = VoteCollector::new(app.id(), view, &cur_validators);
+    'view: while Instant::now() < view_deadline {
+        // 1. If I am the current leader, propose a block.
+        if i_am_cur_leader {
+            match prev_proposal_or_nudge_and_vote {
+                None => {
+                    let (proposal_or_nudge_and_vote, i_am_next_leader) = propose_or_nudge(&me, view, app, block_tree, pacemaker, &mut pm_stub);
+                    prev_proposal_or_nudge_and_vote = Some(proposal_or_nudge_and_vote);
+                    if !i_am_next_leader {
+                        return Ok(())
                     }
                 },
-                Ok(ConsensusMsg::Propose(vn, block)) => {
-                    // The proposal comes from the past.
-                    if vn < self.cur_view {
-                        continue
-                    // The proposal refers to a branch that our BlockTree does not contain.
-                    } else if self.block_tree.get_block(&block.justify.block_hash).is_none() 
-                        && block.justify.block_hash != MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
-                        return State::Sync
-                    // The proposal comes from the future but refers to a branch that we know.
-                    } else if vn > self.cur_view {
-                        continue
-                    // The proposal is for the present and refers to a branch that we know.
-                    } else {
-                        // 1. Validate the proposed Block's QuorumCertificate
-                        if !block.justify.is_valid(&self.identity_config.static_participant_set) {
-                            // The Leader is Byzantine.
-                            return State::NewView
+                // Rebroadcast proposal or nudge and resend vote.
+                Some((ref proposal_or_nudge, ref vote)) => {
+                    pm_stub.broadcast(proposal_or_nudge.clone());
+                    let next_leader = pacemaker.view_leader(view + 1, &block_tree.committed_validator_set());
+                    pm_stub.send(next_leader, vote.clone());
+                }
+            }
+        }
+
+        // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
+        let recv_deadline = min(Instant::now() + pacemaker.proposal_rebroadcast_period(), view_deadline);
+        '_wait: loop { 
+            match pm_stub.recv(app.id(), view, recv_deadline) {
+                Ok((origin, msg)) => match msg {
+                    ProgressMessage::Proposal(proposal) => {
+                        let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                        if voted {
+                            if !i_am_next_leader {
+                                return Ok(())
+                            }
                         }
-
-                        // 2. Check if the proposed Block satisfies the SafeBlock predicate.
-                        if !safe_block(&block, &self.block_tree) {
-                            continue
-                        }
-
-                        proposed_block = block;
-                        self.top_qc = proposed_block.justify.clone();
-                        break
-                    } 
-                },     
-            } 
-        }
-
-        // Phase 2: Validate the proposed Block. 
-
-        // 1. Call App to execute the proposed Block.
-        let app_block = AppBlock::new(proposed_block.clone(), self.block_tree.clone());
-        let storage = if app_block.justify.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
-            None
-        } else {
-            Some(SpeculativeStorageReader::open(self.block_tree.clone(), &proposed_block.justify.block_hash))
-        };
- 
-        // 2. If App accepts the Block, write it and its writes into the BlockTree.
-        let writes = match self.app.validate_block(app_block, storage, Instant::now() + self.pacemaker.execute_timeout()) {
-            Ok(writes) => writes.into(),
-            // If the App rejects the Block, change to NewView.
-            Err(ExecuteError::RanOutOfTime) => {
-                log::warn!("do_replica: proposed Block ran out of time during validate_block. Origin: {}", Base64URL::encode(&cur_leader).as_str());
-                return State::NewView
-            }, 
-            Err(ExecuteError::InvalidBlock) => { 
-                log::warn!("do_replica: proposed Block is invalid. Origin: {}", Base64URL::encode(&cur_leader).as_str());
-                return State::NewView
-            },
-        };
-        self.block_tree.insert_block(&proposed_block, &writes);
-
-        // Phase 3: Vote for the proposal.
-
-        // 1. Send a VOTE message to the next leader.
-        let next_leader = self.pacemaker.leader(self.cur_view + 1);
-        let vote = ConsensusMsg::new_vote(self.cur_view, proposed_block.hash, &self.identity_config.my_keypair);
-        let _ = self.ipc_handle.send_to(&next_leader, &vote);
-
-        // Phase 4: Wait for the next Leader to finish collecting votes
-        
-        if next_leader == self.identity_config.my_public_key.to_bytes() {
-            // If next leader == me, transition to State::NextLeader and do the waiting there.
-            return State::NextLeader(proposed_block.hash)
-        } else {
-            thread::sleep(self.networking_config.progress_mode.expected_worst_case_net_latency);
-
-            self.cur_view += 1;
-            State::Replica
-        }
-    }
-
-    fn do_next_leader(&mut self, pending_block_hash: BlockHash) -> State {
-        log::debug!("do_next_leader: in");
-
-        let deadline = Instant::now() + self.pacemaker.wait_timeout(self.cur_view, &self.top_qc);
-
-        // Read messages from every participant until deadline is reached or until a new QC is collected.
-        let mut qc_builder = QuorumCertificateAggregator::new(
-            self.cur_view, pending_block_hash, self.identity_config.static_participant_set.clone()
-        );
-        loop {
-            // Deadline is reached.
-            if Instant::now() >= deadline {
-                break;
-            }
-
-            match self.ipc_handle.recv_from_any(deadline - Instant::now()) {
-                Err(RecvFromError::Timeout) => continue,
-                Err(RecvFromError::NotConnected) => continue,
-                Ok((_, ConsensusMsg::Propose(_, _))) => continue,
-                Ok((origin, ConsensusMsg::NewView(vn, qc))) => {
-                    if vn < self.cur_view - 1 {
-                        continue
-                    } else if qc.view_number > self.top_qc.view_number {
-                        if !qc.is_valid(&self.identity_config.static_participant_set) {
-                            // The sender is Byzantine.
-                            log::warn!("do_replica: received NewView that includes an invalid QuorumCertificate. Origin: {}", Base64URL::encode(&origin).as_str());
-                            return State::Sync
-                        } else {
-                            return State::Sync
-                        }
-                    } else {
-                        continue
-                    }
-                },
-                Ok((public_addr, ConsensusMsg::Vote(vn, block_hash, sig))) => {
-                    if vn < self.cur_view {
-                        continue
-                    } else if self.block_tree.get_block(&block_hash).is_none() {
-                        return State::Sync
-                    } else if vn > self.cur_view {
-                        continue
-                    } else { // if vote.view_number == cur_view
-                        // CRITICAL TODO [Alice]: check if signature is cryptographically correct.
-
-                        if let Ok(true) = qc_builder.insert(sig, public_addr) {
-                            // A new QC is collected.
-                            self.top_qc = qc_builder.into();
-                            break;
-                        }
-                    }
-                }, 
-            }
-        }
-
-        self.cur_view += 1;
-        State::Leader
-    }
-
-    fn do_new_view(&mut self) -> State {
-        log::debug!("do_new_view: in");
-
-        let next_leader = self.pacemaker.leader(self.cur_view+1);
-        if &next_leader == self.identity_config.my_public_key.as_bytes() { 
-            self.cur_view += 1;
-            return State::Leader;
-        } else {
-            // Send out a NEW-VIEW message containing cur_view and our Top QC to the next leader.
-            let new_view = ConsensusMsg::NewView(self.cur_view, self.top_qc.clone());
-            let _ = self.ipc_handle.send_to(&next_leader, &new_view);
-
-            self.cur_view += 1;
-            return State::Replica;
-        }
-    }
-
-    fn do_sync(&mut self) -> State {
-        log::debug!("do_sync: in");
-
-        loop {
-            // 1. Pick an arbitrary participant in the ParticipantSet by round-robin.
-            let participant_idx = { 
-                self.round_robin_idx += 1; 
-                if self.round_robin_idx >= self.identity_config.static_participant_set.len() {
-                    self.round_robin_idx = 0;
-                }
-                self.round_robin_idx
-            };
-            let participant = self.identity_config.static_participant_set.keys().nth(participant_idx).unwrap();
-            log::info!("do_sync: syncing with participant: {}", Base64URL::encode(participant).as_str());
-
-            loop {
-                // 2. Hit the participant’s GET /blocks endpoint for a chain of `request_jump_size` Blocks starting from our highest committed Block,
-                // or the Genesis Block, if the former is still None.
-                let start_height = match self.block_tree.get_highest_committed_block() {
-                    Some(block) => block.height + 1,
-                    None => 0,
-                };
-                let request_result = self.sync_mode_client.get_blocks_from_tail(
-                    *participant, 
-                    start_height, 
-                    self.networking_config.sync_mode.request_jump_size,
-                );
-                let extension_chain = match request_result {
-                    Ok(blocks) => blocks,
-                    Err(GetBlocksFromTailError::TailBlockNotFound) => Vec::new(),
-                    Err(_) => break,
-                };
-    
-                // 3. Filter the extension chain so that it includes only the blocks that we do *not* have in the local BlockTree.
-                let mut extension_chain = extension_chain.iter().filter(|block| 
-                    self.block_tree.get_block(&block.hash).is_none()
-                ).peekable();
-                if extension_chain.peek().is_none() {
-                    // If, after the Filter, the chain has length 0, this suggests that we are *not* lagging behind, after all.
-
-                    // Update top_qc.
-                    if let Some(block) = self.block_tree.get_top_block() {
-                        self.top_qc = block.justify;
-                        self.cur_view = max(self.top_qc.view_number + 1, self.cur_view);
-                    }
-
-                    // Transition back to Progress Mode.
-                    if &self.pacemaker.leader(self.cur_view) == self.identity_config.my_public_key.as_bytes() {
-                        return State::Leader
-                    } else {
-                        return State::Replica
-                    }
-                }
-    
-                for block in extension_chain {
-                    // 4. Structurally validate Block. 
-                    if !block.justify.is_valid(&self.identity_config.static_participant_set) {
-                        log::warn!("do_sync: received Block that includes an invalid QuorumCertificate. Block Hash: {}", Base64URL::encode(&block.hash).as_str());
-                        break
-                    }
-
-                    // 5. Call App to validate block.
-                    let app_block = AppBlock::new(block.clone(), self.block_tree.clone());
-                    let storage = if block.justify.block_hash == MsgBlock::PARENT_OF_GENESIS_BLOCK_HASH {
-                        None
-                    } else {
-                        Some(SpeculativeStorageReader::open(self.block_tree.clone(), &block.justify.block_hash))
-                    };
-                    let deadline = Instant::now() + self.algorithm_config.sync_mode_execution_timeout;
-                    let execution_result = self.app.validate_block(app_block, storage, deadline);
-
-                    // 6. If App accepts the Block, write it and its WriteSet into the BlockTree.
-                    let writes = match execution_result {
-                        Ok(writes) => writes.into(),
-                        Err(ExecuteError::RanOutOfTime) => panic!("Configuration Error: ran out of time executing a Block during Sync"), 
-                        Err(ExecuteError::InvalidBlock) => panic!("Possible Byzantine Fault: a quorum voted on an App-invalid Block."),
-                    };
-                    self.block_tree.insert_block(&block, &writes);
-                }
-            }
-        } 
-    }
-}
-
-fn safe_block(block: &MsgBlock, block_tree: &BlockTreeWriter) -> bool {
-    let locked_view = block_tree.get_locked_view();
-    locked_view.is_none() || block.justify.view_number >= locked_view.unwrap()
-}
-
-pub(crate) struct Pacemaker {
-    tbt: Duration,
-    participant_set: ParticipantSet,
-    net_latency: Duration,
-}
-
-impl Pacemaker {
-    pub(crate) fn new(tbt: Duration, participant_set: ParticipantSet, net_latency: Duration) -> Pacemaker {
-        Pacemaker { tbt, participant_set, net_latency }
-    }
-
-    pub(crate) fn leader(&self, cur_view: ViewNumber) -> PublicKeyBytes {
-        let idx = cur_view as usize % self.participant_set.len();
-        self.participant_set.keys().nth(idx).unwrap().clone()
-    }
-
-    pub(crate) fn execute_timeout(&self) -> Duration {
-        (self.tbt - 2*self.net_latency)/2
-    }
-
-    pub(crate) fn wait_timeout(&self, cur_view: ViewNumber, top_qc: &QuorumCertificate) -> Duration {
-        let exp = min(u32::MAX as u64, cur_view - top_qc.view_number) as u32;
-        // TODO [Alice]: consider removing TBT.
-        self.tbt + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
-    }
-}
-
-// These tests test Algorithm in a simulated multi-Participant setting without networking.
-#[cfg(test)]
-mod tests {
-    use std::collections::{HashMap, VecDeque};
-    use std::sync::mpsc::{self, Sender, Receiver};
-    use std::time::{Duration, Instant};
-    use std::thread;
-    use tempfile;
-    use rand;
-    use rand::rngs::OsRng;
-    use fern;
-    use hotstuff_rs_types::identity::{ParticipantSet, KeyPair, PublicKeyBytes};
-    use hotstuff_rs_types::messages::{QuorumCertificate, ConsensusMsg, BlockHeight, Block, Data, DataHash};
-    use hotstuff_rs_types::stored::StorageMutations;
-    use crate::block_tree::{self, BlockTreeSnapshotFactory};
-    use crate::config::{BlockTreeStorageConfig, NetworkingConfiguration, ProgressModeNetworkingConfig, SyncModeNetworkingConfig, IdentityConfig, AlgorithmConfig};
-    use crate::ipc::{AbstractHandle, NotConnectedError, RecvFromError};
-    use crate::rest_api::{AbstractSyncModeClient, GetBlocksFromTailError};
-    use crate::app::{App, SpeculativeStorageReader};
-    use super::{Algorithm, Pacemaker};
-
-    #[test]
-    fn one_participant() {
-        setup_debug_logger().unwrap();
-        let (mut algorithm, bt_snapshot_factory) = make_mock_algos(1, 5).into_iter().next().unwrap();
-
-        // Start the Algorithm in the background.
-        thread::spawn(move || algorithm.start());
-
-        // Periodically query the BlockTree until number == 5  (all pending additions are successfully applied).
-        loop {
-            let bt_snapshot = bt_snapshot_factory.snapshot();
-            if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
-                if let Some(number) = state.get(0) {
-                    if *number == 5 {
-                        break
-                    }
-                }
-            }
-            thread::sleep(Duration::new(1, 0));
-        }
-    }
-
-    #[test]
-    fn three_participants() {
-        let algo_and_bts = make_mock_algos(3, 5); 
-        let bt_snapshot_factory = algo_and_bts.iter().next().unwrap().1.clone();
-
-        for (mut algorithm, _) in algo_and_bts {
-            thread::spawn(move || algorithm.start());
-        }
-
-        // Periodically query the BlockTree until number == 15 (3 * 5).
-        loop {
-            let bt_snapshot = bt_snapshot_factory.snapshot();
-            if let Some(state) = bt_snapshot.get_from_storage(&vec![]) {
-                if let Some(number) = state.get(0) {
-                    if *number == 15 {
-                        break
-                    }
-                }
-            }
-            thread::sleep(Duration::new(1, 0));
-        }
-    } 
-
-    // An App that maintains a single unsigned number in Storage, whose value starts from zero and is incremented in every
-    // view until `pending_additions` is zero. `pending_additions` is decremented in every call to `propose_block`, so tests
-    // that expect this App's state to reach a particular stable value may fail if a Block is orphaned. 
-    struct MockApp {
-        pending_additions: usize,
-    }
-
-    impl App for MockApp {
-        fn propose_block(
-            &mut self, 
-            parent_state: Option<(crate::app::Block, crate::app::SpeculativeStorageReader)>,
-            _deadline: std::time::Instant
-        ) -> (Data, DataHash, StorageMutations) {
-            if self.pending_additions >= 1 {
-                self.pending_additions -= 1;
-                let cur_value = match parent_state {
-                    Some((_, storage)) => storage.get(&vec![]).unwrap_or(vec![0])[0],
-                    None => 0,
-                };
-                let data = vec![vec![1]];
-                let data_hash = [1u8; 32];
-                let mut storage_mutations = StorageMutations::new();
-                storage_mutations.insert(vec![], vec![cur_value+1]);
-
-                (data, data_hash, storage_mutations)
-            } else {
-                let data = vec![];
-                let data_hash = [0u8; 32];
-                let storage_mutations = StorageMutations::new();
-
-                (data, data_hash, storage_mutations)
-            }
-        }
-
-        fn validate_block(
-            &mut self,
-            block: crate::app::Block,
-            storage: Option<SpeculativeStorageReader>,
-            _deadline: std::time::Instant
-        ) -> Result<StorageMutations, crate::app::ExecuteError> {
-            let addition = block.data.get(0).unwrap_or(&vec![0])[0];
-            let cur_value = match storage {
-                Some(storage) => storage.get(&vec![]).unwrap_or(vec![0])[0],
-                None => 0,
-            };
-            let mut storage_mutations = StorageMutations::new();
-            storage_mutations.insert(vec![], vec![cur_value+addition]);
-            Ok(storage_mutations)
-        }
-    }
-
-    struct MockIPCHandleFactory {
-        peers: HashMap<PublicKeyBytes, Sender<(OriginAddr, ConsensusMsg)>>,
-        mailboxes: HashMap<PublicKeyBytes, Option<Receiver<(OriginAddr, ConsensusMsg)>>>,
-    }
-
-    type OriginAddr = PublicKeyBytes;
-
-    impl MockIPCHandleFactory {
-        fn new(participants: Vec<PublicKeyBytes>) -> MockIPCHandleFactory {
-            let mut peers = HashMap::new();
-            let mut mailboxes = HashMap::new();
-            for addr in participants {
-                let (sender, receiver) = mpsc::channel();
-                peers.insert(addr, sender);
-                mailboxes.insert(addr, Some(receiver));
-            }
-
-            MockIPCHandleFactory {
-                peers, 
-                mailboxes
-            }
-        }
-
-        fn get_handle(&mut self, for_addr: PublicKeyBytes) -> MockIPCHandle {
-            MockIPCHandle {
-                my_addr: for_addr,
-                peers: self.peers.clone(),
-                mailbox: self.mailboxes.get_mut(&for_addr).unwrap().take().unwrap(),
-                msgs_stash: VecDeque::new(),
-            }
-        }
-    }
-
-    struct MockIPCHandle {
-        my_addr: PublicKeyBytes,
-        peers: HashMap<PublicKeyBytes, Sender<(OriginAddr, ConsensusMsg)>>,
-        mailbox: Receiver<(OriginAddr, ConsensusMsg)>,
-        // Messages that have been removed from mailbox through recv_from, but did not come from the desired 
-        // sender address.
-        msgs_stash: VecDeque<(OriginAddr, ConsensusMsg)>,
-    }
-
-    impl AbstractHandle for MockIPCHandle {
-        fn broadcast(&mut self, msg: &ConsensusMsg) {
-            for peer in self.peers.values() {
-                peer.send((self.my_addr, msg.clone())).unwrap();
-            }
-        } 
-
-        fn send_to(&mut self, public_addr: &PublicKeyBytes, msg: &ConsensusMsg) -> Result<(), NotConnectedError> {
-            self.peers.get(public_addr).unwrap().send((self.my_addr, msg.clone())).unwrap();
-            Ok(())
-        }
-
-        fn recv_from(&mut self, public_addr: &PublicKeyBytes, timeout: Duration) -> Result<ConsensusMsg, RecvFromError> {
-            let deadline = Instant::now() + timeout;
-
-            // Try to get a matching message from msgs_stash.
-            if let Some(matching_idx) = self.msgs_stash.iter().position(|(origin, _)| origin == public_addr) {
-                return Ok(self.msgs_stash.remove(matching_idx).unwrap().1)
-            } 
-
-            // Try to receive a matching message from mailbox until deadline.
-            while Instant::now() < deadline {
-                if let Ok((origin, msg)) = self.mailbox.recv_timeout(deadline - Instant::now()) {
-                    if origin == *public_addr {
-                        return Ok(msg);
-                    } else {
-                        self.msgs_stash.push_back((origin, msg));
-                    }
-                }
-            }
-
-            Err(RecvFromError::Timeout)
-        }
-
-        fn recv_from_any(&mut self, timeout: Duration) -> Result<(PublicKeyBytes, ConsensusMsg), RecvFromError> {
-            // Try to get a message from msgs_stash, if it's not empty.
-            if let Some((origin, msg)) = self.msgs_stash.pop_front() {
-                Ok((origin, msg))
-            }
-
-            // Try to receive a message from mailbox until timeout elapses.
-            else {
-                self.mailbox.recv_timeout(timeout).map_err(|_| RecvFromError::Timeout)
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    struct MockSyncModeClient(HashMap<PublicKeyBytes, BlockTreeSnapshotFactory>);
-
-    impl MockSyncModeClient {
-        fn new(bt_snapshot_factories: HashMap<PublicKeyBytes, BlockTreeSnapshotFactory>) -> MockSyncModeClient {
-            MockSyncModeClient(bt_snapshot_factories)
-        }
-    }
-
-    impl AbstractSyncModeClient for MockSyncModeClient {
-        fn get_blocks_from_tail(&self, participant: PublicKeyBytes, tail_block_height: BlockHeight, limit: usize) -> Result<Vec<Block>, GetBlocksFromTailError> {
-            let bt_snapshot = self.0.get(&participant).unwrap().snapshot();
-            if let Some(tail_block_hash) = bt_snapshot.get_committed_block_hash(tail_block_height) {
-                if let Some(chain) = bt_snapshot.get_blocks_from_tail(&tail_block_hash, limit, true) {
-                    Ok(chain)
-                } else {
-                    Err(GetBlocksFromTailError::TailBlockNotFound)
-                }
-            } else {
-                Err(GetBlocksFromTailError::TailBlockNotFound)
-            } 
-        }
-    }
-
-    fn make_mock_algos(n: usize, additions_per_app: usize) -> Vec<(Algorithm<MockApp, MockIPCHandle, MockSyncModeClient>, BlockTreeSnapshotFactory)> {
-        // Prepare configuration structs.
-        let identity_configs = make_mock_identity_configs(n); 
-        let networking_config = make_mock_networking_config();
-        let algorithm_config = make_mock_algorithm_config();
-
-        let participants: Vec<PublicKeyBytes> = identity_configs[0].static_participant_set.iter().map(|(public_addr, _)| *public_addr).collect();
-
-        // Prepare separate BlockTrees, one for every Participant.
-        let mut block_trees = HashMap::new();
-        for public_addr in &participants {
-            let block_tree_db_dir = tempfile::tempdir().unwrap();
-            let block_tree_config = BlockTreeStorageConfig { db_path: block_tree_db_dir.path().to_path_buf() };
-            block_trees.insert(*public_addr, block_tree::open(&block_tree_config));
-        }
-
-        // Prepare mocked network handles.
-        let mut ipc_handle_factory = MockIPCHandleFactory::new(participants.clone());
-        let bt_snapshot_factories = block_trees.iter()
-            .map(|(public_addr, (_, snapshot_factory))| (*public_addr, snapshot_factory.clone())).collect();
-        let sync_mode_client = MockSyncModeClient::new(bt_snapshot_factories);
-
-        let algo_and_block_trees = identity_configs.into_iter().zip(block_trees.into_values())
-            .map(|(identity_config, block_tree)| {
-                let algorithm = Algorithm {
-                    cur_view: 1,
-                    top_qc: QuorumCertificate::genesis_qc(identity_config.static_participant_set.len()),
-                    block_tree: block_tree.0,
-                    pacemaker: Pacemaker {
-                        tbt: algorithm_config.target_block_time,
-                        participant_set: identity_config.static_participant_set.clone(),
-                        net_latency: networking_config.progress_mode.expected_worst_case_net_latency,
                     },
-                    app: MockApp { pending_additions: additions_per_app },
-                    ipc_handle: ipc_handle_factory.get_handle(identity_config.my_public_key.to_bytes()),
-                    sync_mode_client: sync_mode_client.clone(),
-                    round_robin_idx: 0,
-                    networking_config: networking_config.clone(),
-                    identity_config,
-                    algorithm_config: algorithm_config.clone(),
+                    ProgressMessage::Nudge(nudge) => {
+                        let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                        if voted {
+                            if !i_am_next_leader {
+                                return Ok(())
+                            }
+                        }
+                    },
+                    ProgressMessage::Vote(vote) => {
+                        let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, pacemaker);
+                        if highest_qc_updated && i_am_next_leader {
+                            return Ok(())
+                        }
+                    },
+                    ProgressMessage::NewView(new_view) => {
+                        on_receive_new_view(new_view, &mut block_tree);
+                    },
+                },
+                Err(ProgressMessageReceiveError::ReceivedQuorumFromFuture) => return Err(ShouldSync),
+                Err(ProgressMessageReceiveError::Timeout) => continue 'view,
+            }
+        }
+    }
+
+    // 3. If the view times out, send a New View message.
+    on_view_timeout(view, app, block_tree, pacemaker, pm_stub);
+
+    Ok(())
+}
+
+struct ShouldSync;
+
+/// Create a proposal or a nudge, broadcast it to the network, and then send a vote for it to the next leader.
+/// 
+/// Returns ((the broadcasted proposal or nudge, the sent vote), whether i am the next leader).
+fn propose_or_nudge<K: KVStore, N: Network>(
+    me: &Keypair,
+    cur_view: ViewNumber,
+    app: &mut impl App<K>,
+    block_tree: &mut BlockTree<K>,
+    pacemaker: &mut impl Pacemaker,
+    pm_stub: &mut ProgressMessageStub<N>,
+) -> ((ProgressMessage, ProgressMessage), bool) {
+    let highest_qc = block_tree.highest_qc();
+    let (proposal_or_nudge, vote) = match highest_qc.phase {
+        // Produce a proposal.
+        Phase::Generic | Phase::Commit => {
+            let (parent_block, height) = if highest_qc.is_genesis_qc() {
+                (None, 0) 
+            } else {
+                (Some(highest_qc.block), block_tree.block_height(&highest_qc.block).unwrap() + 1)
+            };
+
+            let produce_block_request = ProduceBlockRequest::new(
+                cur_view, 
+                parent_block, 
+                block_tree.app_view(parent_block.as_ref()),
+            );
+
+            let ProduceBlockResponse { 
+                data, 
+                data_hash,
+                app_state_updates, 
+                validator_set_updates 
+            } = app.produce_block(produce_block_request);
+
+            let block = Block::new(height, highest_qc, data_hash, data);
+            
+            let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
+            if let Some(updates) = validator_set_updates_because_of_commit {
+                pm_stub.update_validator_set(updates);
+            }
+
+            let proposed_block_hash = block.hash;
+            let proposal = ProgressMessage::proposal(app.id(), cur_view, block);
+
+            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Generic };
+            let vote = me.vote(app.id(), cur_view, proposed_block_hash, vote_phase);
+
+            (proposal, vote)
+        },
+
+        // Produce a nudge.
+        Phase::Prepare | Phase::Precommit => {
+            let nudged_block_hash = highest_qc.block;
+
+            let highest_qc_phase = highest_qc.phase;
+            let nudge = ProgressMessage::nudge(app.id(), cur_view, highest_qc);
+
+            let vote_phase = if highest_qc_phase == Phase::Prepare { Phase::Precommit } else { Phase::Commit };
+            let vote  = me.vote(app.id(), cur_view, nudged_block_hash, vote_phase);
+
+            (nudge, vote)
+        }
+    };
+
+    pm_stub.broadcast(proposal_or_nudge.clone());
+
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+
+    pm_stub.send(next_leader, vote.clone());
+
+    let i_am_next_leader = me.public() == next_leader;
+
+    ((proposal_or_nudge, vote), i_am_next_leader)
+}
+
+// Returns (whether I voted, whether I am the next leader).
+fn on_receive_proposal<K: KVStore, N: Network>(
+    proposal: &Proposal,
+    me: &Keypair,
+    cur_view: ViewNumber,
+    block_tree: &mut BlockTree<K>,
+    app: &mut impl App<K>,
+    pacemaker: &mut impl Pacemaker,
+    pm_stub: &mut ProgressMessageStub<N>,
+) -> (bool, bool) {
+    if !proposal.block.is_correct(&block_tree.committed_validator_set()) || !block_tree.block_can_be_inserted(&proposal.block) {
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+        let i_am_next_leader = me.public() == next_leader;
+        return (false, i_am_next_leader)
+    }
+
+    let parent_block = if proposal.block.justify.is_genesis_qc() {
+        None
+    } else {
+        Some(&proposal.block.justify.block)
+    };
+    let validate_block_request = ValidateBlockRequest::new(
+        &proposal.block,
+        block_tree.app_view(parent_block),
+    );
+    if let ValidateBlockResponse::Valid {
+        app_state_updates,
+        validator_set_updates,
+    } = app.validate_block(validate_block_request) {
+        let validator_set_updates_because_of_commit = block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref()); 
+        if let Some(updates) = validator_set_updates_because_of_commit {
+            pm_stub.update_validator_set(updates);
+        }
+
+        let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+        if i_am_validator {
+            let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Precommit };
+            let vote = me.vote(app.id(), cur_view, proposal.block.hash, vote_phase);
+
+            pm_stub.send(next_leader, vote.clone());
+        }
+        let i_am_next_leader = me.public() == next_leader;
+
+        (true, i_am_next_leader)
+    } else {
+        let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+        let i_am_next_leader = me.public() == next_leader;
+
+        (false, i_am_next_leader)
+    }
+}
+
+// Returns (whether I voted, whether I am the next leader).
+fn on_receive_nudge<K: KVStore, N: Network>(
+    nudge: &Nudge,
+    me: &Keypair,
+    cur_view: ViewNumber,
+    block_tree: &mut BlockTree<K>,
+    app: &mut impl App<K>,
+    pacemaker: &mut impl Pacemaker,
+    pm_stub: &mut ProgressMessageStub<N>,
+) -> (bool, bool) {
+    if !nudge.justify.is_correct(&block_tree.committed_validator_set())
+        || !block_tree.qc_can_replace_highest(&nudge.justify) {
+            let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+            let i_am_next_leader = me.public() == next_leader;
+            return (false, i_am_next_leader)
+        }
+
+    block_tree.set_highest_qc(&nudge.justify);
+
+    let vote_phase = match nudge.justify.phase {
+        Phase::Prepare => Phase::Precommit,
+        Phase::Precommit => Phase::Commit,
+        _ => unreachable!(),
+    };
+    let vote = me.vote(app.id(), cur_view, nudge.justify.block, vote_phase);
+
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+    let i_am_next_leader = me.public() == next_leader;
+    
+    let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
+    if i_am_validator {
+        pm_stub.send(next_leader, vote.clone());
+    }
+
+    (true, i_am_next_leader)
+}
+
+// Returns (whether a new highest qc was collected, i am the next leader).
+fn on_receive_vote<K: KVStore>(
+    signer: &PublicKeyBytes,
+    vote: Vote,
+    votes: &mut VoteCollector,
+    block_tree: &mut BlockTree<K>,
+    cur_view: ViewNumber,
+    me: &Keypair,
+    pacemaker: &mut impl Pacemaker,
+) -> (bool, bool) {
+    let highest_qc_updated = if vote.is_correct(signer) {
+        if let Some(new_qc) = votes.collect(signer, vote) {
+            if block_tree.qc_can_replace_highest(&new_qc) {
+                block_tree.set_highest_qc(&new_qc);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set()); 
+    let i_am_next_leader = me.public() == next_leader;
+
+    (highest_qc_updated, i_am_next_leader)
+}
+
+// Returns whether the highest qc was updated.
+fn on_receive_new_view<K: KVStore>(
+    new_view: NewView,
+    block_tree: &mut BlockTree<K>,
+) {
+    if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
+        if block_tree.qc_can_replace_highest(&new_view.highest_qc) {
+            block_tree.set_highest_qc(&new_view.highest_qc);
+        }
+    }
+}
+
+fn on_view_timeout<K: KVStore, N: Network>(
+    cur_view: ViewNumber,
+    app: &impl App<K>,
+    block_tree: &BlockTree<K>,
+    pacemaker: &mut impl Pacemaker,
+    pm_stub: &mut ProgressMessageStub<N>,
+) {
+    let new_view = ProgressMessage::new_view(app.id(), cur_view, block_tree.highest_qc());
+
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
+
+    pm_stub.send(next_leader, new_view.clone());
+}
+
+fn sync<K: KVStore, N: Network>(
+    block_tree: &mut BlockTree<K>, 
+    sync_stub: &mut SyncClientStub<N>,
+    app: &mut impl App<K>,
+    pacemaker: &mut impl Pacemaker,
+) {
+    // Pick random validator.
+    if let Some(peer) = block_tree.committed_validator_set().random() {
+        sync_with(peer, block_tree, sync_stub, app, pacemaker);
+    }
+}
+
+fn sync_with<K: KVStore, N: Network>(
+    peer: &PublicKeyBytes,
+    block_tree: &mut BlockTree<K>,
+    sync_stub: &mut SyncClientStub<N>,
+    app: &mut impl App<K>,
+    pacemaker: &mut impl Pacemaker,
+) {
+    loop {
+        let request = SyncRequest {
+            highest_committed_block: block_tree.highest_committed_block(),
+            limit: pacemaker.sync_request_limit(),
+        };
+        sync_stub.send_request(*peer, request);
+
+        if let Some(response) = sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout()) {
+            if response.blocks.len() == 0 {
+                return
+            }
+            for block in response.blocks {
+                if !block.is_correct(&block_tree.committed_validator_set())
+                    || !block_tree.block_can_be_inserted(&block) {
+                    return
+                }
+
+                let parent_block = if block.justify.is_genesis_qc() {
+                    Some(&block.justify.block)
+                } else {
+                    None
                 };
+                let validate_block_request = ValidateBlockRequest::new(
+                    &block,
+                    block_tree.app_view(parent_block)
+                );
+                if let ValidateBlockResponse::Valid {
+                    app_state_updates,
+                    validator_set_updates
+                } = app.validate_block(validate_block_request) {
+                    let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
 
-            (algorithm, block_tree.1)
-        }).collect();
+                    if let Some(updates) = validator_set_updates_because_of_commit {
+                        sync_stub.update_validator_set(updates);
+                    }
+                } else {
+                    return
+                }
+            }
 
-        algo_and_block_trees
-    }
-
-    fn make_mock_identity_configs(n: usize) -> Vec<IdentityConfig> {
-        let mut csprng = OsRng {};
-        let mut keypairs = Vec::with_capacity(n);
-        for _ in 0..n {
-            keypairs.push(KeyPair::generate(&mut csprng));
+            if block_tree.qc_can_replace_highest(&response.highest_qc) {
+                block_tree.set_highest_qc(&response.highest_qc)
+            }
         }
-
-        let mut static_participant_set = ParticipantSet::new();
-        let dummy_ip_addr = "0.0.0.0".parse().unwrap();
-        for keypair in &keypairs {
-            static_participant_set.insert(keypair.public.to_bytes(), dummy_ip_addr);
-        }
-
-        let mut identity_configs = Vec::with_capacity(n);
-        for keypair in keypairs.into_iter() {
-            identity_configs.push(IdentityConfig {
-                my_public_key: keypair.public.clone(),
-                my_keypair: keypair,
-                static_participant_set: static_participant_set.clone(),
-            });
-        }
-
-        identity_configs.try_into().unwrap()
-    }
-
-    fn make_mock_networking_config() -> NetworkingConfiguration {
-        const EXPECTED_WORST_CASE_NET_LATENCY: Duration = Duration::new(0, 5_000_000);
-
-        NetworkingConfiguration {
-            progress_mode: ProgressModeNetworkingConfig {
-                expected_worst_case_net_latency: EXPECTED_WORST_CASE_NET_LATENCY,
-
-                // All the fields below are unused and are set to dummy values.
-                listening_addr: "0.0.0.0".parse().unwrap(),
-                listening_port: 0,
-                initiator_timeout: Duration::new(0, 0),
-                read_timeout: Duration::new(0, 0),
-                write_timeout: Duration::new(0, 0),
-                reader_channel_buffer_len: 0,
-                writer_channel_buffer_len: 0,
-            },
-            sync_mode: SyncModeNetworkingConfig {
-                // All fields are unused.
-                request_jump_size: 0,
-                request_timeout: Duration::new(0, 0),
-                block_tree_api_listening_addr: "0.0.0.0".parse().unwrap(),
-                block_tree_api_listening_port: 0,
-            },
-        }
-    }
-
-    fn make_mock_algorithm_config() -> AlgorithmConfig {
-        AlgorithmConfig {
-            app_id: 0,
-            target_block_time: Duration::new(1, 0),
-            sync_mode_execution_timeout: Duration::new(1, 0),
-        }
-    }
-
-    fn setup_debug_logger() -> Result<(), fern::InitError> {
-        fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{:?}][{}] {}",
-                thread::current().id(),
-                record.level(),
-                message
-            ))
-        }) 
-        .level(log::LevelFilter::Debug)
-        .chain(std::io::stdout())
-        .apply()?;
-        Ok(())
     }
 }

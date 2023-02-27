@@ -5,6 +5,8 @@
     Authors: Alice Lim
 */
 
+//! Definitions for structures messages that are sent between replicas.
+
 use borsh::BorshSerialize;
 use ed25519_dalek::{Verifier, ed25519::signature::Signature, Signer};
 
@@ -36,7 +38,7 @@ impl ProgressMessage {
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
     pub fn nudge(app_id: AppID, view: ViewNumber, justify: QuorumCertificate) -> ProgressMessage {
-        if justify.phase != Phase::Prepare || justify.phase != Phase::Precommit {
+        if !(justify.phase == Phase::Prepare || justify.phase == Phase::Precommit) {
             panic!()
         }
 
