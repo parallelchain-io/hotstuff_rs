@@ -40,18 +40,14 @@
 //! 
 //! If you're trying to learn about HotStuff-rs by reading the source code or Cargo docs, we recommend starting from
 //! the [replica](replica) module. This is the entry-point of user code into this library.
-//! 
-//! ## Logging
-//! 
-//! ### Info level events
-//! 
-//! ### Debug level events
 
 pub mod app;
 
 pub mod algorithm;
 
 pub mod types;
+
+pub mod logging;
 
 pub mod messages;
 

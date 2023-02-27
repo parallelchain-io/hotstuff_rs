@@ -58,6 +58,7 @@
 //! - [BlockTree::qc_can_replace_highest]
 
 use borsh::{BorshSerialize, BorshDeserialize};
+use crate::logging::{info, debug};
 use crate::types::*;
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
@@ -209,20 +210,26 @@ impl<K: KVStore> BlockTree<K> {
 
     // Returns whether a qc can be set as the highest qc in the block tree. For this, it is necessary that:
     // 1. self.qc_can_be_inserted(qc).
-    // 2. Its view number is greater than the view number of the current highest qc.
+    // 2. Its view number is greater than or equal to the view number of the current highest qc.
     // 
     // This function evaluates [Self::qc_can_be_inserted], and then checks 2.
     //
     // # Precondition
     // [QuorumCertificate::is_correct]
     pub(crate) fn qc_can_replace_highest(&self, qc: &QuorumCertificate) -> bool {
-        self.qc_can_be_inserted(qc) &&
-        qc.view > self.highest_qc().view
+        /* 1 */ self.qc_can_be_inserted(qc) &&
+        /* 2 */ qc.view >= self.highest_qc().view
     }
 
     pub(crate) fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_qc(qc);
+        self.write(wb);
+    }
+
+    pub(crate) fn set_locked_view(&mut self, view: ViewNumber) {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_locked_view(view);
         self.write(wb);
     }
 
@@ -236,12 +243,15 @@ impl<K: KVStore> BlockTree<K> {
 
     // Returns the validator set updates that become committed when the block becomes committed, if any.
     fn commit_block(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
+        info::committing(block, self.block_height(block).unwrap());
+
         if let Some(pending_app_state_updates) = self.pending_app_state_updates(block) {
             wb.apply_app_state_updates(&pending_app_state_updates); 
             wb.delete_pending_app_state_updates(block);
         }
         
         if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
+            debug::updating_validator_set(block);
             let mut committed_validator_set = self.committed_validator_set();
             committed_validator_set.apply_updates(&pending_validator_set_updates);
 
@@ -448,7 +458,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         // Insert datums.
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
         for (i, datum) in block.data.iter().enumerate() {
-            let datum_key = combine(&block_data_prefix, &i.try_to_vec().unwrap());
+            let datum_key = combine(&block_data_prefix, &(i as u32).try_to_vec().unwrap());
             self.0.set(&datum_key, datum);
         }
     }
@@ -463,7 +473,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
         for i in 0..data_len {
-            let datum_key = combine(&block_data_prefix, &i.try_to_vec().unwrap());
+            let datum_key = combine(&block_data_prefix, &(i as u32).try_to_vec().unwrap());
             self.0.delete(&datum_key);
         }
     }
@@ -525,7 +535,6 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Pending Validator Set Updates */
 
     pub fn set_pending_validator_set_updates(&mut self, block: &CryptoHash, validator_set_updates: &ValidatorSetUpdates) {
-        log::trace!("set_pending_validator_set_updates: for block: {:?}", &block[0..2]);
         self.0.set(&combine(&PENDING_VALIDATOR_SET_UPDATES, block), &validator_set_updates.try_to_vec().unwrap())
     }
 
@@ -548,6 +557,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
 
     pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
+        debug::replacing_highest_qc(&qc.block, qc.phase);
         self.0.set(&HIGHEST_QC, &qc.try_to_vec().unwrap())
     }
     
@@ -727,10 +737,8 @@ pub trait KVGet {
     }
 
     fn block_data(&self, block: &CryptoHash) -> Option<Data> {
-        let block_data_prefix = combine(&BLOCKS, &combine(block, &BLOCK_DATA));
-
         let data_len = self.block_data_len(block)?;
-        let data = (0..data_len).map(|i| self.get(&combine(&block_data_prefix, &i.try_to_vec().unwrap())).unwrap()).collect();
+        let data = (0..data_len).map(|i| self.block_datum(block, i).unwrap()).collect();
 
         Some(data)
     }
@@ -830,9 +838,9 @@ mod paths {
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];
 
     // Fields of Block
-    pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];
-    pub(super) const BLOCK_JUSTIFY: [u8; 1] = [02];
-    pub(super) const BLOCK_DATA_HASH: [u8; 1] = [03];
+    pub(super) const BLOCK_HEIGHT: [u8; 1] = [00];
+    pub(super) const BLOCK_JUSTIFY: [u8; 1] = [01];
+    pub(super) const BLOCK_DATA_HASH: [u8; 1] = [02];
     pub(super) const BLOCK_DATA_LEN: [u8; 1] = [03];
     pub(super) const BLOCK_DATA: [u8; 1] = [04];
 }

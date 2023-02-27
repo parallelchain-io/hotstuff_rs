@@ -39,7 +39,7 @@ use hotstuff_rs::networking::Network;
 
 #[test]
 fn integration_test() {
-    setup_trace_logger();
+    setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng{};
     let keypairs: Vec<DalekKeypair> = (0..3).map(|_| DalekKeypair::generate(&mut csprg)).collect();
@@ -98,7 +98,7 @@ fn integration_test() {
 }
 
 // Set up a logger that logs all log messages with level Trace and above.
-fn setup_trace_logger() {
+fn setup_logger(level: LevelFilter) {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -108,7 +108,7 @@ fn setup_trace_logger() {
                 message
             ))
         })
-        .level(LevelFilter::Trace)
+        .level(level)
         .chain(io::stdout())
         .apply()
         .unwrap();

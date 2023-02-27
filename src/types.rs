@@ -148,6 +148,17 @@ pub enum Phase {
     Commit
 }
 
+impl Phase {
+    pub fn next(&self) -> Option<Phase> {
+        match self {
+            Phase::Generic => None,
+            Phase::Prepare => Some(Phase::Precommit),
+            Phase::Precommit => Some(Phase::Commit),
+            Phase::Commit => None,
+        }
+    }
+}
+
 pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
 pub type ValidatorSetUpdates = UpdateSet<PublicKeyBytes, Power>;
 
