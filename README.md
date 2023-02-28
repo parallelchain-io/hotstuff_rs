@@ -1,9 +1,4 @@
 # HotStuff-rs 
-HotStuff-rs is a Rust Programming Language implementation of the HotStuff consensus protocol. It offers:
-1. Guaranteed Safety and Liveness in the face of up to 1/3rd of Voting Power being Byzantine at any given moment,
-2. A small API (`Executor`) for plugging in state machine-based applications like blockchains, and
-3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
-
 A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
 systems. 
   
