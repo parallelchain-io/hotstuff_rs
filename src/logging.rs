@@ -6,12 +6,16 @@
 */
 
 //! Functions for logging out library events of varying levels of importance.
-
+//! 
+//! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed, while
+//! those with present continuous tense events (e.g. "Committing") indicate an activity that is still ongoing and
+//! may not get to complete because the process exits.
 
 use log;
 use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use crate::types::*;
 
+/// Logged events that may be of interest to operators to monitor the activities of a replica.
 pub mod info {
     use super::*;
 
@@ -48,6 +52,7 @@ pub mod info {
 
 }
 
+/// Logged events that may be of interest to programmers and system administrators to troubleshoot unexpected replica behavior.
 pub mod debug {
     use super::*;
 

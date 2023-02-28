@@ -7,7 +7,7 @@
 
 //! [Trait definition](Pacemaker) for pacemakers: user-provided types that determine the 'liveness' behavior of replicas.
 //! 
-//! Specifically, pacemakers tell replica code five things:
+//! Specifically, pacemakers tell replica code four things:
 //! 1. [View timeout](Pacemaker::view_timeout): given the current view, and the highest view I (the replica) has seen
 //!    consensus progress, how long should I stay in the current view to wait for messages?
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider

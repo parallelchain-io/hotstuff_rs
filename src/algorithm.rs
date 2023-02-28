@@ -30,15 +30,15 @@
 //!     * Otherwise, broadcast a nudge.
 //! 2. Then, poll the network for progress messages until the view timeout:
 //!     * [On receiving a proposal](on_receive_proposal):
-//!         - [Call](BlockTree::block_can_be_inserted) on the block tree to see if the proposed block can be inserted.
+//!         - Call the [safe_block](BlockTree::safe_block) function to see if the proposed block can be inserted.
 //!         - Call on the app to validate it.
 //!         - If it passes both checks, insert the block into the block tree and send a vote for it to the next leader.
 //!         - Then, if I *am not* the next leader, move to the next view.
 //!     * [On receiving a nudge](on_receive_nudge):
 //!         - Check if it is a prepare or precommit qc.
-//!         - [Call](BlockTree::qc_can_be_inserted) on the block tree to see if the qc can inserted.
+//!         - Call the [safe_qc] function on the block tree to see if the qc can inserted.
 //!         - If yes, send a vote for it to the next leader.
-//!         - [Call](BlockTree::qc_can_replace_highest) on the block tree if the qc can be set as the highest qc.
+//!         - Check on the block tree if the qc can be set as the highest qc.
 //!         - If yes, set it as the highest qc.
 //!         - Then, if I *am not* the next leader, move to the next view.
 //!     * [On receiving a vote](on_receive_vote):
@@ -52,14 +52,13 @@
 //!           to the next view.
 //! 3. If the view times out and reaches this step without reaching a step that transitions it into the next view, then
 //!    send a new view message containing my highest qc to the next leader.
-//! 
-//! ## Pipelined and phased flows
+
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::cmp::max;
 use std::time::Instant;
 use std::thread::{self, JoinHandle};
-use crate::logging::{info, debug, succinct};
+use crate::logging::{info, debug};
 use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
 use crate::app::ProduceBlockResponse;
 use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge, SyncRequest};

@@ -50,16 +50,9 @@
 //! - **Locked View** (initialized to 0). 
 //! - **Highest View Entered** (initialized to 0).
 //! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
-//! 
-//! ## Safety
-//! 
-//! - [BlockTree::block_can_be_inserted]
-//! - [BlockTree::qc_can_be_inserted]
-//! - Locked View
-//! - Highest Entered View
 
 use borsh::{BorshSerialize, BorshDeserialize};
-use crate::logging::{info, debug, succinct};
+use crate::logging::{info, debug};
 use crate::types::*;
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
@@ -221,7 +214,10 @@ impl<K: KVStore> BlockTree<K> {
 
         self.write(wb);
 
-        // TODO: document safety.
+        // Safety: a block that updates the validator set must be followed by a block that contains
+        // a commit qc. A block becomes committed immediately if followed by a commit qc. Therefore,
+        // under normal operation, at most 1 validator-set-updating block can be committed by one 
+        // insertion.
         let validator_set_updates = validator_set_updates.pop();
 
         validator_set_updates

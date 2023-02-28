@@ -4,9 +4,40 @@ HotStuff-rs is a Rust Programming Language implementation of the HotStuff consen
 2. A small API (`Executor`) for plugging in state machine-based applications like blockchains, and
 3. Well-documented, 'obviously correct' source code, designed for easy analysis and extension.
 
+A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
+systems. 
+  
+HotStuff-rs implements a variant of the HotStuff consensus protocol, but with extensions like block-sync and dynamic
+validator sets that makes this library suited for real-world use-cases (and not just research systems). Some desirable
+properties that HotStuff-rs has are:
+1. **Provable Safety** in the face of up to 1/3rd of voting power being Byzantine at any given moment.
+2. **Optimal Performance**: consensus in (amortized) 1 round trip time.
+3. **Simplicity**: A small API (App) for plugging in arbitrary stateful applications.
+4. **Modularity**: pluggable networking, state persistence, and view-synchronization mechanism.
+5. **Dynamic Validator Sets** that can update without any downtime based on state updates: a must for PoS blockchain 
+   applications.
+6. **Batteries included**: comes with a block-sync protocol and (coming soon) default implementations for networking,
+   state, and pacemaker: you write the app, we handle the replication.
+
+## Terminology
+ 
+- **App**: user code which implements the App trait. This can be any business logic that can be expressed
+  as a deterministic state machine, i.e., a pure function of kind: `(Blockchain, App State, Validator Set, Block) ->
+  (Next Blockchain, Next App State, Next Validator Set)`.
+- **Replica**: a public-key-identified process that hosts an implementation of the HotStuff-rs protocol, e.g., this
+  library. There are two kinds of replicas: validators, and listeners. 
+- **Blockchain**: a growing sequence of **Blocks**, which can be thought of as instructions to update a replica's App
+  State and Validator Set.
+- **App State**: a key-value store that applications can use to store anything; two replicas with the same Blockchain
+  are guaranteed to have the same app state.
+- **Validator Set**: the set of replicas who can vote in a consensus decision.
+- **Progress protocol**: the protocol replicas use to create new blocks through consensus and grow the blockchain.
+- **Sync protocol**: the protocol new or previously offline replicas use to quickly catch up to the head of the
+  blockchain.
+
 ## The HotStuff Consensus Protocol
 
-HotStuff works by building a 'BlockTree': a directed acyclic graph of Blocks. Block is a structure with a `command` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
+HotStuff works by building a 'BlockTree': a directed acyclic graph of Blocks. Block is a structure with a `data` field which applications are free to populate with arbitrary byte-arrays. In consensus algorithm literature, we typically talk of consensus algorithms as maintaining state machines that change their internal states in response to commands, hence the choice of terminology.
 
 HotStuff guarantees that committed Blocks are *immutable*. That is, they can never be *un*-committed as long as at least a supermajority of voting power faithfully execute the protocol. This guarantee enables applications to make hard-to-reverse actions with confidence. 
 
@@ -20,3 +51,10 @@ The choice of third confirmation to define commitment--as opposed to first or se
 2. Tendermint require only 2 confirmations for commitment and has a simple leader-replacement flow, but needs an explicit 'wait-for-N seconds' step to guarantee liveness.
 
 HotStuff is the first consensus algorithm with a simple leader-replacement algorithm that does not have a 'wait-for-N seconds' step, and thus can make progress as fast as network latency allows.
+
+
+## Getting started
+
+If you're trying to learn about HotStuff-rs by reading the source code or Cargo docs, we recommend starting from
+the [replica](replica) module. This is the entry-point of user code into this library.
+

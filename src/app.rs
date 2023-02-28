@@ -6,10 +6,6 @@
 */
 
 //! The [App] trait, HotStuff-rs' interface into the business logic of users' applications.
-//! 
-//! ## Time constraints on producing and validating blocks
-//! 
-//! 
 
 use crate::types::*;
 use crate::state::{AppBlockTreeView, KVStore};
