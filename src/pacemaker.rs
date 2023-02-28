@@ -33,7 +33,6 @@ pub trait Pacemaker: Send {
 /// eventually bring replicas into the same view.
 pub struct DefaultPacemaker {
     minimum_view_timeout: Duration,
-    proposal_rebroadcast_period: Duration,
     sync_request_limit: u32,
     sync_response_timeout: Duration
 }
@@ -42,7 +41,6 @@ impl DefaultPacemaker {
     pub fn new(minimum_view_timeout: Duration, sync_request_limit: u32, sync_response_timeout: Duration) -> DefaultPacemaker {
         Self { 
             minimum_view_timeout,
-            proposal_rebroadcast_period: minimum_view_timeout,
             sync_request_limit, 
             sync_response_timeout 
         }

@@ -7,7 +7,7 @@
 
 //! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
 
-use std::{collections::{hash_set, HashSet, hash_map::{self, Iter, Keys}, HashMap}, hash::Hash};
+use std::{collections::{hash_set, HashSet, hash_map, HashMap}, hash::Hash, slice};
 use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::Verifier;
 use rand::seq::SliceRandom;
@@ -87,6 +87,7 @@ impl QuorumCertificate {
         if self.is_genesis_qc() {
             true
         } else {
+            // qc contains a too large signature set.
             if self.signatures.len() != validator_set.len() {
                 return false
             }
@@ -94,24 +95,31 @@ impl QuorumCertificate {
             let quorum = Self::quorum(validator_set.total_power());
             let mut signature_set_power = 0;
             let mut is_already_quorum = false; 
-            for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.iter()) {
+            for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.validators_and_powers()) {
                 if let Some(signature) = signature {
-                    let signer = PublicKey::from_bytes(signer).unwrap();
+                    let signer = PublicKey::from_bytes(&signer).unwrap();
                     if let Ok(signature) = Signature::from_bytes(signature) {
                         if signer.verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
                             signature_set_power += power;
                             
+                            // a strict subset of the signatures is already a quorum.
                             if is_already_quorum {
-                                return true 
+                                return false 
                             }                        
 
                             if signature_set_power >= quorum {
                                 is_already_quorum = true;
                             }
-                        } else {
+                        } 
+
+                        // qc contains incorrect signature.
+                        else {
                             return false
                         }
-                    } else {
+                    } 
+                    
+                    // qc contains incorrect signature.
+                    else {
                         return false
                     }
                 }
@@ -142,11 +150,20 @@ impl QuorumCertificate {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
+    // ↓↓↓ For pipelined flow ↓↓↓ //   
+    
     Generic,
 
-    // The ViewNumber inside Precommit and Commit is the view of the prepare qc that this precommit or commit qc extends.
+    // ↓↓↓ For phased flow ↓↓↓ //
+
     Prepare, 
+
+    // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered the
+    // vote containing this phase.
     Precommit(ViewNumber),
+
+    // The inner view number is the view number of the *precommit* qc contained in the nudge which triggered the
+    // vote containing this phase.
     Commit(ViewNumber),
 }
 
@@ -222,7 +239,7 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
     validators: Vec<PublicKeyBytes>,
@@ -277,12 +294,14 @@ impl ValidatorSet {
         }
     }
 
-    pub fn validators(&self) -> Keys<PublicKeyBytes, Power> {
-        self.powers.keys()
+    /// In order.
+    pub fn validators(&self) -> slice::Iter<PublicKeyBytes> {
+        self.validators.iter()
     }
 
-    pub fn iter(&self) -> Iter<PublicKeyBytes, Power> {
-        self.powers.iter()
+    /// In order.
+    pub fn validators_and_powers(&self) -> Vec<([u8; 32], u64)> {
+        self.validators().map(|v| (*v, *self.power(v).unwrap())).collect()
     }
 
     pub fn len(&self) -> usize {
@@ -302,16 +321,16 @@ impl ValidatorSet {
 }
 
 /// Helps leaders incrementally form QuorumCertificates by combining votes for the same app_id, view, block, and phase.
-pub(crate) struct VoteCollector<'a> {
+pub(crate) struct VoteCollector {
     app_id: AppID,
     view: ViewNumber,
-    validator_set: &'a ValidatorSet,
+    validator_set: ValidatorSet,
     validator_set_power: Power,
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, Power)>,
 }
 
-impl<'a> VoteCollector<'a> {
-    pub(crate) fn new(app_id: AppID, view: ViewNumber, validator_set: &'a ValidatorSet) -> VoteCollector<'a> {
+impl VoteCollector {
+    pub(crate) fn new(app_id: AppID, view: ViewNumber, validator_set: ValidatorSet) -> VoteCollector {
         let total_validator_set_power = validator_set.total_power();
 
         Self {
@@ -365,6 +384,7 @@ impl<'a> VoteCollector<'a> {
                         phase: vote.phase,
                         signatures,
                     };
+
 
                     return Some(collected_qc)
                 }

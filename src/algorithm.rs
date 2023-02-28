@@ -16,6 +16,8 @@
 //! compares the view of the highest qc it knows with the highest view it has previously entered, selecting the higher
 //! of the two, plus 1, as the view to execute.
 //! 
+//! ## View sequence flow
+//! 
 //! A view proceeds in one of two modes, depending on whether the depending on whether the local replica is a
 //! [validator, or a listener](crate::replica). Replicas automatically change between the two modes as the validator
 //! set evolves.
@@ -46,14 +48,18 @@
 //!     * [On receving a new view](on_receive_new_view):
 //!         - Check if its quorum certificate is higher than the block tree's highest qc.
 //!         - If yes, then store it as the highest qc.
+//!         - Then, if I *am* the next leader, and I have collected new view messages from a quorum of replicas, move
+//!           to the next view.
+//! 3. If the view times out and reaches this step without reaching a step that transitions it into the next view, then
+//!    send a new view message containing my highest qc to the next leader.
 //! 
-//! A view eventually times out and transitions if a transition is not triggered 'manually' by one of the steps. 
+//! ## Pipelined and phased flows
 
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::cmp::{min, max};
+use std::cmp::max;
 use std::time::Instant;
 use std::thread::{self, JoinHandle};
-use crate::logging::{info, debug};
+use crate::logging::{info, debug, succinct};
 use crate::app::{ProduceBlockRequest, ValidateBlockResponse, ValidateBlockRequest};
 use crate::app::ProduceBlockResponse;
 use crate::messages::{Keypair, ProgressMessage, Vote, NewView, Proposal, Nudge, SyncRequest};
@@ -105,24 +111,22 @@ fn execute_view<K: KVStore, N: Network>(
     debug::entered_view(view);
     let view_deadline = Instant::now() + pacemaker.view_timeout(view, block_tree.highest_qc().view);
     
-    let cur_validators: ValidatorSet = block_tree.committed_validator_set();
-    
+    let cur_validators = block_tree.committed_validator_set();
     let cur_leader = pacemaker.view_leader(view, &cur_validators);
-    let i_am_cur_leader = me.public() == pacemaker.view_leader(view, &cur_validators);
+    let i_am_cur_leader = me.public() == cur_leader;
 
     // 1. If I am the current leader, broadcast a proposal or a nudge.
     if i_am_cur_leader {
-        propose_or_nudge(&me, view, app, block_tree, pacemaker, &mut pm_stub);
+        propose_or_nudge(view, app, block_tree, &mut pm_stub);
     }
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.     
-    let mut votes = VoteCollector::new(app.id(), view, &cur_validators);
+    let mut vote_collector = VoteCollector::new(app.id(), view, cur_validators.clone());
     while Instant::now() < view_deadline { 
         match pm_stub.recv(app.id(), view, view_deadline) {
             Ok((origin, msg)) => match msg {
                 ProgressMessage::Proposal(proposal) => if origin == cur_leader {
-                    debug::received_proposal(&origin, &proposal.block.hash, proposal.block.height);
-                    let (voted, i_am_next_leader) = on_receive_proposal(&proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                    let (voted, i_am_next_leader) = on_receive_proposal(&origin, &proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub, &mut vote_collector);
                     if voted {
                         if !i_am_next_leader {
                             return Ok(())
@@ -130,8 +134,7 @@ fn execute_view<K: KVStore, N: Network>(
                     }
                 },
                 ProgressMessage::Nudge(nudge) => if origin == cur_leader {
-                    debug::received_nudge(&origin, &nudge.justify.block, nudge.justify.phase);
-                    let (voted, i_am_next_leader) = on_receive_nudge(&nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
+                    let (voted, i_am_next_leader) = on_receive_nudge(&origin, &nudge, &me, view, &mut block_tree, app, pacemaker, pm_stub);
                     if voted {
                         if !i_am_next_leader {
                             return Ok(())
@@ -139,15 +142,13 @@ fn execute_view<K: KVStore, N: Network>(
                     }
                 },
                 ProgressMessage::Vote(vote) => {
-                    debug::received_vote(&origin, &vote.block, vote.phase);
-                    let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut votes, &mut block_tree, view, &me, pacemaker);
+                    let (highest_qc_updated, i_am_next_leader) = on_receive_vote(&origin, vote, &mut vote_collector, &mut block_tree, view, &me, pacemaker);
                     if highest_qc_updated && i_am_next_leader {
                         return Ok(())
                     }
                 },
                 ProgressMessage::NewView(new_view) => {
-                    debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
-                    on_receive_new_view(new_view, &mut block_tree);
+                    on_receive_new_view(&origin, new_view, &mut block_tree);
                 },
             },
             Err(ProgressMessageReceiveError::ReceivedQCFromFuture) => return Err(ShouldSync),
@@ -165,18 +166,16 @@ struct ShouldSync;
 
 /// Create a proposal or a nudge and broadcast it to the network.
 fn propose_or_nudge<K: KVStore, N: Network>(
-    me: &Keypair,
     cur_view: ViewNumber,
     app: &mut impl App<K>,
     block_tree: &mut BlockTree<K>,
-    pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) {
     let highest_qc = block_tree.highest_qc();
     match () {
         // Produce a proposal.
         () if highest_qc.phase.is_generic() || highest_qc.phase.is_commit() => {
-            let (parent_block, height) = if highest_qc.is_genesis_qc() {
+            let (parent_block, child_height) = if highest_qc.is_genesis_qc() {
                 (None, 0) 
             } else {
                 (Some(highest_qc.block), block_tree.block_height(&highest_qc.block).unwrap() + 1)
@@ -191,22 +190,18 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             let ProduceBlockResponse { 
                 data, 
                 data_hash,
-                app_state_updates, 
-                validator_set_updates 
+                app_state_updates: _, 
+                validator_set_updates: _ 
             } = app.produce_block(produce_block_request);
 
-            let block = Block::new(height, highest_qc, data_hash, data);
+            let block = Block::new(child_height, highest_qc, data_hash, data);
             
-            let validator_set_updates_because_of_commit = block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref());
-            if let Some(updates) = validator_set_updates_because_of_commit {
-                pm_stub.update_validator_set(updates);
-            }
-
             let proposed_block_hash = block.hash;
+            let proposed_block_height = block.height;
             let proposal = ProgressMessage::proposal(app.id(), cur_view, block);
 
             pm_stub.broadcast(proposal);
-            info::proposed(&block.hash, block.height);
+            info::proposed(cur_view, &proposed_block_hash, proposed_block_height);
         },
 
         // Produce a nudge.
@@ -217,7 +212,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             let nudge = ProgressMessage::nudge(app.id(), cur_view, highest_qc);
 
             pm_stub.broadcast(nudge);
-            info::nudged(&nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), highest_qc_phase);
+            info::nudged(cur_view, &nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), highest_qc_phase);
         },
 
         _ => unreachable!()
@@ -226,6 +221,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
 
 // Returns (whether I voted, whether I am the next leader).
 fn on_receive_proposal<K: KVStore, N: Network>(
+    origin: &PublicKeyBytes,
     proposal: &Proposal,
     me: &Keypair,
     cur_view: ViewNumber,
@@ -233,8 +229,10 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
+    vote_collector: &mut VoteCollector,
 ) -> (bool, bool) {
-    if !proposal.block.is_correct(&block_tree.committed_validator_set()) || !block_tree.block_can_be_inserted(&proposal.block) {
+    debug::received_proposal(origin, &proposal.block.hash, proposal.block.height);
+    if !proposal.block.is_correct(&block_tree.committed_validator_set()) || !block_tree.safe_block(&proposal.block) {
         let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         let i_am_next_leader = me.public() == next_leader;
         return (false, i_am_next_leader)
@@ -249,13 +247,16 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         &proposal.block,
         block_tree.app_view(parent_block),
     );
+
     if let ValidateBlockResponse::Valid {
         app_state_updates,
         validator_set_updates,
     } = app.validate_block(validate_block_request) {
+
         let validator_set_updates_because_of_commit = block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref()); 
         if let Some(updates) = validator_set_updates_because_of_commit {
             pm_stub.update_validator_set(updates);
+            *vote_collector = VoteCollector::new(app.id(), cur_view, block_tree.committed_validator_set());
         }
 
         let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
@@ -265,7 +266,8 @@ fn on_receive_proposal<K: KVStore, N: Network>(
             let vote = me.vote(app.id(), cur_view, proposal.block.hash, vote_phase);
 
             pm_stub.send(next_leader, vote.clone());
-        }
+            info::voted(cur_view, &proposal.block.hash, proposal.block.height, vote_phase);
+        } 
 
         let i_am_next_leader = me.public() == next_leader;
 
@@ -280,6 +282,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
 
 // Returns (whether I voted, whether I am the next leader).
 fn on_receive_nudge<K: KVStore, N: Network>(
+    origin: &PublicKeyBytes,
     nudge: &Nudge,
     me: &Keypair,
     cur_view: ViewNumber,
@@ -288,33 +291,48 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) -> (bool, bool) {
+    debug::received_nudge(origin, &nudge.justify.block, nudge.justify.phase);
+
     if nudge.justify.phase.is_generic() 
         || nudge.justify.phase.is_commit()
         || !nudge.justify.is_correct(&block_tree.committed_validator_set()) 
-        || block_tree.qc_can_be_inserted(&nudge.justify) {
+        || !block_tree.safe_qc(&nudge.justify) {
         let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         let i_am_next_leader = me.public() == next_leader;
         return (false, i_am_next_leader) 
     }
 
-    let vote_phase = match nudge.justify.phase {
-        Phase::Prepare => Phase::Precommit(nudge.justify.view),
-        Phase::Precommit(prepare_qc_view) => Phase::Commit(prepare_qc_view),
+    let mut wb = BlockTreeWriteBatch::new();
+    if nudge.justify.view > block_tree.highest_qc().view {
+        wb.set_highest_qc(&nudge.justify);
+    }
+    let next_phase = match nudge.justify.phase {
+        Phase::Prepare => {
+            Phase::Precommit(nudge.justify.view)
+        },
+
+        Phase::Precommit(prepare_qc_view) => {
+            if prepare_qc_view > block_tree.locked_view() {
+                wb.set_locked_view(prepare_qc_view);
+            }
+
+            Phase::Commit(nudge.justify.view)
+        },
+
         _ => unreachable!(),
     };
-    let vote = me.vote(app.id(), cur_view, nudge.justify.block, vote_phase);
+    block_tree.write(wb);
 
-    if block_tree.qc_can_replace_highest(&nudge.justify) {
-        block_tree.set_highest_qc(&nudge.justify);
-    }
+    let vote = me.vote(app.id(), cur_view, nudge.justify.block, next_phase);
 
-    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
-    let i_am_next_leader = me.public() == next_leader;
-    
     let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
+    let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
     if i_am_validator {
         pm_stub.send(next_leader, vote.clone());
+        info::voted(cur_view, &nudge.justify.block, block_tree.block_height(&nudge.justify.block).unwrap(), next_phase);
     }
+
+    let i_am_next_leader = me.public() == next_leader;
 
     (true, i_am_next_leader)
 }
@@ -329,15 +347,28 @@ fn on_receive_vote<K: KVStore>(
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
 ) -> (bool, bool) {
+    debug::received_vote(&signer, &vote.block, vote.phase);
+
     let highest_qc_updated = if vote.is_correct(signer) {
         if let Some(new_qc) = votes.collect(signer, vote) {
             debug::collected_qc(&new_qc.block, new_qc.phase);
-            if block_tree.qc_can_replace_highest(&new_qc) {
-                block_tree.set_highest_qc(&new_qc);
+
+            let mut wb = BlockTreeWriteBatch::new();
+            if let Phase::Precommit(prepare_qc_view) = new_qc.phase {
+                if prepare_qc_view > block_tree.locked_view() {
+                    wb.set_locked_view(prepare_qc_view)
+                }
+            }
+
+            let highest_qc_updated = if new_qc.view > block_tree.highest_qc().view {
+                wb.set_highest_qc(&new_qc);
                 true
             } else {
                 false
-            }
+            };
+            block_tree.write(wb);
+
+            highest_qc_updated
         } else {
             false
         }
@@ -351,15 +382,27 @@ fn on_receive_vote<K: KVStore>(
     (highest_qc_updated, i_am_next_leader)
 }
 
-// Returns whether the highest qc was updated.
 fn on_receive_new_view<K: KVStore>(
+    origin: &PublicKeyBytes,
     new_view: NewView,
     block_tree: &mut BlockTree<K>,
 ) {
+    debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
+
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
-        if block_tree.qc_can_replace_highest(&new_view.highest_qc) {
-            block_tree.set_highest_qc(&new_view.highest_qc);
+        let mut wb = BlockTreeWriteBatch::new();
+
+        if let Phase::Precommit(prepare_qc_view) = new_view.highest_qc.phase {
+            if prepare_qc_view > block_tree.locked_view() {
+                wb.set_locked_view(prepare_qc_view)
+            }
         }
+
+        if new_view.highest_qc.view > block_tree.highest_qc().view {
+            wb.set_highest_qc(&new_view.highest_qc);
+        };
+
+        block_tree.write(wb);
     }
 }
 
@@ -370,6 +413,8 @@ fn on_view_timeout<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
 ) {
+    let highest_qc = block_tree.highest_qc();
+    info::view_timed_out(cur_view, &highest_qc.block, highest_qc.phase);
     let new_view = ProgressMessage::new_view(app.id(), cur_view, block_tree.highest_qc());
 
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
@@ -396,6 +441,8 @@ fn sync_with<K: KVStore, N: Network>(
     app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
 ) {
+    info::start_syncing(peer);
+
     loop {
         let request = SyncRequest {
             highest_committed_block: block_tree.highest_committed_block(),
@@ -409,7 +456,7 @@ fn sync_with<K: KVStore, N: Network>(
             }
             for block in response.blocks {
                 if !block.is_correct(&block_tree.committed_validator_set())
-                    || !block_tree.block_can_be_inserted(&block) {
+                    || !block_tree.safe_block(&block) {
                     return
                 }
 
@@ -436,7 +483,7 @@ fn sync_with<K: KVStore, N: Network>(
                 }
             }
 
-            if block_tree.qc_can_replace_highest(&response.highest_qc) {
+            if response.highest_qc.view > block_tree.highest_qc().view {
                 block_tree.set_highest_qc(&response.highest_qc)
             }
         }

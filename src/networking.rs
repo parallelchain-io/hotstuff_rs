@@ -58,10 +58,10 @@ pub(crate) fn start_polling<N: Network + 'static>(mut network: N, shutdown_signa
 
             if let Some((origin, msg)) = network.recv() {
                 match msg {
-                    Message::ProgressMessage(p_msg) => to_progress_msg_receiver.send((origin, p_msg)).unwrap(),
+                    Message::ProgressMessage(p_msg) => { let _ = to_progress_msg_receiver.send((origin, p_msg)); },
                     Message::SyncMessage(s_msg) => match s_msg {
-                        SyncMessage::SyncRequest(s_req) => to_sync_request_receiver.send((origin, s_req)).unwrap(),
-                        SyncMessage::SyncResponse(s_res) => to_sync_response_receiver.send((origin, s_res)).unwrap(),
+                        SyncMessage::SyncRequest(s_req) => { let _ = to_sync_request_receiver.send((origin, s_req)); },
+                        SyncMessage::SyncResponse(s_res) => { let _ = to_sync_response_receiver.send((origin, s_res)); },
                     }
                 }
             } else {
@@ -189,8 +189,12 @@ impl<N: Network> SyncServerStub<N> {
         SyncServerStub { requests, network }
     }
 
-    pub(crate) fn recv_request(&self) -> (PublicKeyBytes, SyncRequest) {
-        self.requests.recv().unwrap()
+    pub(crate) fn recv_request(&self) -> Option<(PublicKeyBytes, SyncRequest)> {
+        match self.requests.try_recv() {
+            Ok((origin, request)) => Some((origin, request)),
+            Err(TryRecvError::Disconnected) => panic!("sync server thread disconnected from poller thread"),
+            Err(TryRecvError::Empty) => None,
+        }
     }
 
     pub(crate) fn send_response(&mut self, peer: PublicKeyBytes, msg: SyncResponse) {

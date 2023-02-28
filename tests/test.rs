@@ -95,6 +95,8 @@ fn integration_test() {
     while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 { 
         thread::sleep(Duration::from_millis(500));
     }
+
+    log::debug!("Integration test: complete.");
 }
 
 // Set up a logger that logs all log messages with level Trace and above.
@@ -133,13 +135,13 @@ impl Network for NetworkStub {
 
     fn send(&mut self, peer: PublicKeyBytes, message: Message) {
         if let Some(peer) = self.all_peers.get(&peer) {
-            peer.send((self.my_public_key, message)).unwrap();
+            let _ = peer.send((self.my_public_key, message));
         }
     }
 
     fn broadcast(&mut self, message: Message) {
         for (_, peer) in &self.all_peers {
-            peer.send((self.my_public_key, message.clone())).unwrap();
+            let _ = peer.send((self.my_public_key, message.clone()));
         }        
     }
 

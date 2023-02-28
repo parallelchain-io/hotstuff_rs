@@ -27,6 +27,7 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
+use crate::logging::debug;
 use crate::messages::{SyncRequest, SyncResponse};
 use crate::state::{BlockTreeCamera, KVStore};
 use crate::networking::{Network, SyncServerStub};
@@ -44,13 +45,16 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
                 Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            let (origin, SyncRequest { highest_committed_block, limit }) = sync_stub.recv_request();
-            
-            let bt_snapshot = block_tree.snapshot();
-            let blocks = bt_snapshot.blocks_from_tail_to_newest_block(highest_committed_block.as_ref(), limit);
-            let highest_qc = bt_snapshot.highest_qc();
+            if let Some((origin, SyncRequest { highest_committed_block, limit })) = sync_stub.recv_request() {
+                debug::received_sync_request(&origin);
+                
+                let bt_snapshot = block_tree.snapshot();
+                let blocks = bt_snapshot.blocks_from_tail_to_newest_block(highest_committed_block.as_ref(), limit);
+                let highest_qc = bt_snapshot.highest_qc();
 
-            sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
+                sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
+            }
+            thread::yield_now();
         }   
     })
 }
