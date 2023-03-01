@@ -46,10 +46,10 @@
 //!         - If enough matching votes have been collected to form a quorum certificate, store it as the highest qc.
 //!         - Then, if I *am* the next leader, move to the next view.
 //!     * [On receving a new view](on_receive_new_view):
-//!         - Check if its quorum certificate is higher than the block tree's highest qc.
+//!         - Check if the highest qc in the new view message is higher than our highest qc.
 //!         - If yes, then store it as the highest qc.
-//!         - Then, if I *am* the next leader, and I have collected new view messages from a quorum of replicas, move
-//!           to the next view.
+//!         - Then, if I have collected new view messages from a quorum of validators this view, and I  *am* the next
+//!           leader, move to the next view.
 //! 3. If the view times out and reaches this step without reaching a step that transitions it into the next view, then
 //!    send a new view message containing my highest qc to the next leader.
 
@@ -98,7 +98,8 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     })
 }
 
-// Returns whether there was progress in the view.
+/// Returns an Err(ShouldSync) if we encountered a quorum certificate for a future view in the execution, which suggests that a quorum of replicas are making
+/// progress at a higher view, so we should probably sync up to them.
 fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
     view: ViewNumber,
@@ -121,11 +122,12 @@ fn execute_view<K: KVStore, N: Network>(
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.     
     let mut vote_collector = VoteCollector::new(app.id(), view, cur_validators.clone());
+    let mut new_view_collector = NewViewCollector::new(cur_validators.clone());
     while Instant::now() < view_deadline { 
         match pm_stub.recv(app.id(), view, view_deadline) {
             Ok((origin, msg)) => match msg {
                 ProgressMessage::Proposal(proposal) => if origin == cur_leader {
-                    let (voted, i_am_next_leader) = on_receive_proposal(&origin, &proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub, &mut vote_collector);
+                    let (voted, i_am_next_leader) = on_receive_proposal(&origin, &proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub, &mut vote_collector, &mut new_view_collector);
                     if voted {
                         if !i_am_next_leader {
                             return Ok(())
@@ -147,7 +149,10 @@ fn execute_view<K: KVStore, N: Network>(
                     }
                 },
                 ProgressMessage::NewView(new_view) => {
-                    on_receive_new_view(&origin, new_view, &mut block_tree);
+                    let received_new_views_from_quorum_and_i_am_next_leader = on_receive_new_view(&origin, new_view, &mut new_view_collector, &mut block_tree, view, &me, pacemaker);
+                    if received_new_views_from_quorum_and_i_am_next_leader {
+                        return Ok(())
+                    }
                 },
             },
             Err(ProgressMessageReceiveError::ReceivedQCFromFuture) => return Err(ShouldSync),
@@ -229,6 +234,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
     vote_collector: &mut VoteCollector,
+    new_view_collector: &mut NewViewCollector,
 ) -> (bool, bool) {
     debug::received_proposal(origin, &proposal.block.hash, proposal.block.height);
     if !proposal.block.is_correct(&block_tree.committed_validator_set()) || !block_tree.safe_block(&proposal.block) {
@@ -256,6 +262,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         if let Some(updates) = validator_set_updates_because_of_commit {
             pm_stub.update_validator_set(updates);
             *vote_collector = VoteCollector::new(app.id(), cur_view, block_tree.committed_validator_set());
+            *new_view_collector = NewViewCollector::new(block_tree.committed_validator_set());
         }
 
         let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
@@ -381,11 +388,16 @@ fn on_receive_vote<K: KVStore>(
     (highest_qc_updated, i_am_next_leader)
 }
 
+// returns (whether I have collected new view messages from a quorum of validators && I am the next leader)
 fn on_receive_new_view<K: KVStore>(
     origin: &PublicKeyBytes,
     new_view: NewView,
+    new_view_collector: &mut NewViewCollector,
     block_tree: &mut BlockTree<K>,
-) {
+    cur_view: ViewNumber,
+    me: &Keypair,
+    pacemaker: &mut impl Pacemaker,
+) -> bool {
     debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
 
     if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
@@ -402,7 +414,16 @@ fn on_receive_new_view<K: KVStore>(
         };
 
         block_tree.write(wb);
+        
+        if new_view_collector.collect(origin, new_view) {
+            let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set()); 
+            let i_am_next_leader = me.public() == next_leader;
+            
+            return i_am_next_leader
+        }
     }
+
+    false
 }
 
 fn on_view_timeout<K: KVStore, N: Network>(

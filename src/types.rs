@@ -12,7 +12,7 @@ use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::Verifier;
 use rand::seq::SliceRandom;
 use sha2::Digest;
-use crate::messages::Vote;
+use crate::messages::{Vote, NewView};
 
 pub use sha2::Sha256 as CryptoHasher;
 pub use ed25519_dalek::{
@@ -80,9 +80,9 @@ pub struct QuorumCertificate {
 
 impl QuorumCertificate {
     /// Checks if all of the signatures in the certificate are correct, and if there's the right amount of signatures:
-    /// the sum of the powers of the signers must be a quorum, and no strict subset of the signers must be a quorum.
+    /// the sum of the powers of the signers must be a quorum, and no strict subset of the signers is also a quorum.
     /// 
-    /// If the qc is a genesis qc, it is automatically correct.
+    /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
         if self.is_genesis_qc() {
             true
@@ -239,6 +239,10 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
     }
 }
 
+/// Identities of validators and their voting powers.
+/// 
+/// The validator set maintains the list of validators in ascending order of their public keys, and avails methods:
+/// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order. 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
@@ -294,12 +298,12 @@ impl ValidatorSet {
         }
     }
 
-    /// In order.
+    /// Get an iterator through validators' public keys which walks through them in ascending order.
     pub fn validators(&self) -> slice::Iter<PublicKeyBytes> {
         self.validators.iter()
     }
 
-    /// In order.
+    /// Get a vector containing each validator and its power, in ascending order of the validators' public keys.
     pub fn validators_and_powers(&self) -> Vec<([u8; 32], u64)> {
         self.validators().map(|v| (*v, *self.power(v).unwrap())).collect()
     }
@@ -320,7 +324,8 @@ impl ValidatorSet {
     }
 }
 
-/// Helps leaders incrementally form QuorumCertificates by combining votes for the same app_id, view, block, and phase.
+/// Helps leaders incrementally form QuorumCertificates by combining votes for the same app_id, view, block, and phase by replicas
+/// in a given validator set.
 pub(crate) struct VoteCollector {
     app_id: AppID,
     view: ViewNumber,
@@ -392,5 +397,45 @@ impl VoteCollector {
         }
 
         None
+    }
+}
+
+pub(crate) struct NewViewCollector {
+    validator_set: ValidatorSet,
+    validator_set_power: Power,
+    collected_from: HashSet<PublicKeyBytes>,
+    accumulated_power: Power,
+}
+
+impl NewViewCollector {
+    pub(crate) fn new(validator_set: ValidatorSet) -> NewViewCollector {
+        let validator_set_power = validator_set.total_power();
+
+        Self {
+            validator_set,
+            validator_set_power,
+            collected_from: HashSet::new(),
+            accumulated_power: 0,
+        }
+    }
+
+    /// Notes that we have collected a new view message from the specified replica in the given view. Then, returns whether
+    /// by collecting this message we have collected new view messages from a quorum of validators in this view. If the sender
+    /// is not part of the validator set, then this function does nothing and returns false.
+    pub(crate) fn collect(&mut self, sender: &PublicKeyBytes, new_view: NewView) -> bool {
+        if !self.validator_set.contains(sender) {
+            return false
+        }
+
+        if !self.collected_from.contains(sender) {
+            self.collected_from.insert(*sender);
+            self.accumulated_power += self.validator_set.power(sender).unwrap()
+        }
+
+        if self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power) {
+            true
+        } else {
+            false 
+        }
     }
 }
