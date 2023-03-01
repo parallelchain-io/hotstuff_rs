@@ -5,20 +5,20 @@
     Authors: Alice Lim
 */
 
-//! Definitions for structures messages that are sent between replicas.
+//! Definitions for structures messages that are sent between replicas. 
 
-use borsh::BorshSerialize;
+use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::{Verifier, ed25519::signature::Signature, Signer};
 
 use crate::types::*;
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum Message {
     ProgressMessage(ProgressMessage),
     SyncMessage(SyncMessage),
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressMessage {
     Proposal(Proposal),
     Nudge(Nudge), 
@@ -73,21 +73,21 @@ impl ProgressMessage {
     } 
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
     pub app_id: AppID,
     pub view: ViewNumber,
     pub block: Block,
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     pub app_id: AppID,
     pub view: ViewNumber,
     pub justify: QuorumCertificate,
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
     pub app_id: AppID,
     pub view: ViewNumber,
@@ -108,31 +108,33 @@ impl Vote {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
     pub app_id: AppID,
     pub view: ViewNumber,
     pub highest_qc: QuorumCertificate
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum SyncMessage {
     SyncRequest(SyncRequest),
     SyncResponse(SyncResponse),
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SyncRequest {
     pub highest_committed_block: Option<CryptoHash>,
     pub limit: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SyncResponse {
     pub blocks: Vec<Block>,
     pub highest_qc: QuorumCertificate, 
 }
  
+/// A wrapper around [DalekKeypair] which implements [a convenience method](ProgressMessage::vote) for creating properly
+/// signed [votes](Vote).
 pub(crate) struct Keypair(pub(crate) DalekKeypair);
 
 impl Keypair {
