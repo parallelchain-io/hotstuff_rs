@@ -12,6 +12,7 @@
 //! interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has five methods
 //! that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
+use std::collections::{VecDeque, BTreeMap};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
@@ -26,13 +27,13 @@ pub trait Network: Clone + Send {
     /// Informs the networking provider of updates to the validator set.
     fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
-    /// Send a message to all peers (including listeners).
+    /// Send a message to all peers (including listeners) without blocking.
     fn broadcast(&mut self, message: Message);
 
     /// Send a message to the specified peer without blocking.
     fn send(&mut self, peer: PublicKeyBytes, message: Message);
 
-    /// Receive a message from any peer.
+    /// Receive a message from any peer. Returns immediately with a None if no message is available now.
     fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
 }
 
@@ -77,26 +78,42 @@ pub(crate) fn start_polling<N: Network + 'static>(mut network: N, shutdown_signa
     )
 }
 
+/// A sending and receiving end for progress messages.
+/// 
+/// This type's [ViewAwareProgressMessageReceiver::recv] method only returns messages from the specified
+/// current view, and caches messages from future views for later consumption.
+/// 
+/// This helps prevents interruptions to progress when replicas' views are mostly synchronized but they 
+/// enter views at slightly different times.
 pub(crate) struct ProgressMessageStub<N: Network> {
     network: N,
     receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
+    msg_buffer: BTreeMap<ViewNumber, VecDeque<(PublicKeyBytes, ProgressMessage)>>,
 }
 
 impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn new(network: N, receiver: Receiver<(PublicKeyBytes, ProgressMessage)>) -> ProgressMessageStub<N> {
         Self {
             network,
-            receiver
+            receiver,
+            msg_buffer: BTreeMap::new(),
         }
     }
 
-    // Receive a message matching the given app id and current view.
-    pub(crate) fn recv(
-        &mut self, 
-        app_id: AppID,
-        cur_view: ViewNumber, 
-        deadline: Instant
-    ) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
+    // Receive a message matching the given app id and current view. Messages from cur_view + 1 are cached for future
+    // consumption, while messages from other views are dropped immediately.
+    pub(crate) fn recv(&mut self, app_id: AppID, cur_view: ViewNumber, deadline: Instant) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
+        // Clear buffer of messages with views lower than the current one.
+        self.msg_buffer = self.msg_buffer.split_off(&cur_view);
+
+        // Try to get buffered messages for the current view.
+        if let Some(msg_queue) = self.msg_buffer.get_mut(&cur_view) {
+            if let Some(msg) = msg_queue.pop_front() {
+                return Ok(msg);
+            }
+        }
+
+        // Try to get messages from the poller.
         while Instant::now() < deadline {
             match self.receiver.recv_timeout(deadline - Instant::now()) {
                 Ok((sender, msg)) => {
@@ -104,23 +121,39 @@ impl<N: Network> ProgressMessageStub<N> {
                         continue
                     }
 
+                    // Inform the caller that we've received a QC from the future.
                     let received_qc_from_future = match &msg {
                         ProgressMessage::Proposal(Proposal { block, .. }) => block.justify.view > cur_view,
                         ProgressMessage::Nudge(Nudge { justify, .. }) => justify.view > cur_view,
                         ProgressMessage::NewView(NewView { highest_qc, .. }) => highest_qc.view > cur_view,
                         _ => false,
                     };
-
                     if received_qc_from_future {
                         return Err(ProgressMessageReceiveError::ReceivedQCFromFuture)
-                    } else {
-                        if msg.view() == cur_view {
-                            return Ok((sender, msg))
-                        }
-                    }
+                    } 
+
+                    // Return the message if its for the current view.
+                    if msg.view() == cur_view {
+                        return Ok((sender, msg));
+                    } 
+
+                    // Cache the message if its for a future view.
+                    else if msg.view() > cur_view {
+                        let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&cur_view) {
+                            msg_queue
+                        } else {
+                            self.msg_buffer.insert(cur_view, VecDeque::new());
+                            self.msg_buffer.get_mut(&cur_view).unwrap()
+                        };
+
+                        msg_queue.push_back((sender, msg));
+                    } 
                 },
                 Err(RecvTimeoutError::Timeout) => thread::yield_now(),
-                Err(RecvTimeoutError::Disconnected) => panic!()
+
+                // Safety: the algorithm thread (the only caller of this function) shuts down before the poller thread (the
+                // sender side of this channel), so we will never be disconnected at this point.
+                Err(RecvTimeoutError::Disconnected) => panic!(),
             }
         }
 
@@ -144,6 +177,7 @@ pub(crate) enum ProgressMessageReceiveError {
     Timeout,
     ReceivedQCFromFuture,
 }
+
 pub(crate) struct SyncClientStub<N: Network> {
     network: N,
     responses: Receiver<(PublicKeyBytes, SyncResponse)>,
@@ -192,7 +226,9 @@ impl<N: Network> SyncServerStub<N> {
     pub(crate) fn recv_request(&self) -> Option<(PublicKeyBytes, SyncRequest)> {
         match self.requests.try_recv() {
             Ok((origin, request)) => Some((origin, request)),
-            Err(TryRecvError::Disconnected) => panic!("sync server thread disconnected from poller thread"),
+            // Safety: the sync server thread (the only caller of this function) shuts down before the poller thread
+            // (the sender side of this channel), so we will never be disconnected at this point. 
+            Err(TryRecvError::Disconnected) => panic!(),
             Err(TryRecvError::Empty) => None,
         }
     }

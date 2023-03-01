@@ -99,6 +99,10 @@ impl<K: KVStore> Replica<K> {
 
 impl<K: KVStore> Drop for Replica<K> {
     fn drop(&mut self) {
+        // Safety: the order of thread shutdown in this function is important, as the threads make assumptions about
+        // the validity of their channels based on this. The algorithm and sync server threads receive messages from
+        // the poller, and assumes that the poller will live longer than them. 
+
         self.algorithm_shutdown.send(()).unwrap();
         self.algorithm.take().unwrap().join().unwrap();
 
