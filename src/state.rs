@@ -654,11 +654,12 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         }
 
         // Get speculative blocks.
-        res.extend(self.chain_from_newest_block_to_highest_committed_block_or_beginning());
+        res.extend(self.chain_from_newest_block_to_highest_committed_block_or_beginning().into_iter().rev());
 
         res
     }
 
+    // The returned chain goes from blocks of higher height (newest block) to blocks of lower height.
     fn chain_from_newest_block_to_highest_committed_block_or_beginning(&self) -> Vec<Block> {
         let mut res = Vec::new();
         if let Some(newest_block) = self.newest_block(){

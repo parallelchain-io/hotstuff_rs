@@ -415,7 +415,7 @@ fn on_receive_new_view<K: KVStore>(
 
         block_tree.write(wb);
         
-        if new_view_collector.collect(origin, new_view) {
+        if new_view_collector.collect(origin) {
             let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set()); 
             let i_am_next_leader = me.public() == next_leader;
             

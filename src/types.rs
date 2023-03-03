@@ -12,7 +12,7 @@ use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::Verifier;
 use rand::seq::SliceRandom;
 use sha2::Digest;
-use crate::messages::{Vote, NewView};
+use crate::messages::Vote;
 
 pub use sha2::Sha256 as CryptoHasher;
 pub use ed25519_dalek::{
@@ -422,7 +422,7 @@ impl NewViewCollector {
     /// Notes that we have collected a new view message from the specified replica in the given view. Then, returns whether
     /// by collecting this message we have collected new view messages from a quorum of validators in this view. If the sender
     /// is not part of the validator set, then this function does nothing and returns false.
-    pub(crate) fn collect(&mut self, sender: &PublicKeyBytes, new_view: NewView) -> bool {
+    pub(crate) fn collect(&mut self, sender: &PublicKeyBytes) -> bool {
         if !self.validator_set.contains(sender) {
             return false
         }
