@@ -74,7 +74,7 @@ impl<K: KVStore> Replica<K> {
         let sync_client_stub = SyncClientStub::new(network, sync_responses);
 
         let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
-        let sync_server = start_sync_server(BlockTreeCamera::new(kv_store.clone()), sync_server_stub, sync_server_shutdown_receiver);
+        let sync_server = start_sync_server(BlockTreeCamera::new(kv_store.clone()), sync_server_stub, sync_server_shutdown_receiver, pacemaker.sync_request_limit());
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
         let algorithm = start_algorithm(app, messages::Keypair::new(keypair), block_tree, pacemaker, pm_stub, sync_client_stub, algorithm_shutdown_receiver);

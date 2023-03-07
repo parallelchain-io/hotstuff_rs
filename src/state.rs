@@ -633,34 +633,44 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    pub(crate) fn blocks_from_tail_to_newest_block(&self, tail: Option<&CryptoHash>, limit: u32) -> Vec<Block> {
+    /// Get a chain of blocks starting from the specified tail block and going towards the newest block, up until the limit.
+    /// 
+    /// If tail is None, then the chain starts from genesis instead.
+    pub(crate) fn blocks_from_height_to_newest(&self, height: BlockHeight, limit: u32) -> Vec<Block> {
         let mut res = Vec::with_capacity(limit as usize);
 
-        // Get committed blocks, extending from tail.
-        if let Some(tail) = tail {
-            if let Some(tail_block) = self.block(tail) {
-                res.push(tail_block);
-    
-                while res.len() < limit as usize {
-                    let child = match self.block_at_height(res.last().unwrap().height + 1) {
-                        Some(block_hash) => self.block(&block_hash).unwrap(),
-                        None => break,
-                    };
-                    res.push(child);
-                }
+        // Get committed blocks starting from the specified height.
+        let mut cursor = height;
+        loop {
+            if let Some(block_hash) = self.block_at_height(cursor) {
+                res.push(self.block(&block_hash).unwrap());
+                cursor += 1;
             } else {
-                return Vec::new()
+                break
+            }
+
+            if res.len() == limit as usize {
+                return res
             }
         }
+        
 
         // Get speculative blocks.
-        res.extend(self.chain_from_newest_block_to_highest_committed_block_or_beginning().into_iter().rev());
+        let speculative_blocks = self.blocks_from_newest_to_committed().into_iter().rev();
+        for block in speculative_blocks {
+            res.push(block);
+
+            if res.len() == limit as usize {
+                break
+            }
+        }
 
         res
     }
 
+    // Get a chain of blocks from the newest block up to (but not including) the highest committed block, or genesis.
     // The returned chain goes from blocks of higher height (newest block) to blocks of lower height.
-    fn chain_from_newest_block_to_highest_committed_block_or_beginning(&self) -> Vec<Block> {
+    fn blocks_from_newest_to_committed(&self) -> Vec<Block> {
         let mut res = Vec::new();
         if let Some(newest_block) = self.newest_block(){
             let mut cursor = newest_block;

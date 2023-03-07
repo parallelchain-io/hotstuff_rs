@@ -15,11 +15,11 @@
 //! 
 //! The sync protocol is a request-response protocol that proceeds as follows:
 //! 1. The lagging replica selects a random peer from its current validator set (the "sync replica").
-//! 2. It then sends the sync replica a [sync request](crate::messages::SyncRequest) telling them the highest committed 
-//!    block that it knows (if it knows any committed block).
-//! 3. The sync replica responds with a [sync response](crate::messages::SyncResponse) containing the highest quorum
-//!    certificate it knows, and a sequence of blocks extending from the lagging replica's highest committed block 
-//!    (if the request specifies it) or the beginning of the block tree (otherwise).
+//! 2. It then sends the sync replica a [sync request](crate::messages::SyncRequest) asking them to start syncing from
+//!    a start height: the replica's highest committed block's height + 1 (or 0, if the replica hasn't committed any 
+//!    blocks). It also specifies how many blocks at most it wants to receive.
+//! 3. The sync replica responds with a [sync response](crate::messages::SyncResponse) containing a chain starting from
+//!    the request's start height and of length at most the maximum of the sync replica's limit and the request's limit.
 //! 4. Upon receiving the response, the lagging replica checks how many blocks are included in it:
 //!     - If the response contains no blocks, then the replica returns to executing the progress protocol. 
 //!     - If it does contain blocks, then the replica validates the included blocks and quorum certificate and inserts 
@@ -27,6 +27,7 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
+use std::cmp::max;
 use crate::logging::debug;
 use crate::messages::{SyncRequest, SyncResponse};
 use crate::state::{BlockTreeCamera, KVStore};
@@ -36,6 +37,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
     mut sync_stub: SyncServerStub<N>,
     shutdown_signal: Receiver<()>,
+    server_sync_request_limit: u32,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         loop {
@@ -45,11 +47,11 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
                 Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
             }
 
-            if let Some((origin, SyncRequest { highest_committed_block, limit })) = sync_stub.recv_request() {
+            if let Some((origin, SyncRequest { start_height, limit })) = sync_stub.recv_request() {
                 debug::received_sync_request(&origin);
                 
                 let bt_snapshot = block_tree.snapshot();
-                let blocks = bt_snapshot.blocks_from_tail_to_newest_block(highest_committed_block.as_ref(), limit);
+                let blocks = bt_snapshot.blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
                 let highest_qc = bt_snapshot.highest_qc();
 
                 sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });

@@ -123,7 +123,7 @@ pub enum SyncMessage {
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SyncRequest {
-    pub highest_committed_block: Option<CryptoHash>,
+    pub start_height: BlockHeight,
     pub limit: u32,
 }
 

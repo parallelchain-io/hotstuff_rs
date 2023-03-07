@@ -465,7 +465,7 @@ fn sync_with<K: KVStore, N: Network>(
 
     loop {
         let request = SyncRequest {
-            highest_committed_block: block_tree.highest_committed_block(),
+            start_height: if let Some(height) = block_tree.highest_committed_block_height() { height + 1 } else { 0 },
             limit: pacemaker.sync_request_limit(),
         };
         sync_stub.send_request(*peer, request);
@@ -475,9 +475,15 @@ fn sync_with<K: KVStore, N: Network>(
                 return
             }
             for block in response.blocks {
-                if !block.is_correct(&block_tree.committed_validator_set())
-                    || !block_tree.safe_block(&block) {
+                if !block.is_correct(&block_tree.committed_validator_set()) {
                     return
+                }
+
+                if !block_tree.safe_block(&block) {
+                    // We continue here instead of returning because one expected reason why a block in the response may fail the safe
+                    // block predicate may be that it has already been included in the block tree. This doesn't discount the possibility
+                    // that one of its descendants may be new. 
+                    continue;
                 }
 
                 let parent_block = if block.justify.is_genesis_qc() {
