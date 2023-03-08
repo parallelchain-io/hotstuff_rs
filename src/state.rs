@@ -24,7 +24,7 @@
 //! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples that sit
 //! at a particular key path or prefix in the library user's chosen KV store. These variables are:
 //! - **Blocks** ([CryptoHash] -> [Block]).
-//! - **Block Height to Block** ([BlockHeight] -> [CryptoHash]): a mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.
+//! - **Block at Height** ([BlockHeight] -> [CryptoHash]): a mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.
 //! - **Block to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
 //! - **Committed App State** ([Vec<u8>] -> [Vec<u8>]).
 //! - **Pending App State Updates** ([CryptoHash] -> [AppStateUpdates]).
@@ -150,7 +150,7 @@ impl<K: KVStore> BlockTree<K> {
 
         let mut siblings = self.children(&block.justify.block).unwrap_or(ChildrenList::new());
         siblings.push(block.hash);
-        wb.set_children_list(&block.justify.block, &siblings);
+        wb.set_children(&block.justify.block, &siblings);
 
         debug::inserted_block(&block.hash, block.height);
 
@@ -265,6 +265,9 @@ impl<K: KVStore> BlockTree<K> {
         // Work steps:
         info::committing(block, block_height);
 
+        // Set block at height. 
+        wb.set_block_at_height(block_height, block);
+
         // Delete all of block's siblings.
         self.delete_siblings(wb, block);
 
@@ -309,7 +312,7 @@ impl<K: KVStore> BlockTree<K> {
             self.delete_branch(wb, sibling);
         }
 
-        wb.set_children_list(&parent_or_genesis, &vec![*block]);
+        wb.set_children(&parent_or_genesis, &vec![*block]);
     }
 
     fn delete_branch(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, tail: &CryptoHash) {
@@ -319,7 +322,7 @@ impl<K: KVStore> BlockTree<K> {
             }
         }
 
-        wb.delete_children_list(tail);
+        wb.delete_children(tail);
         wb.delete_pending_app_state_updates(tail);
         wb.delete_pending_validator_set_updates(tail);
     }
@@ -514,22 +517,20 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         }
     }
 
-    /* ↓↓↓ Block Height to Block ↓↓↓ */
+    /* ↓↓↓ Block at Height ↓↓↓ */
 
-    pub fn set_block_height_to_block(&mut self, height: BlockHeight, block: &CryptoHash) {
-        let block_prefix = combine(&BLOCKS, block);
-
-        self.0.set(&combine(&block_prefix, &BLOCK_HEIGHT_TO_HASH), &height.try_to_vec().unwrap());
+    pub fn set_block_at_height(&mut self, height: BlockHeight, block: &CryptoHash) {
+        self.0.set(&combine(&BLOCK_AT_HEIGHT, &height.try_to_vec().unwrap()), &block.try_to_vec().unwrap());
     } 
 
     /* ↓↓↓ Block to Children ↓↓↓ */
 
-    pub fn set_children_list(&mut self, block: &CryptoHash, children: &ChildrenList) {
-        self.0.set(&combine(&BLOCK_HASH_TO_CHILDREN, block), &children.try_to_vec().unwrap());
+    pub fn set_children(&mut self, block: &CryptoHash, children: &ChildrenList) {
+        self.0.set(&combine(&BLOCK_TO_CHILDREN, block), &children.try_to_vec().unwrap());
     }
 
-    pub fn delete_children_list(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(&BLOCK_HASH_TO_CHILDREN, block));
+    pub fn delete_children(&mut self, block: &CryptoHash) {
+        self.0.delete(&combine(&BLOCK_TO_CHILDREN, block));
     }
 
     /* ↓↓↓ Committed App State ↓↓↓ */ 
@@ -798,7 +799,7 @@ pub trait KVGet {
     /* ↓↓↓ Block Height to Block ↓↓↓ */
 
     fn block_at_height(&self, height: BlockHeight) -> Option<CryptoHash> {
-        let block_hash_key = combine(&BLOCK_HEIGHT_TO_HASH, &height.to_le_bytes());
+        let block_hash_key = combine(&BLOCK_AT_HEIGHT, &height.to_le_bytes());
         let block_hash = {
             let bs = self.get(&block_hash_key)?;
             CryptoHash::deserialize(&mut bs.as_slice()).unwrap()
@@ -810,7 +811,7 @@ pub trait KVGet {
     /* ↓↓↓ Block to Children ↓↓↓ */
 
     fn children(&self, block: &CryptoHash) -> Option<ChildrenList> {
-        Some(ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_HASH_TO_CHILDREN, block))?).unwrap())
+        Some(ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_TO_CHILDREN, block))?).unwrap())
     }
 
     /* ↓↓↓ Committed App State ↓↓↓ */
@@ -872,8 +873,8 @@ pub trait KVGet {
 mod paths {
     // State variables
     pub(super) const BLOCKS: [u8; 1] = [0];
-    pub(super) const BLOCK_HEIGHT_TO_HASH: [u8; 1] = [1]; 
-    pub(super) const BLOCK_HASH_TO_CHILDREN: [u8; 1] = [2];
+    pub(super) const BLOCK_AT_HEIGHT: [u8; 1] = [1]; 
+    pub(super) const BLOCK_TO_CHILDREN: [u8; 1] = [2];
     pub(super) const COMMITTED_APP_STATE: [u8; 1] = [3];
     pub(super) const PENDING_APP_STATE_UPDATES: [u8; 1] = [4]; 
     pub(super) const COMMITTED_VALIDATOR_SET: [u8; 1] = [5];
