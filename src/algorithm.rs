@@ -487,9 +487,9 @@ fn sync_with<K: KVStore, N: Network>(
                 }
 
                 let parent_block = if block.justify.is_genesis_qc() {
-                    Some(&block.justify.block)
-                } else {
                     None
+                } else {
+                    Some(&block.justify.block)
                 };
                 let validate_block_request = ValidateBlockRequest::new(
                     &block,
