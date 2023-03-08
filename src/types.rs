@@ -220,21 +220,21 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
         self.deletes.insert(key);
     }
 
-    pub(crate) fn get_insert(&self, key: &K) -> Option<&V> {
+    pub fn get_insert(&self, key: &K) -> Option<&V> {
         self.inserts.get(key)
     } 
 
-    pub(crate) fn contains_delete(&self, key: &K) -> bool {
+    pub fn contains_delete(&self, key: &K) -> bool {
         self.deletes.contains(key)
     }
 
     /// Get an iterator over all of the key-value pairs inserted by this ChangeSet.
-    pub(crate) fn inserts(&self) -> hash_map::Iter<K, V> {
+    pub fn inserts(&self) -> hash_map::Iter<K, V> {
         self.inserts.iter()
     } 
 
     /// Get an iterator over all of the keys that are deleted by this ChangeSet.
-    pub(crate) fn deletions(&self) -> hash_set::Iter<K> {
+    pub fn deletions(&self) -> hash_set::Iter<K> {
         self.deletes.iter()
     }
 }
