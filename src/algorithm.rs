@@ -471,19 +471,14 @@ fn sync_with<K: KVStore, N: Network>(
         sync_stub.send_request(*peer, request);
 
         if let Some(response) = sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout()) {
-            if response.blocks.len() == 0 {
-                return
+            let new_blocks: Vec<Block> = response.blocks.into_iter().skip_while(|block| block_tree.contains(&block.hash)).collect();
+            if new_blocks.len() == 0 {
+                return;
             }
-            for block in response.blocks {
-                if !block.is_correct(&block_tree.committed_validator_set()) {
-                    return
-                }
 
-                if !block_tree.safe_block(&block) {
-                    // We continue here instead of returning because one expected reason why a block in the response may fail the safe
-                    // block predicate may be that it has already been included in the block tree. This doesn't discount the possibility
-                    // that one of its descendants may be new. 
-                    continue;
+            for block in new_blocks {
+                if !block.is_correct(&block_tree.committed_validator_set()) || !block_tree.safe_block(&block) {
+                    return
                 }
 
                 let parent_block = if block.justify.is_genesis_qc() {
