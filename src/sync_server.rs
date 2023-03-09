@@ -20,10 +20,10 @@
 //!    blocks). It also specifies how many blocks at most it wants to receive.
 //! 3. The sync replica responds with a [sync response](crate::messages::SyncResponse) containing a chain starting from
 //!    the request's start height and of length at most the maximum of the sync replica's limit and the request's limit.
-//! 4. Upon receiving the response, the lagging replica checks how many blocks are included in it:
-//!     - If the response contains no blocks, then the replica returns to executing the progress protocol. 
-//!     - If it does contain blocks, then the replica validates the included blocks and quorum certificate and inserts 
-//!       them into its block tree, and then jumps back to step 2.
+//! 4. Upon receiving the response, the lagging replica checks the blocks that are included in it:
+//!     - If the response contains no new blocks, then the replica returns to executing the progress protocol. 
+//!     - If it does contain new blocks, then the replica validates the blocks and quorum certificate and inserts them
+//!       into its block tree, and then jumps back to step 2.
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
