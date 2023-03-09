@@ -504,7 +504,7 @@ fn sync_with<K: KVStore, N: Network>(
                 }
             }
 
-            if response.highest_qc.view > block_tree.highest_qc().view {
+            if block_tree.safe_qc(&response.highest_qc) && response.highest_qc.view > block_tree.highest_qc().view {
                 block_tree.set_highest_qc(&response.highest_qc)
             }
         }
