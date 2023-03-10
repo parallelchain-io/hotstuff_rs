@@ -79,53 +79,44 @@ pub struct QuorumCertificate {
 }
 
 impl QuorumCertificate {
-    /// Checks if all of the signatures in the certificate are correct, and if there's the right amount of signatures:
-    /// the sum of the powers of the signers must be a quorum, and no strict subset of the signers is also a quorum.
+    /// Checks if all of the signatures in the certificate are correct, and if there's the set of signatures forms a quorum.
     /// 
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
         if self.is_genesis_qc() {
             true
         } else {
-            // qc contains a too large signature set.
+            // Check whether the size of the signature set is the same as the size of the validator set.
             if self.signatures.len() != validator_set.len() {
                 return false
             }
 
-            let quorum = Self::quorum(validator_set.total_power());
+            // Check whether every signature is correct and tally up their powers.
             let mut signature_set_power = 0;
-            let mut is_already_quorum = false; 
             for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.validators_and_powers()) {
                 if let Some(signature) = signature {
                     let signer = PublicKey::from_bytes(&signer).unwrap();
                     if let Ok(signature) = Signature::from_bytes(signature) {
                         if signer.verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
                             signature_set_power += power;
-                            
-                            // a strict subset of the signatures is already a quorum.
-                            if is_already_quorum {
-                                return false 
-                            }                        
-
-                            if signature_set_power >= quorum {
-                                is_already_quorum = true;
-                            }
-                        } 
-
-                        // qc contains incorrect signature.
-                        else {
+                        } else {
+                            // qc contains incorrect signature.
                             return false
                         }
-                    } 
-                    
-                    // qc contains incorrect signature.
-                    else {
+                    } else {
+                        // qc contains incorrect signature.
                         return false
-                    }
+                    } 
                 }
             }
 
-            is_already_quorum
+            // Check if the signatures form a quorum.
+            let quorum = Self::quorum(validator_set.total_power());
+            if signature_set_power >= quorum {
+                true
+            } else {
+                false
+            }
         }
     }
 
