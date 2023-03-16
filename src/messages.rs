@@ -27,9 +27,9 @@ pub enum ProgressMessage {
 }
 
 impl ProgressMessage {
-    pub fn proposal(app_id: AppID, view: ViewNumber, block: Block) -> ProgressMessage {
+    pub fn proposal(chain_id: ChainID, view: ViewNumber, block: Block) -> ProgressMessage {
         ProgressMessage::Proposal(Proposal {
-            app_id,
+            chain_id,
             view,
             block,
         }) 
@@ -37,12 +37,12 @@ impl ProgressMessage {
 
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
-    pub fn nudge(app_id: AppID, view: ViewNumber, justify: QuorumCertificate) -> ProgressMessage {
+    pub fn nudge(chain_id: ChainID, view: ViewNumber, justify: QuorumCertificate) -> ProgressMessage {
         match justify.phase {
             Phase::Generic | Phase::Commit(_) => panic!(),
             Phase::Prepare | Phase::Precommit(_) => {
                 ProgressMessage::Nudge(Nudge {
-                    app_id,
+                    chain_id,
                     view,
                     justify
                 })
@@ -50,16 +50,16 @@ impl ProgressMessage {
         }
     }
 
-    pub fn new_view(app_id: AppID, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {
-        ProgressMessage::NewView(NewView { app_id, view, highest_qc })
+    pub fn new_view(chain_id: ChainID, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {
+        ProgressMessage::NewView(NewView { chain_id, view, highest_qc })
     }
 
-    pub fn app_id(&self) -> AppID {
+    pub fn chain_id(&self) -> ChainID {
         match self {
-            ProgressMessage::Proposal(Proposal { app_id, .. }) => *app_id,
-            ProgressMessage::Nudge(Nudge { app_id, .. }) => *app_id,
-            ProgressMessage::Vote(Vote { app_id, .. })  => *app_id,
-            ProgressMessage::NewView(NewView { app_id, .. }) => *app_id,
+            ProgressMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
+            ProgressMessage::Nudge(Nudge { chain_id, .. }) => *chain_id,
+            ProgressMessage::Vote(Vote { chain_id, .. })  => *chain_id,
+            ProgressMessage::NewView(NewView { chain_id, .. }) => *chain_id,
         }
     }
 
@@ -75,21 +75,21 @@ impl ProgressMessage {
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
-    pub app_id: AppID,
+    pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: Block,
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
-    pub app_id: AppID,
+    pub chain_id: ChainID,
     pub view: ViewNumber,
     pub justify: QuorumCertificate,
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
-    pub app_id: AppID,
+    pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: CryptoHash,
     pub phase: Phase,
@@ -101,7 +101,7 @@ impl Vote {
     /// pk must be a valid public key.
     pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
         if let Ok(signature) = Signature::from_bytes(&self.signature) {
-            PublicKey::from_bytes(pk).unwrap().verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok()
+            PublicKey::from_bytes(pk).unwrap().verify(&(self.chain_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok()
         } else {
             false
         }
@@ -110,7 +110,7 @@ impl Vote {
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
-    pub app_id: AppID,
+    pub chain_id: ChainID,
     pub view: ViewNumber,
     pub highest_qc: QuorumCertificate
 }
@@ -142,9 +142,9 @@ impl Keypair {
         Keypair(keypair)
     } 
 
-    pub(crate) fn vote(&self, app_id: AppID, view: ViewNumber, block: CryptoHash, phase: Phase) -> ProgressMessage {
-        let signature = self.0.sign(&(app_id, view, block, phase).try_to_vec().unwrap()).to_bytes();
-        ProgressMessage::Vote(Vote { app_id, view, block, phase, signature })
+    pub(crate) fn vote(&self, chain_id: ChainID, view: ViewNumber, block: CryptoHash, phase: Phase) -> ProgressMessage {
+        let signature = self.0.sign(&(chain_id, view, block, phase).try_to_vec().unwrap()).to_bytes();
+        ProgressMessage::Vote(Vote { chain_id, view, block, phase, signature })
     } 
 
     pub(crate) fn public(&self) -> PublicKeyBytes {

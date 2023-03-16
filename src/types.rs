@@ -21,7 +21,7 @@ pub use ed25519_dalek::{
     Signature,
 };
 
-pub type AppID = u64;
+pub type ChainID = u64;
 pub type BlockHeight = u64;
 pub type ChildrenList = Vec<CryptoHash>;
 pub type CryptoHash = [u8; 32];
@@ -71,7 +71,7 @@ impl Block {
 
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct QuorumCertificate {
-    pub app_id: AppID,
+    pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: CryptoHash,
     pub phase: Phase,
@@ -97,7 +97,7 @@ impl QuorumCertificate {
                 if let Some(signature) = signature {
                     let signer = PublicKey::from_bytes(&signer).unwrap();
                     if let Ok(signature) = Signature::from_bytes(signature) {
-                        if signer.verify(&(self.app_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
+                        if signer.verify(&(self.chain_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
                             signature_set_power += power;
                         } else {
                             // qc contains incorrect signature.
@@ -122,7 +122,7 @@ impl QuorumCertificate {
 
     pub const fn genesis_qc() -> QuorumCertificate {
         QuorumCertificate { 
-            app_id: 0,
+            chain_id: 0,
             view: 0,
             block: [0u8; 32],
             phase: Phase::Generic,
@@ -315,10 +315,10 @@ impl ValidatorSet {
     }
 }
 
-/// Helps leaders incrementally form QuorumCertificates by combining votes for the same app_id, view, block, and phase by replicas
+/// Helps leaders incrementally form QuorumCertificates by combining votes for the same chain_id, view, block, and phase by replicas
 /// in a given validator set.
 pub(crate) struct VoteCollector {
-    app_id: AppID,
+    chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
     validator_set_power: Power,
@@ -326,11 +326,11 @@ pub(crate) struct VoteCollector {
 }
 
 impl VoteCollector {
-    pub(crate) fn new(app_id: AppID, view: ViewNumber, validator_set: ValidatorSet) -> VoteCollector {
+    pub(crate) fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> VoteCollector {
         let total_validator_set_power = validator_set.total_power();
 
         Self {
-            app_id,
+            chain_id,
             view,
             validator_set,
             validator_set_power: total_validator_set_power,
@@ -349,9 +349,9 @@ impl VoteCollector {
     // vote.is_correct(signer)
     //
     // # Panics
-    // vote.app_id and vote.view must be the same as the app_id and the view used to create this VoteCollector.
+    // vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
     pub(crate) fn collect(&mut self, signer: &PublicKeyBytes, vote: Vote) -> Option<QuorumCertificate> {
-        if self.app_id != vote.app_id || self.view != vote.view {
+        if self.chain_id != vote.chain_id || self.view != vote.view {
             panic!()
         }
 
@@ -374,7 +374,7 @@ impl VoteCollector {
                 if *power >= QuorumCertificate::quorum(self.validator_set_power) {
                     let (signatures, _) = self.signature_sets.remove(&(vote.block, vote.phase)).unwrap();
                     let collected_qc = QuorumCertificate {
-                        app_id: self.app_id,
+                        chain_id: self.chain_id,
                         view: self.view,
                         block: vote.block,
                         phase: vote.phase,

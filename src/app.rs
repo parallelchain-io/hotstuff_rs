@@ -11,7 +11,7 @@ use crate::types::*;
 use crate::state::{AppBlockTreeView, KVStore};
 
 pub trait App<K: KVStore>: Send {
-    fn id(&self) -> AppID;
+    fn chain_id(&self) -> ChainID;
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
     fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
 }

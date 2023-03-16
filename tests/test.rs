@@ -33,7 +33,7 @@ use hotstuff_rs::app::{App, ProduceBlockRequest, ValidateBlockRequest, ProduceBl
 use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::Replica;
 use hotstuff_rs::state::{KVStore, KVGet, WriteBatch};
-use hotstuff_rs::types::{PublicKeyBytes, ValidatorSetUpdates, AppID, AppStateUpdates, Power, CryptoHash, ValidatorSet};
+use hotstuff_rs::types::{PublicKeyBytes, ValidatorSetUpdates, ChainID, AppStateUpdates, Power, CryptoHash, ValidatorSet};
 use hotstuff_rs::messages::*;
 use hotstuff_rs::networking::Network;
 
@@ -267,7 +267,7 @@ enum NumberAppTransaction {
 }
 
 impl App<MemDB> for NumberApp {
-    fn id(&self) -> AppID {
+    fn chain_id(&self) -> ChainID {
         0
     }
 

@@ -121,10 +121,10 @@ fn execute_view<K: KVStore, N: Network>(
     }
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.     
-    let mut vote_collector = VoteCollector::new(app.id(), view, cur_validators.clone());
+    let mut vote_collector = VoteCollector::new(app.chain_id(), view, cur_validators.clone());
     let mut new_view_collector = NewViewCollector::new(cur_validators.clone());
     while Instant::now() < view_deadline { 
-        match pm_stub.recv(app.id(), view, view_deadline) {
+        match pm_stub.recv(app.chain_id(), view, view_deadline) {
             Ok((origin, msg)) => match msg {
                 ProgressMessage::Proposal(proposal) => if origin == cur_leader {
                     let (voted, i_am_next_leader) = on_receive_proposal(&origin, &proposal, &me, view, &mut block_tree, app, pacemaker, pm_stub, &mut vote_collector, &mut new_view_collector);
@@ -202,7 +202,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             
             let proposed_block_hash = block.hash;
             let proposed_block_height = block.height;
-            let proposal = ProgressMessage::proposal(app.id(), cur_view, block);
+            let proposal = ProgressMessage::proposal(app.chain_id(), cur_view, block);
 
             pm_stub.broadcast(proposal);
             info::proposed(cur_view, &proposed_block_hash, proposed_block_height);
@@ -213,7 +213,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             let nudged_block_hash = highest_qc.block;
 
             let highest_qc_phase = highest_qc.phase;
-            let nudge = ProgressMessage::nudge(app.id(), cur_view, highest_qc);
+            let nudge = ProgressMessage::nudge(app.chain_id(), cur_view, highest_qc);
 
             pm_stub.broadcast(nudge);
             info::nudged(cur_view, &nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), highest_qc_phase);
@@ -261,7 +261,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         let validator_set_updates_because_of_commit = block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref()); 
         if let Some(updates) = validator_set_updates_because_of_commit {
             pm_stub.update_validator_set(updates);
-            *vote_collector = VoteCollector::new(app.id(), cur_view, block_tree.committed_validator_set());
+            *vote_collector = VoteCollector::new(app.chain_id(), cur_view, block_tree.committed_validator_set());
             *new_view_collector = NewViewCollector::new(block_tree.committed_validator_set());
         }
 
@@ -269,7 +269,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
         if i_am_validator {
             let vote_phase = if validator_set_updates.is_some() { Phase::Prepare } else { Phase::Generic };
-            let vote = me.vote(app.id(), cur_view, proposal.block.hash, vote_phase);
+            let vote = me.vote(app.chain_id(), cur_view, proposal.block.hash, vote_phase);
 
             pm_stub.send(next_leader, vote.clone());
             info::voted(cur_view, &proposal.block.hash, proposal.block.height, vote_phase);
@@ -329,7 +329,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     };
     block_tree.write(wb);
 
-    let vote = me.vote(app.id(), cur_view, nudge.justify.block, next_phase);
+    let vote = me.vote(app.chain_id(), cur_view, nudge.justify.block, next_phase);
 
     let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
@@ -435,7 +435,7 @@ fn on_view_timeout<K: KVStore, N: Network>(
 ) {
     let highest_qc = block_tree.highest_qc();
     info::view_timed_out(cur_view, &highest_qc.block, highest_qc.phase);
-    let new_view = ProgressMessage::new_view(app.id(), cur_view, block_tree.highest_qc());
+    let new_view = ProgressMessage::new_view(app.chain_id(), cur_view, block_tree.highest_qc());
 
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
 

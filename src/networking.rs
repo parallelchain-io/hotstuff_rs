@@ -17,7 +17,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, AppID, ValidatorSetUpdates};
+use crate::types::{PublicKeyBytes, ViewNumber, ValidatorSet, ChainID, ValidatorSetUpdates};
 use crate::messages::*;
 
 pub trait Network: Clone + Send {
@@ -100,9 +100,9 @@ impl<N: Network> ProgressMessageStub<N> {
         }
     }
 
-    // Receive a message matching the given app id and current view. Messages from cur_view + 1 are cached for future
+    // Receive a message matching the given chain id and current view. Messages from cur_view + 1 are cached for future
     // consumption, while messages from other views are dropped immediately.
-    pub(crate) fn recv(&mut self, app_id: AppID, cur_view: ViewNumber, deadline: Instant) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
+    pub(crate) fn recv(&mut self, chain_id: ChainID, cur_view: ViewNumber, deadline: Instant) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
         // Clear buffer of messages with views lower than the current one.
         self.msg_buffer = self.msg_buffer.split_off(&cur_view);
 
@@ -117,7 +117,7 @@ impl<N: Network> ProgressMessageStub<N> {
         while Instant::now() < deadline {
             match self.receiver.recv_timeout(deadline - Instant::now()) {
                 Ok((sender, msg)) => {
-                    if msg.app_id() != app_id {
+                    if msg.chain_id() != chain_id {
                         continue
                     }
 
