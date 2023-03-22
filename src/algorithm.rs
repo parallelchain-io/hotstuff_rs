@@ -357,28 +357,36 @@ fn on_receive_vote<K: KVStore>(
 
     let highest_qc_updated = if vote.is_correct(signer) {
         if let Some(new_qc) = votes.collect(signer, vote) {
-            debug::collected_qc(&new_qc.block, new_qc.phase);
+            if block_tree.safe_qc(&new_qc) {
+                debug::collected_qc(&new_qc.block, new_qc.phase);
 
-            let mut wb = BlockTreeWriteBatch::new();
-            if let Phase::Precommit(prepare_qc_view) = new_qc.phase {
-                if prepare_qc_view > block_tree.locked_view() {
-                    wb.set_locked_view(prepare_qc_view)
+                let mut wb = BlockTreeWriteBatch::new();
+                if let Phase::Precommit(prepare_qc_view) = new_qc.phase {
+                    if prepare_qc_view > block_tree.locked_view() {
+                        wb.set_locked_view(prepare_qc_view)
+                    }
                 }
-            }
 
-            let highest_qc_updated = if new_qc.view > block_tree.highest_qc().view {
-                wb.set_highest_qc(&new_qc);
-                true
+                let highest_qc_updated = if new_qc.view > block_tree.highest_qc().view {
+                    wb.set_highest_qc(&new_qc);
+                    true
+                } else {
+                    false
+                };
+                block_tree.write(wb);
+
+                highest_qc_updated
+
             } else {
+                // The newly-formed QC is not safe (e.g., its pointing to a block this replica doesn't know).
                 false
-            };
-            block_tree.write(wb);
-
-            highest_qc_updated
+            }
         } else {
+            // The vote is not enough to form a new QC.
             false
         }
     } else {
+        // The vote is not signed correctly.
         false
     };
 
@@ -400,7 +408,9 @@ fn on_receive_new_view<K: KVStore>(
 ) -> bool {
     debug::received_new_view(&origin, new_view.view, &new_view.highest_qc.block, new_view.highest_qc.phase);
 
-    if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) {
+    if new_view.highest_qc.is_correct(&block_tree.committed_validator_set()) 
+        && block_tree.safe_qc(&new_view.highest_qc) {
+
         let mut wb = BlockTreeWriteBatch::new();
 
         if let Phase::Precommit(prepare_qc_view) = new_view.highest_qc.phase {

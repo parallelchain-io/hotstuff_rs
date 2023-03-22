@@ -90,11 +90,11 @@ impl<K: KVStore> BlockTree<K> {
     /* ↓↓↓ Methods for growing the Block Tree ↓↓↓ */
 
     /// Returns whether a block can be safely inserted. For this, it is necessary that:
-    /// 1. self.qc_can_be_inserted(&block.justify).
+    /// 1. self.safe_qc(&block.justify).
     /// 2. No block with the same block hash is already in the block tree. 
     /// 3. Its qc's must be either a generic qc or a commit qc.
     ///
-    /// This function evaluates [Self::qc_can_be_inserted], then checks 2 and 3.
+    /// This function evaluates [Self::safe_qc], then checks 2 and 3.
     ///
     /// # Precondition
     /// [Block::is_correct]
