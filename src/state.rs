@@ -119,8 +119,8 @@ impl<K: KVStore> BlockTree<K> {
     pub fn safe_qc(&self, qc: &QuorumCertificate) -> bool {
         /* 1 */ (self.contains(&qc.block) || qc.is_genesis_qc()) &&
         /* 2 */ qc.view >= self.locked_view() &&
-        /* 3 */ ((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit()) && self.pending_validator_set_updates(&qc.block).is_some()) ||
-        /* 4 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none())
+        /* 3 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit()) && self.pending_validator_set_updates(&qc.block).is_some()) ||
+        /* 4 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none()))
     }
 
     /// Insert a block, causing all of the necessary state changes, including possibly block commit, to happen.
