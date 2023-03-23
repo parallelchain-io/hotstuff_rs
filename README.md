@@ -35,7 +35,7 @@ properties that HotStuff-rs has are:
 If you're trying to learn about HotStuff-rs by reading the source code or Cargo docs, we recommend starting from
 the [replica](replica) module. This is the entry-point of user code into this library.
 
-## Contributing
+## Opening an issue
 
 Open an issue in GitHub if you:
 1. Have a feature request / feature idea,
