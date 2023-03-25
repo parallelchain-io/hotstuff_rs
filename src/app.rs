@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab 
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-    
-    Authors: Alice Lim
 */
 
 //! The [App] trait, HotStuff-rs' interface into the business logic of users' applications.

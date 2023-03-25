@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab 
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-    
-    Authors: Alice Lim
 */
 
 //! Definitions for structures messages that are sent between replicas. 

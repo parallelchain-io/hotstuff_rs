@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab 
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-    
-    Authors: Alice Lim
 */
 
 //! A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 

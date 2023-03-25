@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab 
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0.
-    
-    Authors: Alice Lim
 */
 
 //! [Trait definition](Pacemaker) for pacemakers: user-provided types that determine the 'liveness' behavior of replicas.

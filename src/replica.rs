@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab 
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-    
-    Authors: Alice Lim
 */
 
 //! Functions that [initialize](Replica::initialize) and [start](Replica::start) a replica, as well as [the type](Replica) which
