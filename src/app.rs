@@ -12,9 +12,13 @@
 //!
 //! The App trait has three methods.
 //!
-//! The two most important ones--[App::produce_block] and [App::validate_block]--take in a request and return a response:
+//! The two most important ones--[App::produce_block] and [App::validate_block]--take in a request 
+//! and return a response:
 //! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
-//!    block. Your app should respond with the data and the data hash of a block extending the [parent block](ProduceBlockRequest::parent_block) included in the request, as well as the [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates) that executing it causes.
+//!    block. Your app should respond with the data and the data hash of a block extending the
+//!    [parent block](ProduceBlockRequest::parent_block) included in the request, as well as the
+//!    [app state updates](crate::types::AppStateUpdates) and 
+//!    [validator set updates](crate::types::ValidatorSetUpdates) that executing it causes.
 //! 2. `validate_block` is called in two situations: when the replica receives a proposal, and when
 //!    the replica is syncing. Your app should respond with whether the block is valid (according to
 //!    the semantics of the application), and again with the app state updates and validator set
