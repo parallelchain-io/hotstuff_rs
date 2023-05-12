@@ -3,7 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structures messages that are sent between replicas. 
+//! Definitions for structured messages that are sent between replicas. 
+//!
+//! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
 use borsh::{BorshSerialize, BorshDeserialize};
 use ed25519_dalek::{Verifier, ed25519::signature::Signature, Signer};

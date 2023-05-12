@@ -12,7 +12,8 @@
 //! 
 //! In normal operation, HotStuff-rs code will internally be making all writes to the Block Tree, and users can
 //! get a [BlockTreeCamera] using [crate::replica::Replica]'s [crate::replica::Replica::block_tree_camera] method.
-//! However, users may sometimes want to manually mutate the Block Tree, for example, to recover from an error
+//!
+//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from an error
 //! that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of BlockTree using
 //! [BlockTree::new_unsafe] and an instance of the corresponding [BlockTreeWriteBatch] using 
 //! [BlockTreeWriteBatch::new_unsafe].
@@ -36,7 +37,7 @@
 //! 
 //! The location of each of these variables in a KV store is defined in [paths]. Note that the fields of a
 //! block are itself stored in different tuples. This is so that user code can get a subset of a block's data
-//! without loading the entire block from storage, which can be expensive. The key suffixes on which each of
+//! without loading the entire block from storage (which can be expensive). The key suffixes on which each of
 //! block's fields are stored are also defined in paths.
 //! 
 //! ## Initial state 

@@ -5,13 +5,16 @@
 
 //! The server side of the block sync protocol.
 //! 
-//! ## Block sync protocol
-//! 
 //! When the [algorithm thread](crate::algorithm) sees a message containing a quorum certificate from a future view,
 //! this is taken to indicate that a quorum of validators are making progress at a higher view. This causes the replica
 //! to start syncing.
+//!
+//! ## Block sync protocol
 //! 
-//! The sync protocol is a request-response protocol that proceeds as follows:
+//! The sync protocol is a request-response protocol whereby replicas try to download blocks it may
+//! have missed during downtime or network outage.
+//!
+//! The protocol proceeds as follows:
 //! 1. The lagging replica selects a random peer from its current validator set (the "sync replica").
 //! 2. It then sends the sync replica a [sync request](crate::messages::SyncRequest) asking them to start syncing from
 //!    a start height: the replica's highest committed block's height + 1 (or 0, if the replica hasn't committed any 

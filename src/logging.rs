@@ -5,6 +5,10 @@
 
 //! Functions for logging out library events of varying levels of importance.
 //! 
+//! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
+//! printed onto a terminal or to a file, set up a [logging
+//! implementation](https://docs.rs/log/latest/log/#available-logging-implementations). 
+//!
 //! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed, while
 //! those with present continuous tense events (e.g. "Committing") indicate an activity that is still ongoing and
 //! may not get to complete because the process exits.

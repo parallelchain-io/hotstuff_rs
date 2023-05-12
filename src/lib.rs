@@ -24,7 +24,7 @@
 //!   as a deterministic state machine, i.e., a pure function of kind: `(Blockchain, App State, Validator Set, Block) ->
 //!   (Next Blockchain, Next App State, Next Validator Set)`.
 //! - **Replica**: a public-key-identified process that hosts an implementation of the HotStuff-rs protocol, e.g., this
-//!   library. There are [two kinds of Replicas](replica): validators, and listeners. 
+//!   library. Each replica contains an app, and there are [two kinds of Replicas](replica): validators, and listeners. 
 //! - **Blockchain**: a growing sequence of **Blocks**, which can be thought of as instructions to update a replica's App
 //!   State and Validator Set.
 //! - **App State**: a key-value store that applications can use to store anything; two replicas with the same Blockchain
@@ -35,9 +35,12 @@
 //!   blockchain.
 //! 
 //! ## Getting started
-//! 
-//! If you're trying to learn about HotStuff-rs by reading the source code or Cargo docs, we recommend starting from
-//! the [replica](replica) module. This is the entry-point of user code into this library.
+//!
+//! To replicate your application using HotStuff-rs, you need to represent it as a type and then
+//! have the type implement the [app] trait. 
+//!
+//! Then, you should [replica::Replica::initialize] a [replica], and then [replica::Replica::start]
+//! it.
 
 pub mod app;
 
