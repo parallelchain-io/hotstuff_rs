@@ -24,7 +24,8 @@
 //!   as a deterministic state machine, i.e., a pure function of kind: `(Blockchain, App State, Validator Set, Block) ->
 //!   (Next Blockchain, Next App State, Next Validator Set)`.
 //! - **Replica**: a public-key-identified process that hosts an implementation of the HotStuff-rs protocol, e.g., this
-//!   library. Each replica contains an app, and there are [two kinds of Replicas](replica): validators, and listeners. 
+//!   library. There are [two kinds of Replicas](replica): validators, and listeners, and each replica contains an instance
+//!   of an app.
 //! - **Blockchain**: a growing sequence of **Blocks**, which can be thought of as instructions to update a replica's App
 //!   State and Validator Set.
 //! - **App State**: a key-value store that applications can use to store anything; two replicas with the same Blockchain
