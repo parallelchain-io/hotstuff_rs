@@ -1,4 +1,5 @@
 # HotStuff-rs 
+
 A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
 systems. 
   
@@ -33,10 +34,7 @@ properties that HotStuff-rs has are:
 
 ## Where to start?
 
-To replicate your application using HotStuff-rs, you need to represent it as a type and then have the type implement 
-the [app] trait. 
-
-Then, you should [replica::Replica::initialize] a [replica], and then [replica::Replica::start]it.
+Read the docs: [docs.rs](https://docs.rs/crate/hotstuff_rs/latest).
 
 ## Opening an issue
 
