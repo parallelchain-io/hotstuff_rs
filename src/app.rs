@@ -7,13 +7,13 @@
 //!
 //! ## The App trait
 //!
-//! After receiving your app through [crate::replica::Replica::start], replicas communicate with it
+//! After receiving your app through [start](crate::replica::Replica::start), replicas communicate with it
 //! by calling the methods it has implemented as part of the App trait when specific things happen.
 //!
 //! The App trait has three methods.
 //!
-//! The two most important ones--[App::produce_block] and [App::validate_block]--take in a request 
-//! and return a response:
+//! The two most important ones--[produce_block](App::produce_block) and 
+//! [validate_block](App::validate_block)--is called with a request and returns a response:
 //! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
 //!    block. Your app should respond with the data and the data hash of a block extending the
 //!    [parent block](ProduceBlockRequest::parent_block) included in the request, as well as the

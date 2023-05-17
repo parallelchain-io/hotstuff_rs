@@ -11,7 +11,7 @@
 //! and read through an instance of [BlockTreeSnapshot], which can be created using [BlockTreeCamera]. 
 //! 
 //! In normal operation, HotStuff-rs code will internally be making all writes to the Block Tree, and users can
-//! get a [BlockTreeCamera] using [crate::replica::Replica]'s [crate::replica::Replica::block_tree_camera] method.
+//! get a [BlockTreeCamera] using replica's [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from an error
 //! that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of BlockTree using

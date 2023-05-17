@@ -19,7 +19,7 @@
 //! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need to know the identity
 //! of listeners. But for listeners to keep up with consensus decisions, they also need to receive progress messages.
 //! 
-//! Concretely, this requires that the library user's [networking provider's broadcast method](crate::networking) send progress
+//! Concretely, this requires that the library user's [networking provider's](crate::networking) broadcast method send progress
 //! messages to all peers it is connected to, and not only the validators. The library user is free to design and implement
 //! their own mechanism for deciding which peers, besides those in the validator set, should be connected to the network. 
 

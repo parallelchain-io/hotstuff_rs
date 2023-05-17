@@ -40,8 +40,7 @@
 //! To replicate your application using HotStuff-rs, you need to represent it as a type and then
 //! have the type implement the [app] trait. 
 //!
-//! Then, you should [replica::Replica::initialize] a [replica], and then [replica::Replica::start]
-//! it.
+//! Then, [initialize](replica::Replica::initialize) a [replica], and then [start](replica::Replica::start) it.
 
 pub mod app;
 
