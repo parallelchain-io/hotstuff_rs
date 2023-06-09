@@ -174,9 +174,9 @@ fn propose_or_nudge<K: KVStore, N: Network>(
     pm_stub: &mut ProgressMessageStub<N>,
 ) {
     let highest_qc = block_tree.highest_qc();
-    match () {
+    match highest_qc.phase {
         // Produce a proposal.
-        () if highest_qc.phase.is_generic() || highest_qc.phase.is_commit() => {
+        Phase::Generic | Phase::Commit(_) => {
             let (parent_block, child_height) = if highest_qc.is_genesis_qc() {
                 (None, 0) 
             } else {
@@ -207,7 +207,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
         },
 
         // Produce a nudge.
-        () if highest_qc.phase.is_prepare() || highest_qc.phase.is_precommit() => {
+        Phase::Prepare | Phase::Precommit(_) => {
             let nudged_block_hash = highest_qc.block;
 
             let highest_qc_phase = highest_qc.phase;
@@ -216,8 +216,6 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             pm_stub.broadcast(nudge);
             info::nudged(cur_view, &nudged_block_hash, block_tree.block_height(&nudged_block_hash).unwrap(), highest_qc_phase);
         },
-
-        _ => unreachable!()
     };
 }
 
