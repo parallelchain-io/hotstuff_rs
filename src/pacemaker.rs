@@ -62,9 +62,7 @@ impl Pacemaker for DefaultPacemaker {
     ) -> PublicKeyBytes {
         let num_validators = validator_set.len();
         *validator_set
-            .validators()
-            .skip((cur_view % num_validators as u64) as usize)
-            .next()
+            .validators().nth((cur_view % num_validators as u64) as usize)
             .unwrap()
     }
 

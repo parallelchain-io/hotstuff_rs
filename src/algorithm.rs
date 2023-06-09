@@ -116,8 +116,8 @@ fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
     view: ViewNumber,
     pacemaker: &mut impl Pacemaker,
-    mut block_tree: &mut BlockTree<K>,
-    mut pm_stub: &mut ProgressMessageStub<N>,
+    block_tree: &mut BlockTree<K>,
+    pm_stub: &mut ProgressMessageStub<N>,
     app: &mut impl App<K>,
 ) -> Result<(), ShouldSync> {
     debug::entered_view(view);
@@ -129,7 +129,7 @@ fn execute_view<K: KVStore, N: Network>(
 
     // 1. If I am the current leader, broadcast a proposal or a nudge.
     if i_am_cur_leader {
-        propose_or_nudge(view, app, block_tree, &mut pm_stub);
+        propose_or_nudge(view, app, block_tree, pm_stub);
     }
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
@@ -143,9 +143,9 @@ fn execute_view<K: KVStore, N: Network>(
                         let (voted, i_am_next_leader) = on_receive_proposal(
                             &origin,
                             &proposal,
-                            &me,
+                            me,
                             view,
-                            &mut block_tree,
+                            block_tree,
                             app,
                             pacemaker,
                             pm_stub,
@@ -162,9 +162,9 @@ fn execute_view<K: KVStore, N: Network>(
                         let (voted, i_am_next_leader) = on_receive_nudge(
                             &origin,
                             &nudge,
-                            &me,
+                            me,
                             view,
-                            &mut block_tree,
+                            block_tree,
                             app,
                             pacemaker,
                             pm_stub,
@@ -179,9 +179,9 @@ fn execute_view<K: KVStore, N: Network>(
                         &origin,
                         vote,
                         &mut vote_collector,
-                        &mut block_tree,
+                        block_tree,
                         view,
-                        &me,
+                        me,
                         pacemaker,
                     );
                     if highest_qc_updated && i_am_next_leader {
@@ -193,9 +193,9 @@ fn execute_view<K: KVStore, N: Network>(
                         &origin,
                         new_view,
                         &mut new_view_collector,
-                        &mut block_tree,
+                        block_tree,
                         view,
-                        &me,
+                        me,
                         pacemaker,
                     );
                     if received_new_views_from_quorum_and_i_am_next_leader {
@@ -341,7 +341,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
             };
             let vote = me.vote(app.chain_id(), cur_view, proposal.block.hash, vote_phase);
 
-            pm_stub.send(next_leader, vote.clone());
+            pm_stub.send(next_leader, vote);
             info::voted(
                 cur_view,
                 &proposal.block.hash,
@@ -412,7 +412,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     let i_am_validator = block_tree.committed_validator_set().contains(&me.public());
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
     if i_am_validator {
-        pm_stub.send(next_leader, vote.clone());
+        pm_stub.send(next_leader, vote);
         info::voted(
             cur_view,
             &nudge.justify.block,
@@ -436,7 +436,7 @@ fn on_receive_vote<K: KVStore>(
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
 ) -> (bool, bool) {
-    debug::received_vote(&signer, &vote.block, vote.phase);
+    debug::received_vote(signer, &vote.block, vote.phase);
 
     let highest_qc_updated = if vote.is_correct(signer) {
         if let Some(new_qc) = votes.collect(signer, vote) {
@@ -489,7 +489,7 @@ fn on_receive_new_view<K: KVStore>(
     pacemaker: &mut impl Pacemaker,
 ) -> bool {
     debug::received_new_view(
-        &origin,
+        origin,
         new_view.view,
         &new_view.highest_qc.block,
         new_view.highest_qc.phase,
@@ -539,7 +539,7 @@ fn on_view_timeout<K: KVStore, N: Network>(
 
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
 
-    pm_stub.send(next_leader, new_view.clone());
+    pm_stub.send(next_leader, new_view);
 }
 
 fn sync<K: KVStore, N: Network>(
@@ -582,7 +582,7 @@ fn sync_with<K: KVStore, N: Network>(
                 .into_iter()
                 .skip_while(|block| block_tree.contains(&block.hash))
                 .collect();
-            if new_blocks.len() == 0 {
+            if new_blocks.is_empty() {
                 return;
             }
 

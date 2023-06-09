@@ -99,7 +99,7 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
     }
 
     pub fn proposed_block(&self) -> &Block {
-        &self.proposed_block
+        self.proposed_block
     }
 
     pub fn block_tree(&self) -> &AppBlockTreeView<K> {

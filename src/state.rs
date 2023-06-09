@@ -225,9 +225,9 @@ impl<K: KVStore> BlockTree<K> {
         // a commit qc. A block becomes committed immediately if followed by a commit qc. Therefore,
         // under normal operation, at most 1 validator-set-updating block can be committed by one
         // insertion.
-        let validator_set_updates = validator_set_updates.pop();
+        
 
-        validator_set_updates
+        validator_set_updates.pop()
     }
 
     pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
@@ -541,7 +541,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
         for i in 0..data_len {
-            let datum_key = combine(&block_data_prefix, &(i as u32).try_to_vec().unwrap());
+            let datum_key = combine(&block_data_prefix, &i.try_to_vec().unwrap());
             self.0.delete(&datum_key);
         }
     }

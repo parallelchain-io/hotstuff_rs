@@ -131,11 +131,7 @@ impl QuorumCertificate {
 
             // Check if the signatures form a quorum.
             let quorum = Self::quorum(validator_set.total_power());
-            if signature_set_power >= quorum {
-                true
-            } else {
-                false
-            }
+            signature_set_power >= quorum
         }
     }
 
@@ -280,7 +276,7 @@ impl ValidatorSet {
 
     pub fn apply_updates(&mut self, updates: &ValidatorSetUpdates) {
         for (peer, new_power) in updates.inserts() {
-            self.put(&peer, *new_power);
+            self.put(peer, *new_power);
         }
 
         for peer in updates.deletions() {
@@ -387,11 +383,8 @@ impl VoteCollector {
         // Check if the signer is actually in the validator set.
         if let Some(pos) = self.validator_set.position(signer) {
             // If the vote is for a new (block, phase) pair, prepare an empty signature set.
-            if !self.signature_sets.contains_key(&(vote.block, vote.phase)) {
-                self.signature_sets.insert(
-                    (vote.block, vote.phase),
-                    (vec![None; self.validator_set.len()], 0),
-                );
+            if let std::collections::hash_map::Entry::Vacant(e) = self.signature_sets.entry((vote.block, vote.phase)) {
+                e.insert((vec![None; self.validator_set.len()], 0));
             }
 
             let (signature_set, power) = self
@@ -459,10 +452,6 @@ impl NewViewCollector {
             self.accumulated_power += self.validator_set.power(sender).unwrap()
         }
 
-        if self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power) {
-            true
-        } else {
-            false
-        }
+        self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power)
     }
 }

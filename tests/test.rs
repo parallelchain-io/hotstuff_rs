@@ -133,11 +133,11 @@ struct NetworkStub {
 
 impl Network for NetworkStub {
     fn init_validator_set(&mut self, _: ValidatorSet) {
-        ()
+        
     }
 
     fn update_validator_set(&mut self, _: ValidatorSetUpdates) {
-        ()
+        
     }
 
     fn send(&mut self, peer: PublicKeyBytes, message: Message) {
@@ -174,16 +174,16 @@ fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
         })
         .collect();
 
-    let network_stubs = peer_and_inboxes
+    
+
+    peer_and_inboxes
         .into_iter()
         .map(|(my_public_key, inbox)| NetworkStub {
             my_public_key,
             all_peers: all_peers.clone(),
             inbox: Arc::new(Mutex::new(inbox)),
         })
-        .collect();
-
-    network_stubs
+        .collect()
 }
 
 /// Things the Nodes will have in common:
@@ -289,7 +289,7 @@ impl App<MemDB> for NumberApp {
                 .block_tree()
                 .app_state(&NUMBER_KEY)
                 .unwrap()
-                .to_owned()
+                
                 .try_into()
                 .unwrap(),
         );
@@ -323,7 +323,7 @@ impl App<MemDB> for NumberApp {
             hasher.finalize().into()
         };
 
-        if !(request.proposed_block().data_hash == data_hash) {
+        if request.proposed_block().data_hash != data_hash {
             ValidateBlockResponse::Invalid
         } else {
             let initial_number = u32::from_le_bytes(
@@ -331,7 +331,7 @@ impl App<MemDB> for NumberApp {
                     .block_tree()
                     .app_state(&NUMBER_KEY)
                     .unwrap()
-                    .to_owned()
+                    
                     .try_into()
                     .unwrap(),
             );

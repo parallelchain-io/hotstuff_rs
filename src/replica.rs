@@ -93,17 +93,17 @@ impl<K: KVStore> Replica<K> {
             algorithm_shutdown_receiver,
         );
 
-        let replica = Replica {
-            block_tree_camera: BlockTreeCamera::new(kv_store.clone()),
+        
+
+        Replica {
+            block_tree_camera: BlockTreeCamera::new(kv_store),
             poller: Some(poller),
             poller_shutdown,
             algorithm: Some(algorithm),
             algorithm_shutdown,
             sync_server: Some(sync_server),
             sync_server_shutdown,
-        };
-
-        replica
+        }
     }
 
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
