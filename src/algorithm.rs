@@ -169,10 +169,8 @@ fn execute_view<K: KVStore, N: Network>(
                             pacemaker,
                             pm_stub,
                         );
-                        if voted {
-                            if !i_am_next_leader {
-                                return Ok(());
-                            }
+                        if voted && !i_am_next_leader {
+                            return Ok(());
                         }
                     }
                 }
