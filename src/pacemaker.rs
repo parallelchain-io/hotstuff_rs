@@ -48,7 +48,7 @@ impl DefaultPacemaker {
 impl Pacemaker for DefaultPacemaker {
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet) -> PublicKeyBytes {
         let num_validators = validator_set.len();
-        *validator_set.validators().skip(cur_view as usize % num_validators).next().unwrap()
+        *validator_set.validators().skip((cur_view % num_validators as u64) as usize).next().unwrap()
     }
     
     fn view_timeout(&mut self, cur_view: ViewNumber, highest_qc_view_number: ViewNumber) -> Duration {
