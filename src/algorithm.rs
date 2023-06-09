@@ -152,10 +152,8 @@ fn execute_view<K: KVStore, N: Network>(
                             &mut vote_collector,
                             &mut new_view_collector,
                         );
-                        if voted {
-                            if !i_am_next_leader {
-                                return Ok(());
-                            }
+                        if voted && !i_am_next_leader {
+                            return Ok(());
                         }
                     }
                 }
