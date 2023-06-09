@@ -1,5 +1,5 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
@@ -12,12 +12,12 @@
 //!
 //! The App trait has three methods.
 //!
-//! The two most important ones--[produce_block](App::produce_block) and 
+//! The two most important ones--[produce_block](App::produce_block) and
 //! [validate_block](App::validate_block)--is called with a request and returns a response:
 //! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
 //!    block. Your app should respond with the data and the data hash of a block extending the
 //!    [parent block](ProduceBlockRequest::parent_block) included in the request, as well as the
-//!    [app state updates](crate::types::AppStateUpdates) and 
+//!    [app state updates](crate::types::AppStateUpdates) and
 //!    [validator set updates](crate::types::ValidatorSetUpdates) that executing it causes.
 //! 2. `validate_block` is called in two situations: when the replica receives a proposal, and when
 //!    the replica is syncing. Your app should respond with whether the block is valid (according to
@@ -37,8 +37,8 @@
 //! if you operate validators in two chains that use the same keypair. So ensure that you don't
 //! operate a validator in two blockchains with the same keypair.
 
-use crate::types::*;
 use crate::state::{AppBlockTreeView, KVStore};
+use crate::types::*;
 
 pub trait App<K: KVStore>: Send {
     fn chain_id(&self) -> ChainID;
@@ -53,7 +53,11 @@ pub struct ProduceBlockRequest<'a, K: KVStore> {
 }
 
 impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
-    pub(crate) fn new(cur_view: ViewNumber, parent_block: Option<CryptoHash>, block_tree_view: AppBlockTreeView<'a, K>) -> Self {
+    pub(crate) fn new(
+        cur_view: ViewNumber,
+        parent_block: Option<CryptoHash>,
+        block_tree_view: AppBlockTreeView<'a, K>,
+    ) -> Self {
         Self {
             cur_view,
             parent_block,
@@ -78,7 +82,7 @@ pub struct ProduceBlockResponse {
     pub data_hash: CryptoHash,
     pub data: Data,
     pub app_state_updates: Option<AppStateUpdates>,
-    pub validator_set_updates: Option<ValidatorSetUpdates>
+    pub validator_set_updates: Option<ValidatorSetUpdates>,
 }
 
 pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
@@ -106,7 +110,7 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
 pub enum ValidateBlockResponse {
     Valid {
         app_state_updates: Option<AppStateUpdates>,
-        validator_set_updates: Option<ValidatorSetUpdates>
+        validator_set_updates: Option<ValidatorSetUpdates>,
     },
     Invalid,
 }

@@ -1,10 +1,10 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
-//! systems. 
+//! A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production
+//! systems.
 //!  
 //! HotStuff-rs implements a variant of the HotStuff consensus protocol, but with extensions like block-sync and dynamic
 //! validator sets that makes this library suited for real-world use-cases (and not just research systems). Some desirable
@@ -17,7 +17,7 @@
 //!    applications.
 //! 6. **Batteries included**: comes with a block-sync protocol and (coming soon) default implementations for networking,
 //!    state, and pacemaker: you write the app, we handle the replication.
-//! 
+//!
 //! ## Terminology
 //!  
 //! - **App**: user code which implements the [app trait](app::App). This can be any business logic that can be expressed
@@ -34,11 +34,11 @@
 //! - **Progress protocol**: the protocol replicas use to create new blocks through consensus and grow the blockchain.
 //! - **Sync protocol**: the protocol new or previously offline replicas use to quickly catch up to the head of the
 //!   blockchain.
-//! 
+//!
 //! ## Getting started
 //!
 //! To replicate your application using HotStuff-rs, you need to represent it as a type and then
-//! have the type implement the [app] trait. 
+//! have the type implement the [app] trait.
 //!
 //! Then, [initialize](replica::Replica::initialize) a [replica], and then [start](replica::Replica::start) it.
 

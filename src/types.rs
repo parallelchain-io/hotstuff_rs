@@ -1,23 +1,23 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
 
-use std::{collections::{hash_set, HashSet, hash_map, HashMap}, hash::Hash, slice};
-use borsh::{BorshSerialize, BorshDeserialize};
+use crate::messages::Vote;
+use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 use rand::seq::SliceRandom;
 use sha2::Digest;
-use crate::messages::Vote;
-
-pub use sha2::Sha256 as CryptoHasher;
-pub use ed25519_dalek::{
-    Keypair as DalekKeypair,
-    PublicKey,
-    Signature,
+use std::{
+    collections::{hash_map, hash_set, HashMap, HashSet},
+    hash::Hash,
+    slice,
 };
+
+pub use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, Signature};
+pub use sha2::Sha256 as CryptoHasher;
 
 pub type ChainID = u64;
 pub type BlockHeight = u64;
@@ -42,7 +42,12 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(height: BlockHeight, justify: QuorumCertificate, data_hash: CryptoHash, data: Data) -> Block {
+    pub fn new(
+        height: BlockHeight,
+        justify: QuorumCertificate,
+        data_hash: CryptoHash,
+        data: Data,
+    ) -> Block {
         Block {
             height,
             hash: Block::hash(height, &justify, &data_hash),
@@ -52,7 +57,11 @@ impl Block {
         }
     }
 
-    pub fn hash(height: BlockHeight, justify: &QuorumCertificate, data_hash: &CryptoHash) -> CryptoHash {
+    pub fn hash(
+        height: BlockHeight,
+        justify: &QuorumCertificate,
+        data_hash: &CryptoHash,
+    ) -> CryptoHash {
         let mut hasher = CryptoHasher::new();
         hasher.update(&height.try_to_vec().unwrap());
         hasher.update(&justify.try_to_vec().unwrap());
@@ -62,8 +71,8 @@ impl Block {
 
     /// Checks if hash and justify are cryptographically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-        self.hash == Block::hash(self.height, &self.justify, &self.data_hash) &&
-        self.justify.is_correct(validator_set)
+        self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
+            && self.justify.is_correct(validator_set)
     }
 }
 
@@ -78,7 +87,7 @@ pub struct QuorumCertificate {
 
 impl QuorumCertificate {
     /// Checks if all of the signatures in the certificate are correct, and if there's the set of signatures forms a quorum.
-    /// 
+    ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
         if self.is_genesis_qc() {
@@ -86,25 +95,37 @@ impl QuorumCertificate {
         } else {
             // Check whether the size of the signature set is the same as the size of the validator set.
             if self.signatures.len() != validator_set.len() {
-                return false
+                return false;
             }
 
             // Check whether every signature is correct and tally up their powers.
             let mut signature_set_power = 0;
-            for (signature, (signer, power)) in self.signatures.iter().zip(validator_set.validators_and_powers()) {
+            for (signature, (signer, power)) in self
+                .signatures
+                .iter()
+                .zip(validator_set.validators_and_powers())
+            {
                 if let Some(signature) = signature {
                     let signer = PublicKey::from_bytes(&signer).unwrap();
                     if let Ok(signature) = Signature::from_bytes(signature) {
-                        if signer.verify(&(self.chain_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok() {
+                        if signer
+                            .verify(
+                                &(self.chain_id, self.view, self.block, self.phase)
+                                    .try_to_vec()
+                                    .unwrap(),
+                                &signature,
+                            )
+                            .is_ok()
+                        {
                             signature_set_power += power;
                         } else {
                             // qc contains incorrect signature.
-                            return false
+                            return false;
                         }
                     } else {
                         // qc contains incorrect signature.
-                        return false
-                    } 
+                        return false;
+                    }
                 }
             }
 
@@ -119,7 +140,7 @@ impl QuorumCertificate {
     }
 
     pub const fn genesis_qc() -> QuorumCertificate {
-        QuorumCertificate { 
+        QuorumCertificate {
             chain_id: 0,
             view: 0,
             block: [0u8; 32],
@@ -139,13 +160,11 @@ impl QuorumCertificate {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
-    // ↓↓↓ For pipelined flow ↓↓↓ //   
-    
+    // ↓↓↓ For pipelined flow ↓↓↓ //
     Generic,
 
     // ↓↓↓ For phased flow ↓↓↓ //
-
-    Prepare, 
+    Prepare,
 
     // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered the
     // vote containing this phase.
@@ -191,7 +210,10 @@ pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {
     deletes: HashSet<K>,
 }
 
-impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
+impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V>
+where
+    K:,
+{
     pub fn new() -> Self {
         Self {
             inserts: HashMap::new(),
@@ -211,7 +233,7 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
 
     pub fn get_insert(&self, key: &K) -> Option<&V> {
         self.inserts.get(key)
-    } 
+    }
 
     pub fn contains_delete(&self, key: &K) -> bool {
         self.deletes.contains(key)
@@ -220,7 +242,7 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
     /// Get an iterator over all of the key-value pairs inserted by this ChangeSet.
     pub fn inserts(&self) -> hash_map::Iter<K, V> {
         self.inserts.iter()
-    } 
+    }
 
     /// Get an iterator over all of the keys that are deleted by this ChangeSet.
     pub fn deletions(&self) -> hash_set::Iter<K> {
@@ -229,9 +251,9 @@ impl<K: Eq + Hash, V: Eq + Hash> UpdateSet<K, V> where K:  {
 }
 
 /// Identities of validators and their voting powers.
-/// 
+///
 /// The validator set maintains the list of validators in ascending order of their public keys, and avails methods:
-/// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order. 
+/// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
@@ -294,19 +316,21 @@ impl ValidatorSet {
 
     /// Get a vector containing each validator and its power, in ascending order of the validators' public keys.
     pub fn validators_and_powers(&self) -> Vec<([u8; 32], u64)> {
-        self.validators().map(|v| (*v, *self.power(v).unwrap())).collect()
+        self.validators()
+            .map(|v| (*v, *self.power(v).unwrap()))
+            .collect()
     }
 
     pub fn len(&self) -> usize {
-        self.validators.len() 
+        self.validators.len()
     }
 
     pub fn position(&self, validator: &PublicKeyBytes) -> Option<usize> {
         match self.validators.binary_search(validator) {
             Ok(pos) => Some(pos),
-            Err(_) => None
+            Err(_) => None,
         }
-    } 
+    }
 
     pub(crate) fn random(&self) -> Option<&PublicKeyBytes> {
         self.validators.choose(&mut rand::thread_rng())
@@ -324,7 +348,11 @@ pub(crate) struct VoteCollector {
 }
 
 impl VoteCollector {
-    pub(crate) fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> VoteCollector {
+    pub(crate) fn new(
+        chain_id: ChainID,
+        view: ViewNumber,
+        validator_set: ValidatorSet,
+    ) -> VoteCollector {
         let total_validator_set_power = validator_set.total_power();
 
         Self {
@@ -334,12 +362,11 @@ impl VoteCollector {
             validator_set_power: total_validator_set_power,
             signature_sets: HashMap::new(),
         }
-
     }
 
     // Adds the vote to a signature set for the specified view, block, and phase. Returning a quorum certificate
     // if adding the vote allows for one to be created.
-    // 
+    //
     // If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not part
     // of its validator set, then this is a no-op.
     //
@@ -348,20 +375,29 @@ impl VoteCollector {
     //
     // # Panics
     // vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
-    pub(crate) fn collect(&mut self, signer: &PublicKeyBytes, vote: Vote) -> Option<QuorumCertificate> {
+    pub(crate) fn collect(
+        &mut self,
+        signer: &PublicKeyBytes,
+        vote: Vote,
+    ) -> Option<QuorumCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
             panic!()
         }
 
         // Check if the signer is actually in the validator set.
         if let Some(pos) = self.validator_set.position(signer) {
-
             // If the vote is for a new (block, phase) pair, prepare an empty signature set.
-            if !self.signature_sets.contains_key(&(vote.block, vote.phase)) { 
-                self.signature_sets.insert((vote.block, vote.phase), (vec![None; self.validator_set.len()], 0));
+            if !self.signature_sets.contains_key(&(vote.block, vote.phase)) {
+                self.signature_sets.insert(
+                    (vote.block, vote.phase),
+                    (vec![None; self.validator_set.len()], 0),
+                );
             }
 
-            let (signature_set, power) = self.signature_sets.get_mut(&(vote.block, vote.phase)).unwrap();
+            let (signature_set, power) = self
+                .signature_sets
+                .get_mut(&(vote.block, vote.phase))
+                .unwrap();
 
             // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
             if signature_set[pos].is_none() {
@@ -370,7 +406,10 @@ impl VoteCollector {
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
                 if *power >= QuorumCertificate::quorum(self.validator_set_power) {
-                    let (signatures, _) = self.signature_sets.remove(&(vote.block, vote.phase)).unwrap();
+                    let (signatures, _) = self
+                        .signature_sets
+                        .remove(&(vote.block, vote.phase))
+                        .unwrap();
                     let collected_qc = QuorumCertificate {
                         chain_id: self.chain_id,
                         view: self.view,
@@ -379,8 +418,7 @@ impl VoteCollector {
                         signatures,
                     };
 
-
-                    return Some(collected_qc)
+                    return Some(collected_qc);
                 }
             }
         }
@@ -413,7 +451,7 @@ impl NewViewCollector {
     /// is not part of the validator set, then this function does nothing and returns false.
     pub(crate) fn collect(&mut self, sender: &PublicKeyBytes) -> bool {
         if !self.validator_set.contains(sender) {
-            return false
+            return false;
         }
 
         if !self.collected_from.contains(sender) {
@@ -424,7 +462,7 @@ impl NewViewCollector {
         if self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power) {
             true
         } else {
-            false 
+            false
         }
     }
 }

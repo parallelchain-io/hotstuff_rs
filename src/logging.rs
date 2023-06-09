@@ -1,21 +1,21 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Functions for logging out library events of varying levels of importance.
-//! 
+//!
 //! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
 //! printed onto a terminal or to a file, set up a [logging
-//! implementation](https://docs.rs/log/latest/log/#available-logging-implementations). 
+//! implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
 //!
 //! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed, while
 //! those with present continuous tense events (e.g. "Committing") indicate an activity that is still ongoing and
 //! may not get to complete because the process exits.
 
-use log;
-use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use crate::types::*;
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
+use log;
 
 /// Logged events that may be of interest to operators to monitor the activities of a replica.
 pub mod info {
@@ -36,22 +36,50 @@ pub mod info {
         log::info!("{}, {}, {}, {}", PROPOSED, view, succinct(block), height);
     }
 
-    pub(crate) fn nudged(view: ViewNumber, block: &CryptoHash, height: BlockHeight, justify_phase: Phase) {
-        log::info!("{}, {}, {}, {}, {:?}", NUDGING, view, succinct(block), height, justify_phase);
+    pub(crate) fn nudged(
+        view: ViewNumber,
+        block: &CryptoHash,
+        height: BlockHeight,
+        justify_phase: Phase,
+    ) {
+        log::info!(
+            "{}, {}, {}, {}, {:?}",
+            NUDGING,
+            view,
+            succinct(block),
+            height,
+            justify_phase
+        );
     }
 
     pub(crate) fn voted(view: ViewNumber, block: &CryptoHash, height: BlockHeight, phase: Phase) {
-        log::info!("{}, {}, {}, {}, {:?}", VOTED, view, succinct(block), height, phase);
+        log::info!(
+            "{}, {}, {}, {}, {:?}",
+            VOTED,
+            view,
+            succinct(block),
+            height,
+            phase
+        );
     }
 
-    pub(crate) fn view_timed_out(view: ViewNumber, highest_qc_justifies_block: &CryptoHash, highest_qc_phase: Phase) {
-        log::info!("{}, {}, {}, {:?}", VIEW_TIMED_OUT, view, succinct(highest_qc_justifies_block), highest_qc_phase);
+    pub(crate) fn view_timed_out(
+        view: ViewNumber,
+        highest_qc_justifies_block: &CryptoHash,
+        highest_qc_phase: Phase,
+    ) {
+        log::info!(
+            "{}, {}, {}, {:?}",
+            VIEW_TIMED_OUT,
+            view,
+            succinct(highest_qc_justifies_block),
+            highest_qc_phase
+        );
     }
 
     pub(crate) fn start_syncing(sync_peer: &PublicKeyBytes) {
         log::info!("{}, {}", START_SYNCING, succinct(sync_peer))
     }
-
 }
 
 /// Logged events that may be of interest to programmers and system administrators to troubleshoot unexpected replica behavior.
@@ -71,22 +99,60 @@ pub mod debug {
 
     pub(crate) fn entered_view(view: ViewNumber) {
         log::debug!("{}, {}", ENTERED_VIEW, view);
-    } 
-
-    pub(crate) fn received_proposal(origin: &PublicKeyBytes, block: &CryptoHash, height: BlockHeight) {
-        log::debug!("{}, {}, {}, {}", RECEIVED_PROPOSAL, succinct(origin), succinct(block), height);
     }
 
-    pub(crate) fn received_nudge(origin: &PublicKeyBytes, justify_block: &CryptoHash, justify_phase: Phase) {
-        log::debug!("{}, {}, {}, {:?}", RECEIVED_NUDGE, succinct(origin), succinct(justify_block), justify_phase);
+    pub(crate) fn received_proposal(
+        origin: &PublicKeyBytes,
+        block: &CryptoHash,
+        height: BlockHeight,
+    ) {
+        log::debug!(
+            "{}, {}, {}, {}",
+            RECEIVED_PROPOSAL,
+            succinct(origin),
+            succinct(block),
+            height
+        );
+    }
+
+    pub(crate) fn received_nudge(
+        origin: &PublicKeyBytes,
+        justify_block: &CryptoHash,
+        justify_phase: Phase,
+    ) {
+        log::debug!(
+            "{}, {}, {}, {:?}",
+            RECEIVED_NUDGE,
+            succinct(origin),
+            succinct(justify_block),
+            justify_phase
+        );
     }
 
     pub(crate) fn received_vote(origin: &PublicKeyBytes, block: &CryptoHash, phase: Phase) {
-        log::debug!("{}, {}, {}, {:?}", RECEIVED_VOTE, succinct(origin), succinct(block), phase);
+        log::debug!(
+            "{}, {}, {}, {:?}",
+            RECEIVED_VOTE,
+            succinct(origin),
+            succinct(block),
+            phase
+        );
     }
 
-    pub(crate) fn received_new_view(origin: &PublicKeyBytes, view: ViewNumber, block: &CryptoHash, phase: Phase) {
-        log::debug!("{}, {}, {}, {}, {:?}", RECEIVED_NEW_VIEW, succinct(origin), view, succinct(block), phase);
+    pub(crate) fn received_new_view(
+        origin: &PublicKeyBytes,
+        view: ViewNumber,
+        block: &CryptoHash,
+        phase: Phase,
+    ) {
+        log::debug!(
+            "{}, {}, {}, {}, {:?}",
+            RECEIVED_NEW_VIEW,
+            succinct(origin),
+            view,
+            succinct(block),
+            phase
+        );
     }
 
     pub(crate) fn collected_qc(block: &CryptoHash, phase: Phase) {
@@ -110,7 +176,7 @@ pub mod debug {
     }
 }
 
-// Get a more readable representation of a bytesequence by base64-encoding it and taking the first 7 characters. 
+// Get a more readable representation of a bytesequence by base64-encoding it and taking the first 7 characters.
 pub(crate) fn succinct(bytes: &[u8]) -> String {
     let encoded = STANDARD_NO_PAD.encode(bytes);
     let mut truncated = encoded[0..7].to_string();

@@ -1,14 +1,14 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas. 
+//! Definitions for structured messages that are sent between replicas.
 //!
 //! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
-use borsh::{BorshSerialize, BorshDeserialize};
-use ed25519_dalek::{Verifier, ed25519::signature::Signature, Signer};
+use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::{ed25519::signature::Signature, Signer, Verifier};
 
 use crate::types::*;
 
@@ -21,7 +21,7 @@ pub enum Message {
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressMessage {
     Proposal(Proposal),
-    Nudge(Nudge), 
+    Nudge(Nudge),
     Vote(Vote),
     NewView(NewView),
 }
@@ -32,33 +32,43 @@ impl ProgressMessage {
             chain_id,
             view,
             block,
-        }) 
+        })
     }
 
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
-    pub fn nudge(chain_id: ChainID, view: ViewNumber, justify: QuorumCertificate) -> ProgressMessage {
+    pub fn nudge(
+        chain_id: ChainID,
+        view: ViewNumber,
+        justify: QuorumCertificate,
+    ) -> ProgressMessage {
         match justify.phase {
             Phase::Generic | Phase::Commit(_) => panic!(),
-            Phase::Prepare | Phase::Precommit(_) => {
-                ProgressMessage::Nudge(Nudge {
-                    chain_id,
-                    view,
-                    justify
-                })
-            }
+            Phase::Prepare | Phase::Precommit(_) => ProgressMessage::Nudge(Nudge {
+                chain_id,
+                view,
+                justify,
+            }),
         }
     }
 
-    pub fn new_view(chain_id: ChainID, view: ViewNumber, highest_qc: QuorumCertificate) -> ProgressMessage {
-        ProgressMessage::NewView(NewView { chain_id, view, highest_qc })
+    pub fn new_view(
+        chain_id: ChainID,
+        view: ViewNumber,
+        highest_qc: QuorumCertificate,
+    ) -> ProgressMessage {
+        ProgressMessage::NewView(NewView {
+            chain_id,
+            view,
+            highest_qc,
+        })
     }
 
     pub fn chain_id(&self) -> ChainID {
         match self {
             ProgressMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
             ProgressMessage::Nudge(Nudge { chain_id, .. }) => *chain_id,
-            ProgressMessage::Vote(Vote { chain_id, .. })  => *chain_id,
+            ProgressMessage::Vote(Vote { chain_id, .. }) => *chain_id,
             ProgressMessage::NewView(NewView { chain_id, .. }) => *chain_id,
         }
     }
@@ -70,7 +80,7 @@ impl ProgressMessage {
             ProgressMessage::Vote(Vote { view, .. }) => *view,
             ProgressMessage::NewView(NewView { view, .. }) => *view,
         }
-    } 
+    }
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -101,7 +111,15 @@ impl Vote {
     /// pk must be a valid public key.
     pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
         if let Ok(signature) = Signature::from_bytes(&self.signature) {
-            PublicKey::from_bytes(pk).unwrap().verify(&(self.chain_id, self.view, self.block, self.phase).try_to_vec().unwrap(), &signature).is_ok()
+            PublicKey::from_bytes(pk)
+                .unwrap()
+                .verify(
+                    &(self.chain_id, self.view, self.block, self.phase)
+                        .try_to_vec()
+                        .unwrap(),
+                    &signature,
+                )
+                .is_ok()
         } else {
             false
         }
@@ -112,7 +130,7 @@ impl Vote {
 pub struct NewView {
     pub chain_id: ChainID,
     pub view: ViewNumber,
-    pub highest_qc: QuorumCertificate
+    pub highest_qc: QuorumCertificate,
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -130,9 +148,9 @@ pub struct SyncRequest {
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct SyncResponse {
     pub blocks: Vec<Block>,
-    pub highest_qc: QuorumCertificate, 
+    pub highest_qc: QuorumCertificate,
 }
- 
+
 /// A wrapper around [DalekKeypair] which implements [a convenience method](ProgressMessage::vote) for creating properly
 /// signed [votes](Vote).
 pub(crate) struct Keypair(pub(crate) DalekKeypair);
@@ -140,12 +158,27 @@ pub(crate) struct Keypair(pub(crate) DalekKeypair);
 impl Keypair {
     pub(crate) fn new(keypair: DalekKeypair) -> Keypair {
         Keypair(keypair)
-    } 
+    }
 
-    pub(crate) fn vote(&self, chain_id: ChainID, view: ViewNumber, block: CryptoHash, phase: Phase) -> ProgressMessage {
-        let signature = self.0.sign(&(chain_id, view, block, phase).try_to_vec().unwrap()).to_bytes();
-        ProgressMessage::Vote(Vote { chain_id, view, block, phase, signature })
-    } 
+    pub(crate) fn vote(
+        &self,
+        chain_id: ChainID,
+        view: ViewNumber,
+        block: CryptoHash,
+        phase: Phase,
+    ) -> ProgressMessage {
+        let signature = self
+            .0
+            .sign(&(chain_id, view, block, phase).try_to_vec().unwrap())
+            .to_bytes();
+        ProgressMessage::Vote(Vote {
+            chain_id,
+            view,
+            block,
+            phase,
+            signature,
+        })
+    }
 
     pub(crate) fn public(&self) -> PublicKeyBytes {
         self.0.public.to_bytes()

@@ -1,38 +1,38 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! The server side of the block sync protocol.
-//! 
+//!
 //! When the [algorithm thread](crate::algorithm) sees a message containing a quorum certificate from a future view,
 //! this is taken to indicate that a quorum of validators are making progress at a higher view. This causes the replica
 //! to start syncing.
 //!
 //! ## Block sync protocol
-//! 
+//!
 //! The sync protocol is a request-response protocol whereby replicas try to download blocks it may
 //! have missed during downtime or network outage.
 //!
 //! The protocol proceeds as follows:
 //! 1. The lagging replica selects a random peer from its current validator set (the "sync replica").
 //! 2. It then sends the sync replica a [sync request](crate::messages::SyncRequest) asking them to start syncing from
-//!    a start height: the replica's highest committed block's height + 1 (or 0, if the replica hasn't committed any 
+//!    a start height: the replica's highest committed block's height + 1 (or 0, if the replica hasn't committed any
 //!    blocks). It also specifies how many blocks at most it wants to receive.
 //! 3. The sync replica responds with a [sync response](crate::messages::SyncResponse) containing a chain starting from
 //!    the request's start height and of length at most the maximum of the sync replica's limit and the request's limit.
 //! 4. Upon receiving the response, the lagging replica checks the blocks that are included in it:
-//!     - If the response contains no new blocks, then the replica returns to executing the progress protocol. 
+//!     - If the response contains no new blocks, then the replica returns to executing the progress protocol.
 //!     - If it does contain new blocks, then the replica validates the blocks and quorum certificate and inserts them
 //!       into its block tree, and then jumps back to step 2.
 
-use std::sync::mpsc::{Receiver, TryRecvError};
-use std::thread::{self, JoinHandle};
-use std::cmp::max;
 use crate::logging::debug;
 use crate::messages::{SyncRequest, SyncResponse};
-use crate::state::{BlockTreeCamera, KVStore};
 use crate::networking::{Network, SyncServerStub};
+use crate::state::{BlockTreeCamera, KVStore};
+use std::cmp::max;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::thread::{self, JoinHandle};
 
 pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
@@ -40,24 +40,32 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     shutdown_signal: Receiver<()>,
     server_sync_request_limit: u32,
 ) -> JoinHandle<()> {
-    thread::spawn(move || {
-        loop {
-            match shutdown_signal.try_recv() {
-                Ok(()) => return,
-                Err(TryRecvError::Empty) => (),
-                Err(TryRecvError::Disconnected) => panic!("Algorithm thread disconnected from main thread"),
+    thread::spawn(move || loop {
+        match shutdown_signal.try_recv() {
+            Ok(()) => return,
+            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Disconnected) => {
+                panic!("Algorithm thread disconnected from main thread")
             }
+        }
 
-            if let Some((origin, SyncRequest { start_height, limit })) = sync_stub.recv_request() {
-                debug::received_sync_request(&origin);
-                
-                let bt_snapshot = block_tree.snapshot();
-                let blocks = bt_snapshot.blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
-                let highest_qc = bt_snapshot.highest_qc();
+        if let Some((
+            origin,
+            SyncRequest {
+                start_height,
+                limit,
+            },
+        )) = sync_stub.recv_request()
+        {
+            debug::received_sync_request(&origin);
 
-                sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
-            }
-            thread::yield_now();
-        }   
+            let bt_snapshot = block_tree.snapshot();
+            let blocks = bt_snapshot
+                .blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
+            let highest_qc = bt_snapshot.highest_qc();
+
+            sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
+        }
+        thread::yield_now();
     })
 }
