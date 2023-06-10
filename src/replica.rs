@@ -93,8 +93,6 @@ impl<K: KVStore> Replica<K> {
             algorithm_shutdown_receiver,
         );
 
-        
-
         Replica {
             block_tree_camera: BlockTreeCamera::new(kv_store),
             poller: Some(poller),

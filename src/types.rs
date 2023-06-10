@@ -385,7 +385,9 @@ impl VoteCollector {
         // Check if the signer is actually in the validator set.
         if let Some(pos) = self.validator_set.position(signer) {
             // If the vote is for a new (block, phase) pair, prepare an empty signature set.
-            if let std::collections::hash_map::Entry::Vacant(e) = self.signature_sets.entry((vote.block, vote.phase)) {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.signature_sets.entry((vote.block, vote.phase))
+            {
                 e.insert((vec![None; self.validator_set.len()], 0));
             }
 

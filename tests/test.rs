@@ -132,13 +132,9 @@ struct NetworkStub {
 }
 
 impl Network for NetworkStub {
-    fn init_validator_set(&mut self, _: ValidatorSet) {
-        
-    }
+    fn init_validator_set(&mut self, _: ValidatorSet) {}
 
-    fn update_validator_set(&mut self, _: ValidatorSetUpdates) {
-        
-    }
+    fn update_validator_set(&mut self, _: ValidatorSetUpdates) {}
 
     fn send(&mut self, peer: PublicKeyBytes, message: Message) {
         if let Some(peer) = self.all_peers.get(&peer) {
@@ -173,8 +169,6 @@ fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
             (my_public_key, receiver)
         })
         .collect();
-
-    
 
     peer_and_inboxes
         .into_iter()
@@ -289,7 +283,6 @@ impl App<MemDB> for NumberApp {
                 .block_tree()
                 .app_state(&NUMBER_KEY)
                 .unwrap()
-                
                 .try_into()
                 .unwrap(),
         );
@@ -331,7 +324,6 @@ impl App<MemDB> for NumberApp {
                     .block_tree()
                     .app_state(&NUMBER_KEY)
                     .unwrap()
-                    
                     .try_into()
                     .unwrap(),
             );

@@ -160,14 +160,7 @@ fn execute_view<K: KVStore, N: Network>(
                 ProgressMessage::Nudge(nudge) => {
                     if origin == cur_leader {
                         let (voted, i_am_next_leader) = on_receive_nudge(
-                            &origin,
-                            &nudge,
-                            me,
-                            view,
-                            block_tree,
-                            app,
-                            pacemaker,
-                            pm_stub,
+                            &origin, &nudge, me, view, block_tree, app, pacemaker, pm_stub,
                         );
                         if voted && !i_am_next_leader {
                             return Ok(());

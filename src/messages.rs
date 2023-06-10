@@ -111,15 +111,17 @@ impl Vote {
     /// pk must be a valid public key.
     pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
         if let Ok(signature) = Signature::from_bytes(&self.signature) {
-            PublicKey::from_bytes(pk)
-                .unwrap()
-                .verify(
+            match PublicKey::from_bytes(pk) {
+                Ok(public_key) => public_key
+                    .verify(
                     &(self.chain_id, self.view, self.block, self.phase)
-                        .try_to_vec()
-                        .unwrap(),
-                    &signature,
-                )
-                .is_ok()
+                            .try_to_vec()
+                            .unwrap(),
+                        &signature,
+                    )
+                    .is_ok(),
+                Err(_) => false,
+            }
         } else {
             false
         }
