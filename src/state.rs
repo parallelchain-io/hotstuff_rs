@@ -225,8 +225,6 @@ impl<K: KVStore> BlockTree<K> {
         // a commit qc. A block becomes committed immediately if followed by a commit qc. Therefore,
         // under normal operation, at most 1 validator-set-updating block can be committed by one
         // insertion.
-        
-
         validator_set_updates.pop()
     }
 
@@ -701,13 +699,9 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
 
         // Get committed blocks starting from the specified height.
         let mut cursor = height;
-        loop {
-            if let Some(block_hash) = self.block_at_height(cursor) {
-                res.push(self.block(&block_hash).unwrap());
-                cursor += 1;
-            } else {
-                break;
-            }
+        while let Some(block_hash) = self.block_at_height(cursor) {
+            res.push(self.block(&block_hash).unwrap());
+            cursor += 1;
 
             if res.len() == limit as usize {
                 return res;
@@ -762,7 +756,7 @@ pub trait KVStore: KVGet + Clone + Send + 'static {
 
     fn write(&mut self, wb: Self::WriteBatch);
     fn clear(&mut self);
-    fn snapshot<'b>(&'b self) -> Self::Snapshot<'b>;
+    fn snapshot<'b>(&'b self) -> Self::Snapshot<'_>;
 }
 
 pub trait WriteBatch {
@@ -978,11 +972,11 @@ mod paths {
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];
 
     // Fields of Block
-    pub(super) const BLOCK_HEIGHT: [u8; 1] = [00];
-    pub(super) const BLOCK_JUSTIFY: [u8; 1] = [01];
-    pub(super) const BLOCK_DATA_HASH: [u8; 1] = [02];
-    pub(super) const BLOCK_DATA_LEN: [u8; 1] = [03];
-    pub(super) const BLOCK_DATA: [u8; 1] = [04];
+    pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];
+    pub(super) const BLOCK_JUSTIFY: [u8; 1] = [1];
+    pub(super) const BLOCK_DATA_HASH: [u8; 1] = [2];
+    pub(super) const BLOCK_DATA_LEN: [u8; 1] = [3];
+    pub(super) const BLOCK_DATA: [u8; 1] = [4];
 }
 
 /// Takes references to two byteslices and returns a vector containing the bytes of the first one, and then the bytes of the

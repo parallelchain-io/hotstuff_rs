@@ -181,19 +181,11 @@ impl Phase {
     }
 
     pub fn is_precommit(self) -> bool {
-        if let Phase::Precommit(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Phase::Precommit(_))
     }
 
     pub fn is_commit(self) -> bool {
-        if let Phase::Commit(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Phase::Commit(_))
     }
 }
 
@@ -255,6 +247,12 @@ pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
     validators: Vec<PublicKeyBytes>,
     powers: HashMap<PublicKeyBytes, Power>,
+}
+
+impl Default for ValidatorSet {
+    fn default() -> Self {
+        ValidatorSet::new()
+    }
 }
 
 impl ValidatorSet {
@@ -319,6 +317,10 @@ impl ValidatorSet {
 
     pub fn len(&self) -> usize {
         self.validators.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn position(&self, validator: &PublicKeyBytes) -> Option<usize> {
