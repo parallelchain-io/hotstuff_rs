@@ -179,8 +179,11 @@ pub mod debug {
 // Get a more readable representation of a bytesequence by base64-encoding it and taking the first 7 characters.
 pub(crate) fn succinct(bytes: &[u8]) -> String {
     let encoded = STANDARD_NO_PAD.encode(bytes);
-    let mut truncated = encoded[0..7].to_string();
-    truncated.push_str("..");
-
-    truncated
+    if encoded.len() > 7 {
+        let mut truncated = encoded[0..7].to_string();
+        truncated.push_str("..");
+        truncated
+    } else {
+        encoded
+    }
 }
