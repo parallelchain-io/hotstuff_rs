@@ -29,6 +29,11 @@ pub trait Pacemaker: Send {
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
         -> PublicKeyBytes;
     fn sync_request_limit(&self) -> u32;
+
+    /// # Safety 
+    /// 
+    /// The returned Duration must not be larger than [u32::MAX]. This is to avoid overflows in calling code, which may
+    /// add to it.
     fn sync_response_timeout(&self) -> Duration;
 }
 
@@ -73,8 +78,8 @@ impl Pacemaker for DefaultPacemaker {
         highest_qc_view_number: ViewNumber,
     ) -> Duration {
         let exp = min(u32::MAX as u64, cur_view - highest_qc_view_number) as u32;
-        self.minimum_view_timeout
-            + Duration::new(u64::checked_pow(2, exp).map_or(u64::MAX, identity), 0)
+        self.minimum_view_timeout 
+            + Duration::new(u32::checked_pow(2, exp).map_or(u32::MAX, identity) as u64, 0)
     }
 
     fn sync_request_limit(&self) -> u32 {

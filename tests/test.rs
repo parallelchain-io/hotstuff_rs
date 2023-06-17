@@ -38,6 +38,7 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Duration;
+use std::sync::Once;
 
 /// Tests the most basic user-visible functionalities: committing transactions, querying app state, and
 /// expanding the validator set.
@@ -161,21 +162,25 @@ fn default_pacemaker_view_sync_integration_test() {
     }
 }
 
+static LOGGER_INIT: Once = Once::new();
+
 // Set up a logger that logs all log messages with level Trace and above.
 fn setup_logger(level: LevelFilter) {
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{:?}][{}] {}",
-                thread::current().id(),
-                record.level(),
-                message
-            ))
-        })
-        .level(level)
-        .chain(io::stdout())
-        .apply()
-        .unwrap();
+    LOGGER_INIT.call_once(|| {
+        fern::Dispatch::new()
+            .format(|out, message, record| {
+                out.finish(format_args!(
+                    "[{:?}][{}] {}",
+                    thread::current().id(),
+                    record.level(),
+                    message
+                ))
+            })
+            .level(level)
+            .chain(io::stdout())
+            .apply()
+            .unwrap();
+    })
 }
 
 /// A mock network stub which passes messages from and to threads using channels.  
