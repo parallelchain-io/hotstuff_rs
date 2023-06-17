@@ -25,20 +25,21 @@ use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::Replica;
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
-    AppStateUpdates, ChainID, CryptoHash, Power, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates, ViewNumber,
+    AppStateUpdates, ChainID, CryptoHash, Power, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates,
+    ViewNumber,
 };
 use log::LevelFilter;
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::sync::Once;
 use std::sync::{
     mpsc::{self, Receiver, Sender, TryRecvError},
     Arc, Mutex, MutexGuard,
 };
 use std::thread;
 use std::time::Duration;
-use std::sync::Once;
 
 /// Tests the most basic user-visible functionalities: committing transactions, querying app state, and
 /// expanding the validator set.
@@ -125,11 +126,9 @@ fn default_pacemaker_view_sync_integration_test() {
         validator_set.insert(keypair_2.public.to_bytes(), 1);
         validator_set
     };
-    let (
-        network_stub_1,
-        network_stub_2,
-    ) = {
-        let mut network_stubs = mock_network([keypair_1.public.to_bytes(), keypair_2.public.to_bytes()].into_iter());
+    let (network_stub_1, network_stub_2) = {
+        let mut network_stubs =
+            mock_network([keypair_1.public.to_bytes(), keypair_2.public.to_bytes()].into_iter());
         (network_stubs.remove(0), network_stubs.remove(0))
     };
 
@@ -142,8 +141,11 @@ fn default_pacemaker_view_sync_integration_test() {
     }
 
     // Start the second node.
-    log::debug!("First node is at view {}, starting second node.", first_node.highest_view_entered());
-    let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs.clone()); 
+    log::debug!(
+        "First node is at view {}, starting second node.",
+        first_node.highest_view_entered()
+    );
+    let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs.clone());
 
     // Wait until both nodes' current views match.
     log::debug!("Waiting until both nodes' current views match.");
@@ -461,7 +463,8 @@ impl Node {
 
         let public_key = *keypair.public.as_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
-        let pacemaker = DefaultPacemaker::new(Duration::from_millis(500), 10, Duration::from_secs(3));
+        let pacemaker =
+            DefaultPacemaker::new(Duration::from_millis(500), 10, Duration::from_secs(3));
         let replica = Replica::start(
             NumberApp::new(tx_queue.clone()),
             keypair,

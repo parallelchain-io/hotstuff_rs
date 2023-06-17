@@ -99,7 +99,7 @@ impl QuorumCertificate {
             }
 
             // Check whether every signature is correct and tally up their powers.
-            let mut signature_set_power = 0;
+            let mut signature_set_power: Power = 0;
             for (signature, (signer, power)) in self
                 .signatures
                 .iter()
@@ -117,7 +117,9 @@ impl QuorumCertificate {
                             )
                             .is_ok()
                         {
-                            signature_set_power += power;
+                            signature_set_power = signature_set_power
+                                .checked_add(power)
+                                .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
                         } else {
                             // qc contains incorrect signature.
                             return false;
@@ -150,7 +152,11 @@ impl QuorumCertificate {
     }
 
     pub fn quorum(validator_set_power: Power) -> Power {
-        ((validator_set_power * 2) / 3) + 1
+        (validator_set_power
+            .checked_mul(2)
+            .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR)
+            / 3)
+            + 1
     }
 }
 
@@ -242,12 +248,20 @@ where
 ///
 /// The validator set maintains the list of validators in ascending order of their public keys, and avails methods:
 /// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order.
+///
+/// # Limits on total power
+///
+/// The total power of a validator set (the sum of the powers of each validator) must not exceed [u64::MAX].
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
     validators: Vec<PublicKeyBytes>,
     powers: HashMap<PublicKeyBytes, Power>,
 }
+
+const VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR: &str =
+    "The total power of a validator set exceeds u64::MAX. Read the itemdoc for ValidatorSet.";
+
 
 impl Default for ValidatorSet {
     fn default() -> Self {
@@ -399,7 +413,8 @@ impl VoteCollector {
             // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
             if signature_set[pos].is_none() {
                 signature_set[pos] = Some(vote.signature);
-                *power += self.validator_set.power(signer).unwrap();
+                *power = power.checked_add(*self.validator_set.power(signer).unwrap())
+                    .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
                 if *power >= QuorumCertificate::quorum(self.validator_set_power) {
@@ -453,7 +468,8 @@ impl NewViewCollector {
 
         if !self.collected_from.contains(sender) {
             self.collected_from.insert(*sender);
-            self.accumulated_power += self.validator_set.power(sender).unwrap()
+            self.accumulated_power = self.accumulated_power.checked_add(*self.validator_set.power(sender).unwrap())
+                .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
         }
 
         self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power)

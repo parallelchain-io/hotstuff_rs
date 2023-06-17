@@ -32,9 +32,9 @@ pub trait Network: Clone + Send {
     fn send(&mut self, peer: PublicKeyBytes, message: Message);
 
     /// Receive a message from any peer. Returns immediately with a None if no message is available now.
-    /// 
+    ///
     /// # Safety
-    /// the returned PublicKeyBytes must be a valid Ed25519 public key; i.e., it must be convertible to a 
+    /// the returned PublicKeyBytes must be a valid Ed25519 public key; i.e., it must be convertible to a
     /// [PublicKey](crate::types::PublicKey) using [from_bytes](crate::types::PublicKey::from_bytes) without errors.
     fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
 }
