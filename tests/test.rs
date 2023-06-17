@@ -25,7 +25,7 @@ use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::Replica;
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
-    AppStateUpdates, ChainID, CryptoHash, Power, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates,
+    AppStateUpdates, ChainID, CryptoHash, Power, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates, ViewNumber,
 };
 use log::LevelFilter;
 use rand::rngs::OsRng;
@@ -39,12 +39,15 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+/// Tests the most basic user-visible functionalities: committing transactions, querying app state, and
+/// expanding the validator set.
 #[test]
-fn integration_test() {
+fn basic_integration_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
     let keypairs: Vec<DalekKeypair> = (0..3).map(|_| DalekKeypair::generate(&mut csprg)).collect();
+    let network_stubs = mock_network(keypairs.iter().map(|kp| kp.public.to_bytes()));
     let init_as = {
         let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
@@ -55,7 +58,6 @@ fn integration_test() {
         validator_set.insert(keypairs[0].public.to_bytes(), 1);
         validator_set
     };
-    let network_stubs = mock_network(&keypairs);
 
     let mut nodes: Vec<Node> = keypairs
         .into_iter()
@@ -64,26 +66,24 @@ fn integration_test() {
         .collect();
 
     // Submit an Increment transaction to the initial validator.
-    log::debug!("Integration test: submit an Increment transaction to the initial validator.");
+    log::debug!("Submitting an Increment transaction to the initial validator.");
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
 
     // Poll the app state of every replica until the value is 1.
-    log::debug!("Integration test: poll the app state of every replica until the value is 1.");
+    log::debug!("Polling the app state of every replica until the value is 1.");
     while nodes[0].number() != 1 || nodes[1].number() != 1 || nodes[2].number() != 1 {
         thread::sleep(Duration::from_millis(500));
     }
 
     // Submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.
-    log::debug!("Integration test: submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
+    log::debug!("Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
     let node_1 = nodes[1].public_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, 1));
     let node_2 = nodes[2].public_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, 1));
 
     // Poll the validator set of every replica until we have 3 validators.
-    log::debug!(
-        "Integration test: poll the validator set of every replica until we have 3 validators."
-    );
+    log::debug!("Polling the validator set of every replica until we have 3 validators.");
     while nodes[0].committed_validator_set().len() != 3
         || nodes[1].committed_validator_set().len() != 3
         || nodes[2].committed_validator_set().len() != 3
@@ -92,18 +92,73 @@ fn integration_test() {
     }
 
     // Push an Increment transaction to each of the 3 validators we have now.
-    log::debug!("Integration test: submit an increment transaction to each of the 3 validators we have now.");
+    log::debug!("Submitting an increment transaction to each of the 3 validators we have now.");
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
     nodes[1].submit_transaction(NumberAppTransaction::Increment);
     nodes[2].submit_transaction(NumberAppTransaction::Increment);
 
     // Poll the app state of every replica until the value is 4.
-    log::debug!("Integration test: poll the app state of every replica until the value is 4");
+    log::debug!("Polling the app state of every replica until the value is 4");
     while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 {
         thread::sleep(Duration::from_millis(500));
     }
+}
 
-    log::debug!("Integration test: complete.");
+/// Tests whether a validator set using [DefaultPacemaker] that starts with unsynchronized views
+/// eventually synchronize and make progress in growing the blockchain.
+#[test]
+fn default_pacemaker_view_sync_integration_test() {
+    setup_logger(LevelFilter::Trace);
+
+    let mut csprg = OsRng {};
+    let keypair_1 = DalekKeypair::generate(&mut csprg);
+    let keypair_2 = DalekKeypair::generate(&mut csprg);
+    let init_as = {
+        let mut state = AppStateUpdates::new();
+        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
+        state
+    };
+    let init_vs = {
+        let mut validator_set = ValidatorSetUpdates::new();
+        validator_set.insert(keypair_1.public.to_bytes(), 1);
+        validator_set.insert(keypair_2.public.to_bytes(), 1);
+        validator_set
+    };
+    let (
+        network_stub_1,
+        network_stub_2,
+    ) = {
+        let mut network_stubs = mock_network([keypair_1.public.to_bytes(), keypair_2.public.to_bytes()].into_iter());
+        (network_stubs.remove(0), network_stubs.remove(0))
+    };
+
+    // Start the first node.
+    let mut first_node = Node::new(keypair_1, network_stub_1, init_as.clone(), init_vs.clone());
+
+    // Wait until the first node's current view advances to 5.
+    while first_node.highest_view_entered() < 5 {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    // Start the second node.
+    log::debug!("First node is at view {}, starting second node.", first_node.highest_view_entered());
+    let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs.clone()); 
+
+    // Wait until both nodes' current views match.
+    log::debug!("Waiting until both nodes' current views match.");
+    while first_node.highest_view_entered() != second_node.highest_view_entered() {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    // Submit an Increment transaction.
+    log::debug!("Submitting an increment transaction.");
+    first_node.submit_transaction(NumberAppTransaction::Increment);
+
+    // Wait until the app state of both nodes has value == 1.
+    log::debug!("Waiting until both nodes' values are 1.");
+    while first_node.number() != 1 || second_node.number() != 1 {
+        thread::sleep(Duration::from_millis(500));
+    }
 }
 
 // Set up a logger that logs all log messages with level Trace and above.
@@ -157,16 +212,14 @@ impl Network for NetworkStub {
     }
 }
 
-fn mock_network(peers: &Vec<DalekKeypair>) -> Vec<NetworkStub> {
+fn mock_network(peers: impl Iterator<Item = PublicKeyBytes>) -> Vec<NetworkStub> {
     let mut all_peers = HashMap::new();
     let peer_and_inboxes: Vec<([u8; 32], Receiver<([u8; 32], Message)>)> = peers
-        .iter()
         .map(|peer| {
-            let my_public_key = peer.public.to_bytes();
             let (sender, receiver) = mpsc::channel();
-            all_peers.insert(my_public_key, sender);
+            all_peers.insert(peer, sender);
 
-            (my_public_key, receiver)
+            (peer, receiver)
         })
         .collect();
 
@@ -403,7 +456,7 @@ impl Node {
 
         let public_key = *keypair.public.as_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
-        let pacemaker = DefaultPacemaker::new(Duration::from_secs(1), 10, Duration::from_secs(3));
+        let pacemaker = DefaultPacemaker::new(Duration::from_millis(500), 10, Duration::from_secs(3));
         let replica = Replica::start(
             NumberApp::new(tx_queue.clone()),
             keypair,
@@ -440,6 +493,13 @@ impl Node {
             .block_tree_camera()
             .snapshot()
             .committed_validator_set()
+    }
+
+    fn highest_view_entered(&self) -> ViewNumber {
+        self.replica
+            .block_tree_camera()
+            .snapshot()
+            .highest_view_entered()
     }
 
     fn public_key(&self) -> PublicKeyBytes {
