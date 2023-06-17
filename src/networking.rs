@@ -165,8 +165,8 @@ impl<N: Network> ProgressMessageStub<N> {
                         {
                             msg_queue
                         } else {
-                            self.msg_buffer.insert(cur_view, VecDeque::new());
-                            self.msg_buffer.get_mut(&cur_view).unwrap()
+                            self.msg_buffer.insert(msg.view(), VecDeque::new());
+                            self.msg_buffer.get_mut(&msg.view()).unwrap()
                         };
 
                         msg_queue.push_back((sender, msg));
