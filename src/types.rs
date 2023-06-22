@@ -27,6 +27,7 @@ pub type Data = Vec<Datum>;
 pub type DataLen = u32;
 pub type Datum = Vec<u8>;
 pub type Power = u64;
+pub type TotalPower = u128;
 pub type PublicKeyBytes = [u8; 32];
 pub type SignatureBytes = [u8; 64];
 pub type SignatureSet = Vec<Option<SignatureBytes>>;
@@ -99,7 +100,7 @@ impl QuorumCertificate {
             }
 
             // Check whether every signature is correct and tally up their powers.
-            let mut signature_set_power: Power = 0;
+            let mut total_power: TotalPower = 0;
             for (signature, (signer, power)) in self
                 .signatures
                 .iter()
@@ -117,9 +118,7 @@ impl QuorumCertificate {
                             )
                             .is_ok()
                         {
-                            signature_set_power = signature_set_power
-                                .checked_add(power)
-                                .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
+                            total_power += power as u128;
                         } else {
                             // qc contains incorrect signature.
                             return false;
@@ -133,7 +132,7 @@ impl QuorumCertificate {
 
             // Check if the signatures form a quorum.
             let quorum = Self::quorum(validator_set.total_power());
-            signature_set_power >= quorum
+            total_power >= quorum
         }
     }
 
@@ -151,10 +150,12 @@ impl QuorumCertificate {
         *self == Self::genesis_qc()
     }
 
-    pub fn quorum(validator_set_power: Power) -> Power {
+    pub fn quorum(validator_set_power: TotalPower) -> TotalPower {
+        const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
+
         (validator_set_power
             .checked_mul(2)
-            .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR)
+            .expect(TOTAL_POWER_OVERFLOW)
             / 3)
             + 1
     }
@@ -248,20 +249,16 @@ where
 ///
 /// The validator set maintains the list of validators in ascending order of their public keys, and avails methods:
 /// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order.
-///
-/// # Limits on total power
-///
-/// The total power of a validator set (the sum of the powers of each validator) must not exceed [u64::MAX].
+/// 
+/// # Limits to total power
+/// 
+/// The total power of a validator set must not exceed `u128::MAX/2`.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct ValidatorSet {
     // The public keys of validators are included here in ascending order.
     validators: Vec<PublicKeyBytes>,
     powers: HashMap<PublicKeyBytes, Power>,
 }
-
-const VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR: &str =
-    "The total power of a validator set exceeds u64::MAX. Read the itemdoc for ValidatorSet.";
-
 
 impl Default for ValidatorSet {
     fn default() -> Self {
@@ -300,8 +297,12 @@ impl ValidatorSet {
         self.powers.get(validator)
     }
 
-    pub fn total_power(&self) -> Power {
-        self.powers.values().sum()
+    pub fn total_power(&self) -> TotalPower {
+        let mut total_power = 0; 
+        for power in self.powers.values() {
+            total_power += *power as TotalPower
+        }
+        total_power
     }
 
     pub fn contains(&self, validator: &PublicKeyBytes) -> bool {
@@ -355,8 +356,8 @@ pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
-    validator_set_power: Power,
-    signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, Power)>,
+    validator_set_total_power: TotalPower,
+    signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 
 impl VoteCollector {
@@ -365,28 +366,26 @@ impl VoteCollector {
         view: ViewNumber,
         validator_set: ValidatorSet,
     ) -> VoteCollector {
-        let total_validator_set_power = validator_set.total_power();
-
         Self {
             chain_id,
             view,
+            validator_set_total_power: validator_set.total_power(),
             validator_set,
-            validator_set_power: total_validator_set_power,
             signature_sets: HashMap::new(),
         }
     }
 
-    // Adds the vote to a signature set for the specified view, block, and phase. Returning a quorum certificate
-    // if adding the vote allows for one to be created.
-    //
-    // If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not part
-    // of its validator set, then this is a no-op.
-    //
-    // # Preconditions
-    // vote.is_correct(signer)
-    //
-    // # Panics
-    // vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
+    /// Adds the vote to a signature set for the specified view, block, and phase. Returning a quorum certificate
+    /// if adding the vote allows for one to be created.
+    ///
+    /// If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not part
+    /// of its validator set, then this is a no-op.
+    ///
+    /// # Preconditions
+    /// vote.is_correct(signer)
+    ///
+    /// # Panics
+    /// vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
     pub(crate) fn collect(
         &mut self,
         signer: &PublicKeyBytes,
@@ -405,7 +404,7 @@ impl VoteCollector {
                 e.insert((vec![None; self.validator_set.len()], 0));
             }
 
-            let (signature_set, power) = self
+            let (signature_set, signature_set_power) = self
                 .signature_sets
                 .get_mut(&(vote.block, vote.phase))
                 .unwrap();
@@ -413,11 +412,10 @@ impl VoteCollector {
             // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
             if signature_set[pos].is_none() {
                 signature_set[pos] = Some(vote.signature);
-                *power = power.checked_add(*self.validator_set.power(signer).unwrap())
-                    .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
+                *signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
-                if *power >= QuorumCertificate::quorum(self.validator_set_power) {
+                if *signature_set_power >= QuorumCertificate::quorum(self.validator_set_total_power) {
                     let (signatures, _) = self
                         .signature_sets
                         .remove(&(vote.block, vote.phase))
@@ -441,18 +439,16 @@ impl VoteCollector {
 
 pub(crate) struct NewViewCollector {
     validator_set: ValidatorSet,
-    validator_set_power: Power,
+    total_power: TotalPower,
     collected_from: HashSet<PublicKeyBytes>,
-    accumulated_power: Power,
+    accumulated_power: TotalPower,
 }
 
 impl NewViewCollector {
     pub(crate) fn new(validator_set: ValidatorSet) -> NewViewCollector {
-        let validator_set_power = validator_set.total_power();
-
         Self {
+            total_power: validator_set.total_power(),
             validator_set,
-            validator_set_power,
             collected_from: HashSet::new(),
             accumulated_power: 0,
         }
@@ -468,10 +464,9 @@ impl NewViewCollector {
 
         if !self.collected_from.contains(sender) {
             self.collected_from.insert(*sender);
-            self.accumulated_power = self.accumulated_power.checked_add(*self.validator_set.power(sender).unwrap())
-                .expect(VALIDATOR_SET_TOTAL_POWER_LIMIT_EXCEEDED_ERROR);
+            self.accumulated_power += *self.validator_set.power(sender).unwrap() as u128;
         }
 
-        self.accumulated_power >= QuorumCertificate::quorum(self.validator_set_power)
+        self.accumulated_power >= QuorumCertificate::quorum(self.total_power)
     }
 }

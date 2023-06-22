@@ -12,6 +12,12 @@
 //! The replicas used in this test suite use a mock [NetworkStub], a mock [MemDB](key-value store), and the
 //! [default pacemaker](hotstuff_rs::pacemaker::DefaultPacemaker). These use channels to simulate communication, and a
 //! hashmap to simulate persistence, and thus never leaves any artifacts.
+//! 
+//! There are currently two tests:
+//! 1. [basic_functions_integration_test]: tests the most basic user-visible functionalities: committing transactions,
+//!    querying app state, and expanding the validator set. This should complete in less than 1 minute.
+//! 2. [default_pacemaker_view_sync_integration_test]: tests whether a validator set using [DefaultPacemaker] that
+//!    start with unsynchronized views. This should complete in less than 3 minutes.
 
 extern crate rand;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -41,10 +47,8 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-/// Tests the most basic user-visible functionalities: committing transactions, querying app state, and
-/// expanding the validator set.
 #[test]
-fn basic_integration_test() {
+fn basic_functions_integration_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
@@ -106,8 +110,6 @@ fn basic_integration_test() {
     }
 }
 
-/// Tests whether a validator set using [DefaultPacemaker] that starts with unsynchronized views
-/// eventually synchronize and make progress in growing the blockchain.
 #[test]
 fn default_pacemaker_view_sync_integration_test() {
     setup_logger(LevelFilter::Trace);
