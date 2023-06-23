@@ -93,7 +93,7 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
                     block_tree.highest_qc().view,
                 ),
             ) + 1;
-            block_tree.set_highest_entered_view(cur_view);
+            block_tree.set_highest_view_entered(cur_view);
 
             let view_result = execute_view(
                 &me,

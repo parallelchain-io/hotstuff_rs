@@ -234,7 +234,7 @@ impl<K: KVStore> BlockTree<K> {
         self.write(wb);
     }
 
-    pub fn set_highest_entered_view(&mut self, view: ViewNumber) {
+    pub fn set_highest_view_entered(&mut self, view: ViewNumber) {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_entered(view);
         self.write(wb);
