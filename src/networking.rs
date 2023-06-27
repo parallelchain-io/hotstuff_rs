@@ -161,7 +161,7 @@ impl<N: Network> ProgressMessageStub<N> {
                     }
                     // Cache the message if its for a future view.
                     else if msg.view() > cur_view {
-                        let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&cur_view)
+                        let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
                         {
                             msg_queue
                         } else {
