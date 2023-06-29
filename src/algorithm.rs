@@ -396,7 +396,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
             Phase::Commit(nudge.justify.view)
         }
 
-        _ => unreachable!(),
+        Phase::Generic | Phase::Commit(_) => unreachable!(),
     };
     block_tree.write(wb);
 
