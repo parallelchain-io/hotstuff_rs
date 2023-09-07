@@ -567,56 +567,58 @@ fn sync_with<K: KVStore, N: Network>(
         };
         sync_stub.send_request(*peer, request);
 
-        if let Some(response) =
-            sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout())
-        {
-            let new_blocks: Vec<Block> = response
-                .blocks
-                .into_iter()
-                .skip_while(|block| block_tree.contains(&block.hash))
-                .collect();
-            if new_blocks.is_empty() {
-                return;
-            }
-
-            for block in new_blocks {
-                if !block.is_correct(&block_tree.committed_validator_set())
-                    || !block_tree.safe_block(&block)
-                {
+        match sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout()) {
+            Some(response) => {
+                let new_blocks: Vec<Block> = response
+                    .blocks
+                    .into_iter()
+                    .skip_while(|block| block_tree.contains(&block.hash))
+                    .collect();
+                if new_blocks.is_empty() {
                     return;
                 }
 
-                let parent_block = if block.justify.is_genesis_qc() {
-                    None
-                } else {
-                    Some(&block.justify.block)
-                };
-                let validate_block_request =
-                    ValidateBlockRequest::new(&block, block_tree.app_view(parent_block));
-                if let ValidateBlockResponse::Valid {
-                    app_state_updates,
-                    validator_set_updates,
-                } = app.validate_block(validate_block_request)
-                {
-                    let validator_set_updates_because_of_commit = block_tree.insert_block(
-                        &block,
-                        app_state_updates.as_ref(),
-                        validator_set_updates.as_ref(),
-                    );
-
-                    if let Some(updates) = validator_set_updates_because_of_commit {
-                        sync_stub.update_validator_set(updates);
+                for block in new_blocks {
+                    if !block.is_correct(&block_tree.committed_validator_set())
+                        || !block_tree.safe_block(&block)
+                    {
+                        return;
                     }
-                } else {
-                    return;
-                }
-            }
 
-            if block_tree.safe_qc(&response.highest_qc)
-                && response.highest_qc.view > block_tree.highest_qc().view
-            {
-                block_tree.set_highest_qc(&response.highest_qc)
-            }
+                    let parent_block = if block.justify.is_genesis_qc() {
+                        None
+                    } else {
+                        Some(&block.justify.block)
+                    };
+                    let validate_block_request =
+                        ValidateBlockRequest::new(&block, block_tree.app_view(parent_block));
+                    if let ValidateBlockResponse::Valid {
+                        app_state_updates,
+                        validator_set_updates,
+                    } = app.validate_block(validate_block_request)
+                    {
+                        let validator_set_updates_because_of_commit = block_tree.insert_block(
+                            &block,
+                            app_state_updates.as_ref(),
+                            validator_set_updates.as_ref(),
+                        );
+
+                        if let Some(updates) = validator_set_updates_because_of_commit {
+                            sync_stub.update_validator_set(updates);
+                        }
+                    } else {
+                        return;
+                    }
+                }
+
+                if block_tree.safe_qc(&response.highest_qc)
+                    && response.highest_qc.view > block_tree.highest_qc().view
+                {
+                    block_tree.set_highest_qc(&response.highest_qc)
+                }
+
+            },
+            None => return,
         }
     }
 }
