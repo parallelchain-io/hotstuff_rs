@@ -35,7 +35,7 @@ pub trait Pacemaker: Send {
     ) -> Duration;
 
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
-        -> PublicKeyBytes;
+        -> PublicKey;
 
     fn sync_request_limit(&self) -> u32;
 
@@ -73,7 +73,7 @@ impl Pacemaker for DefaultPacemaker {
         &mut self,
         cur_view: ViewNumber,
         validator_set: &ValidatorSet,
-    ) -> PublicKeyBytes {
+    ) -> PublicKey {
         let num_validators = validator_set.len();
         *validator_set
             .validators()

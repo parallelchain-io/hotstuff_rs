@@ -272,7 +272,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
 
 // Returns (whether I voted, whether I am the next leader).
 fn on_receive_proposal<K: KVStore, N: Network>(
-    origin: &PublicKeyBytes,
+    origin: &PublicKey,
     proposal: &Proposal,
     me: &Keypair,
     cur_view: ViewNumber,
@@ -357,7 +357,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
 
 // Returns (whether I voted, whether I am the next leader).
 fn on_receive_nudge<K: KVStore, N: Network>(
-    origin: &PublicKeyBytes,
+    origin: &PublicKey,
     nudge: &Nudge,
     me: &Keypair,
     cur_view: ViewNumber,
@@ -421,7 +421,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
 
 // Returns (whether a new highest qc was collected, i am the next leader).
 fn on_receive_vote<K: KVStore>(
-    signer: &PublicKeyBytes,
+    signer: &PublicKey,
     vote: Vote,
     votes: &mut VoteCollector,
     block_tree: &mut BlockTree<K>,
@@ -473,7 +473,7 @@ fn on_receive_vote<K: KVStore>(
 
 // returns (whether I have collected new view messages from a quorum of validators && I am the next leader)
 fn on_receive_new_view<K: KVStore>(
-    origin: &PublicKeyBytes,
+    origin: &PublicKey,
     new_view: NewView,
     new_view_collector: &mut NewViewCollector,
     block_tree: &mut BlockTree<K>,
@@ -548,7 +548,7 @@ fn sync<K: KVStore, N: Network>(
 }
 
 fn sync_with<K: KVStore, N: Network>(
-    peer: &PublicKeyBytes,
+    peer: &PublicKey,
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,

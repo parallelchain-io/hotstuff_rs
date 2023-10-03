@@ -8,7 +8,7 @@
 //! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{ed25519::signature::Signature, Signer, Verifier};
+use ed25519_dalek::{Signature, Signer, Verifier};
 
 use crate::types::*;
 
@@ -109,20 +109,15 @@ pub struct Vote {
 impl Vote {
     /// # Panics
     /// pk must be a valid public key.
-    pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
-        if let Ok(signature) = Signature::from_bytes(&self.signature) {
-            PublicKey::from_bytes(pk)
-                .unwrap()
-                .verify(
-                    &(self.chain_id, self.view, self.block, self.phase)
-                        .try_to_vec()
-                        .unwrap(),
-                    &signature,
-                )
-                .is_ok()
-        } else {
-            false
-        }
+    pub fn is_correct(&self, pk: &PublicKey) -> bool {
+        let signature = Signature::from_bytes(&self.signature);
+        pk.verify(
+        &(self.chain_id, self.view, self.block, self.phase)
+            .try_to_vec()
+            .unwrap(),
+            &signature,
+        )
+        .is_ok()
     }
 }
 
@@ -151,13 +146,13 @@ pub struct SyncResponse {
     pub highest_qc: QuorumCertificate,
 }
 
-/// A wrapper around [DalekKeypair] which implements [a convenience method](ProgressMessage::vote) for creating properly
+/// A wrapper around SigningKey which implements [a convenience method](ProgressMessage::vote) for creating properly
 /// signed [votes](Vote).
-pub(crate) struct Keypair(pub(crate) DalekKeypair);
+pub(crate) struct Keypair(pub(crate) PrivateKey);
 
 impl Keypair {
-    pub(crate) fn new(keypair: DalekKeypair) -> Keypair {
-        Keypair(keypair)
+    pub(crate) fn new(private_key: PrivateKey) -> Keypair {
+        Keypair(private_key)
     }
 
     pub(crate) fn vote(
@@ -180,7 +175,7 @@ impl Keypair {
         })
     }
 
-    pub(crate) fn public(&self) -> PublicKeyBytes {
-        self.0.public.to_bytes()
+    pub(crate) fn public(&self) -> PublicKey {
+        self.0.verifying_key()
     }
 }

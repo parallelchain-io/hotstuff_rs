@@ -16,7 +16,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use crate::messages::*;
-use crate::types::{ChainID, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates, ViewNumber};
+use crate::types::{ChainID, PublicKey, ValidatorSet, ValidatorSetUpdates, ViewNumber};
 
 pub trait Network: Clone + Send {
     /// Informs the network provider the validator set on wake-up.
@@ -29,14 +29,14 @@ pub trait Network: Clone + Send {
     fn broadcast(&mut self, message: Message);
 
     /// Send a message to the specified peer without blocking.
-    fn send(&mut self, peer: PublicKeyBytes, message: Message);
+    fn send(&mut self, peer: PublicKey, message: Message);
 
     /// Receive a message from any peer. Returns immediately with a None if no message is available now.
     ///
     /// # Safety
     /// the returned PublicKeyBytes must be a valid Ed25519 public key; i.e., it must be convertible to a
     /// [PublicKey](crate::types::PublicKey) using [from_bytes](crate::types::PublicKey::from_bytes) without errors.
-    fn recv(&mut self) -> Option<(PublicKeyBytes, Message)>;
+    fn recv(&mut self) -> Option<(PublicKey, Message)>;
 }
 
 /// Spawn the poller thread, which polls the Network for messages and distributes them into receivers for
@@ -46,9 +46,9 @@ pub(crate) fn start_polling<N: Network + 'static>(
     shutdown_signal: Receiver<()>,
 ) -> (
     JoinHandle<()>,
-    Receiver<(PublicKeyBytes, ProgressMessage)>,
-    Receiver<(PublicKeyBytes, SyncRequest)>,
-    Receiver<(PublicKeyBytes, SyncResponse)>,
+    Receiver<(PublicKey, ProgressMessage)>,
+    Receiver<(PublicKey, SyncRequest)>,
+    Receiver<(PublicKey, SyncResponse)>,
 ) {
     let (to_progress_msg_receiver, progress_msg_receiver) = mpsc::channel();
     let (to_sync_request_receiver, sync_request_receiver) = mpsc::channel();
@@ -98,14 +98,14 @@ pub(crate) fn start_polling<N: Network + 'static>(
 /// enter views at slightly different times.
 pub(crate) struct ProgressMessageStub<N: Network> {
     network: N,
-    receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
-    msg_buffer: BTreeMap<ViewNumber, VecDeque<(PublicKeyBytes, ProgressMessage)>>,
+    receiver: Receiver<(PublicKey, ProgressMessage)>,
+    msg_buffer: BTreeMap<ViewNumber, VecDeque<(PublicKey, ProgressMessage)>>,
 }
 
 impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn new(
         network: N,
-        receiver: Receiver<(PublicKeyBytes, ProgressMessage)>,
+        receiver: Receiver<(PublicKey, ProgressMessage)>,
     ) -> ProgressMessageStub<N> {
         Self {
             network,
@@ -121,7 +121,7 @@ impl<N: Network> ProgressMessageStub<N> {
         chain_id: ChainID,
         cur_view: ViewNumber,
         deadline: Instant,
-    ) -> Result<(PublicKeyBytes, ProgressMessage), ProgressMessageReceiveError> {
+    ) -> Result<(PublicKey, ProgressMessage), ProgressMessageReceiveError> {
         // Clear buffer of messages with views lower than the current one.
         self.msg_buffer = self.msg_buffer.split_off(&cur_view);
 
@@ -183,7 +183,7 @@ impl<N: Network> ProgressMessageStub<N> {
         Err(ProgressMessageReceiveError::Timeout)
     }
 
-    pub(crate) fn send(&mut self, peer: PublicKeyBytes, msg: ProgressMessage) {
+    pub(crate) fn send(&mut self, peer: PublicKey, msg: ProgressMessage) {
         self.network.send(peer, Message::ProgressMessage(msg))
     }
 
@@ -203,25 +203,25 @@ pub(crate) enum ProgressMessageReceiveError {
 
 pub(crate) struct SyncClientStub<N: Network> {
     network: N,
-    responses: Receiver<(PublicKeyBytes, SyncResponse)>,
+    responses: Receiver<(PublicKey, SyncResponse)>,
 }
 
 impl<N: Network> SyncClientStub<N> {
     pub(crate) fn new(
         network: N,
-        responses: Receiver<(PublicKeyBytes, SyncResponse)>,
+        responses: Receiver<(PublicKey, SyncResponse)>,
     ) -> SyncClientStub<N> {
         SyncClientStub { network, responses }
     }
 
-    pub(crate) fn send_request(&mut self, peer: PublicKeyBytes, msg: SyncRequest) {
+    pub(crate) fn send_request(&mut self, peer: PublicKey, msg: SyncRequest) {
         self.network
             .send(peer, Message::SyncMessage(SyncMessage::SyncRequest(msg)));
     }
 
     pub(crate) fn recv_response(
         &self,
-        peer: PublicKeyBytes,
+        peer: PublicKey,
         deadline: Instant,
     ) -> Option<SyncResponse> {
         while Instant::now() < deadline {
@@ -245,19 +245,19 @@ impl<N: Network> SyncClientStub<N> {
 }
 
 pub(crate) struct SyncServerStub<N: Network> {
-    requests: Receiver<(PublicKeyBytes, SyncRequest)>,
+    requests: Receiver<(PublicKey, SyncRequest)>,
     network: N,
 }
 
 impl<N: Network> SyncServerStub<N> {
     pub(crate) fn new(
-        requests: Receiver<(PublicKeyBytes, SyncRequest)>,
+        requests: Receiver<(PublicKey, SyncRequest)>,
         network: N,
     ) -> SyncServerStub<N> {
         SyncServerStub { requests, network }
     }
 
-    pub(crate) fn recv_request(&self) -> Option<(PublicKeyBytes, SyncRequest)> {
+    pub(crate) fn recv_request(&self) -> Option<(PublicKey, SyncRequest)> {
         match self.requests.try_recv() {
             Ok((origin, request)) => Some((origin, request)),
             // Safety: the sync server thread (the only caller of this function) shuts down before the poller thread
@@ -267,7 +267,7 @@ impl<N: Network> SyncServerStub<N> {
         }
     }
 
-    pub(crate) fn send_response(&mut self, peer: PublicKeyBytes, msg: SyncResponse) {
+    pub(crate) fn send_response(&mut self, peer: PublicKey, msg: SyncResponse) {
         self.network
             .send(peer, Message::SyncMessage(SyncMessage::SyncResponse(msg)));
     }

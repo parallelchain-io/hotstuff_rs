@@ -77,8 +77,8 @@ pub mod info {
         );
     }
 
-    pub(crate) fn start_syncing(sync_peer: &PublicKeyBytes) {
-        log::info!("{}, {}", START_SYNCING, succinct(sync_peer))
+    pub(crate) fn start_syncing(sync_peer: &PublicKey) {
+        log::info!("{}, {}", START_SYNCING, succinct(&sync_peer.to_bytes()))
     }
 }
 
@@ -102,45 +102,45 @@ pub mod debug {
     }
 
     pub(crate) fn received_proposal(
-        origin: &PublicKeyBytes,
+        origin: &PublicKey,
         block: &CryptoHash,
         height: BlockHeight,
     ) {
         log::debug!(
             "{}, {}, {}, {}",
             RECEIVED_PROPOSAL,
-            succinct(origin),
+            succinct(&origin.to_bytes()),
             succinct(block),
             height
         );
     }
 
     pub(crate) fn received_nudge(
-        origin: &PublicKeyBytes,
+        origin: &PublicKey,
         justify_block: &CryptoHash,
         justify_phase: Phase,
     ) {
         log::debug!(
             "{}, {}, {}, {:?}",
             RECEIVED_NUDGE,
-            succinct(origin),
+            succinct(&origin.to_bytes()),
             succinct(justify_block),
             justify_phase
         );
     }
 
-    pub(crate) fn received_vote(origin: &PublicKeyBytes, block: &CryptoHash, phase: Phase) {
+    pub(crate) fn received_vote(origin: &PublicKey, block: &CryptoHash, phase: Phase) {
         log::debug!(
             "{}, {}, {}, {:?}",
             RECEIVED_VOTE,
-            succinct(origin),
+            succinct(&origin.to_bytes()),
             succinct(block),
             phase
         );
     }
 
     pub(crate) fn received_new_view(
-        origin: &PublicKeyBytes,
+        origin: &PublicKey,
         view: ViewNumber,
         block: &CryptoHash,
         phase: Phase,
@@ -148,7 +148,7 @@ pub mod debug {
         log::debug!(
             "{}, {}, {}, {}, {:?}",
             RECEIVED_NEW_VIEW,
-            succinct(origin),
+            succinct(&origin.to_bytes()),
             view,
             succinct(block),
             phase
@@ -171,8 +171,8 @@ pub mod debug {
         log::debug!("{}, {}, {:?}", REPLACING_HIGHEST_QC, succinct(block), phase);
     }
 
-    pub(crate) fn received_sync_request(origin: &CryptoHash) {
-        log::debug!("{}, {}", RECEIVED_SYNC_REQUEST, succinct(origin));
+    pub(crate) fn received_sync_request(origin: &PublicKey) {
+        log::debug!("{}, {}", RECEIVED_SYNC_REQUEST, succinct(&origin.to_bytes()));
     }
 }
 

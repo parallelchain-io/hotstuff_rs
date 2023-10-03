@@ -53,6 +53,7 @@
 use crate::logging::{debug, info};
 use crate::types::*;
 use borsh::{BorshDeserialize, BorshSerialize};
+use std::iter::successors;
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
 pub struct BlockTree<K: KVStore>(K);
@@ -249,56 +250,52 @@ impl<K: KVStore> BlockTree<K> {
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
         block: &CryptoHash,
     ) -> Vec<ValidatorSetUpdates> {
-        let block_height = self.block_height(block).unwrap();
-        let block_justify = self.block_justify(block).unwrap();
+        let min_height = self.highest_committed_block_height();
+        let blocks_iter = successors(Some(*block), |b| self.block_justify(b).map(|qc| qc.block));
+        let uncommitted_blocks_iter = blocks_iter.take_while(|b| min_height.is_none() || min_height.is_some_and(|h| self.block_height(b).unwrap() > h));
+        let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
+        let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
 
-        // Base case:
-        if let Some(highest_committed_block_height) = self.highest_committed_block_height() {
-            if block_height <= highest_committed_block_height {
-                return Vec::new();
+        let helper = |mut validator_set_updates: Vec<ValidatorSetUpdates>, b: &CryptoHash| ->  Vec<ValidatorSetUpdates> {
+
+            let block_height = self.block_height(b).unwrap();
+            // Work steps:
+            info::committing(b, block_height);
+
+            // Set block at height.
+            wb.set_block_at_height(block_height, b);
+
+            // Delete all of block's siblings.
+            self.delete_siblings(wb, b);
+
+            // Apply pending app state updates.
+            if let Some(pending_app_state_updates) = self.pending_app_state_updates(b) {
+                wb.apply_app_state_updates(&pending_app_state_updates);
+                wb.delete_pending_app_state_updates(b);
             }
-        }
 
-        // Recursion step:
-        let mut validator_set_updates = if !block_justify.is_genesis_qc() {
-            let parent = block_justify.block;
-            self.commit_block(wb, &parent)
-        } else {
-            Vec::new()
+            // Apply pending validator set updates.
+            if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(b) {
+                debug::updating_validator_set(b);
+
+                let mut committed_validator_set = self.committed_validator_set();
+                committed_validator_set.apply_updates(&pending_validator_set_updates);
+
+                wb.set_committed_validator_set(&committed_validator_set);
+                wb.delete_pending_validator_set_updates(block);
+
+                validator_set_updates.push(pending_validator_set_updates);
+            }
+
+            // Update the highest committed block.
+            wb.set_highest_committed_block(b);
+
+            validator_set_updates
         };
 
-        // Work steps:
-        info::committing(block, block_height);
+        let init_updates = Vec::new();
+        uncommitted_blocks_ordered_iter.fold(init_updates, helper)
 
-        // Set block at height.
-        wb.set_block_at_height(block_height, block);
-
-        // Delete all of block's siblings.
-        self.delete_siblings(wb, block);
-
-        // Apply pending app state updates.
-        if let Some(pending_app_state_updates) = self.pending_app_state_updates(block) {
-            wb.apply_app_state_updates(&pending_app_state_updates);
-            wb.delete_pending_app_state_updates(block);
-        }
-
-        // Apply pending validator set updates.
-        if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(block) {
-            debug::updating_validator_set(block);
-
-            let mut committed_validator_set = self.committed_validator_set();
-            committed_validator_set.apply_updates(&pending_validator_set_updates);
-
-            wb.set_committed_validator_set(&committed_validator_set);
-            wb.delete_pending_validator_set_updates(block);
-
-            validator_set_updates.push(pending_validator_set_updates);
-        }
-
-        // Update the highest committed block.
-        wb.set_highest_committed_block(block);
-
-        validator_set_updates
     }
 
     /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
@@ -606,9 +603,10 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Commmitted Validator Set */
 
     pub fn set_committed_validator_set(&mut self, validator_set: &ValidatorSet) {
+        let validator_set_bytes: ValidatorSetBytes = validator_set.into();
         self.0.set(
             &COMMITTED_VALIDATOR_SET,
-            &validator_set.try_to_vec().unwrap(),
+            &validator_set_bytes.try_to_vec().unwrap(),
         )
     }
 
@@ -619,9 +617,10 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         block: &CryptoHash,
         validator_set_updates: &ValidatorSetUpdates,
     ) {
+        let validator_set_updates_bytes: ValidatorSetUpdatesBytes = validator_set_updates.into();
         self.0.set(
             &combine(&PENDING_VALIDATOR_SET_UPDATES, block),
-            &validator_set_updates.try_to_vec().unwrap(),
+            &validator_set_updates_bytes.try_to_vec().unwrap(),
         )
     }
 
@@ -910,18 +909,16 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         /* ↓↓↓ Commmitted Validator Set */
 
         fn committed_validator_set(&self) -> ValidatorSet {
-            ValidatorSet::deserialize(&mut &*self.get(&COMMITTED_VALIDATOR_SET).unwrap()).unwrap()
+            let validator_set_bytes = ValidatorSetBytes::deserialize(&mut &*self.get(&COMMITTED_VALIDATOR_SET).unwrap()).unwrap();
+            ValidatorSet::try_from(validator_set_bytes).unwrap() //error should not happen so we unwrap
         }
 
         /* ↓↓↓ Pending Validator Set Updates */
 
         fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-            Some(
-                ValidatorSetUpdates::deserialize(
-                    &mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?,
-                )
-                .unwrap(),
-            )
+            ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?,)
+            .ok()
+            .map(|validator_set_updates_bytes| ValidatorSetUpdates::try_from(validator_set_updates_bytes).unwrap())
         }
 
         /* ↓↓↓ Locked View ↓↓↓ */

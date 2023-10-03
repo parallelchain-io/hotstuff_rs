@@ -32,8 +32,7 @@ use crate::networking::{
 use crate::pacemaker::Pacemaker;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::sync_server::start_sync_server;
-use crate::types::{AppStateUpdates, ValidatorSetUpdates};
-use ed25519_dalek::Keypair;
+use crate::types::{AppStateUpdates, ValidatorSetUpdates, PrivateKey};
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 
@@ -59,7 +58,7 @@ impl<K: KVStore> Replica<K> {
 
     pub fn start(
         app: impl App<K> + 'static,
-        keypair: Keypair,
+        private_key: PrivateKey,
         mut network: impl Network + 'static,
         kv_store: K,
         pacemaker: impl Pacemaker + 'static,
@@ -85,7 +84,7 @@ impl<K: KVStore> Replica<K> {
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
         let algorithm = start_algorithm(
             app,
-            messages::Keypair::new(keypair),
+            messages::Keypair::new(private_key),
             block_tree,
             pacemaker,
             pm_stub,
