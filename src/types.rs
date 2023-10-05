@@ -321,17 +321,10 @@ impl ValidatorSet {
         }
     }
 
-    fn validators_in_bytes(&self) -> Vec<PublicKeyBytes> {
-        self.validators
-        .iter()
-        .map(|pk| pk.to_bytes())
-        .collect()
-    }
-
     pub fn put(&mut self, validator: &PublicKey, power: Power) {
         if !self.powers.contains_key(validator) {
             let validator_bytes = validator.to_bytes();
-            let insert_pos = self.validators_in_bytes().binary_search(&validator_bytes).unwrap_err(); // ensures that self.validators are sorted
+            let insert_pos = self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)).unwrap_err();
             self.validators.insert(insert_pos, *validator);
         }
 
@@ -365,7 +358,8 @@ impl ValidatorSet {
     }
 
     pub fn remove(&mut self, validator: &PublicKey) -> Option<(PublicKey, Power)> {
-        if let Ok(pos) = self.validators_in_bytes().binary_search(&validator.to_bytes()) {
+        let validator_bytes = validator.to_bytes();
+        if let Ok(pos) = self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)) {
             self.validators.remove(pos);
             self.powers.remove_entry(validator)
         } else {
@@ -394,7 +388,8 @@ impl ValidatorSet {
     }
 
     pub fn position(&self, validator: &PublicKey) -> Option<usize> {
-        match self.validators_in_bytes().binary_search(&validator.to_bytes()) {
+        let validator_bytes = validator.to_bytes();
+        match self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)) {
             Ok(pos) => Some(pos),
             Err(_) => None,
         }
