@@ -343,6 +343,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
             &proposal.block,
             app_state_updates.as_ref(),
             validator_set_updates.as_ref(),
+            event_publisher,
         );
         if let Some(updates) = validator_set_updates_because_of_commit {
             pm_stub.update_validator_set(updates);
@@ -670,6 +671,7 @@ fn sync_with<K: KVStore, N: Network>(
                             &block,
                             app_state_updates.as_ref(),
                             validator_set_updates.as_ref(),
+                            event_publisher,
                         );
 
                         if let Some(updates) = validator_set_updates_because_of_commit {
