@@ -25,6 +25,8 @@
 
 use crate::algorithm::start_algorithm;
 use crate::app::App;
+use crate::event_bus::*;
+use crate::events::*;
 use crate::messages;
 use crate::networking::{
     start_polling, Network, ProgressMessageStub, SyncClientStub, SyncServerStub,
@@ -44,6 +46,8 @@ pub struct Replica<K: KVStore> {
     algorithm_shutdown: Sender<()>,
     sync_server: Option<JoinHandle<()>>,
     sync_server_shutdown: Sender<()>,
+    event_bus: Option<JoinHandle<()>>,
+    event_bus_shutdown: Sender<()>,
 }
 
 impl<K: KVStore> Replica<K> {
@@ -56,12 +60,27 @@ impl<K: KVStore> Replica<K> {
         block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
-    pub fn start(
+    pub fn start( //these ugly parameters are temporary, we will get rid of them later by defining a builder
         app: impl App<K> + 'static,
         private_key: PrivateKey,
         mut network: impl Network + 'static,
         kv_store: K,
         pacemaker: impl Pacemaker + 'static,
+        insert_block_handlers: Vec<HandlerPtr<InsertBlockEvent>>,
+        commit_block_handlers: Vec<HandlerPtr<CommitBlockEvent>>,
+        prune_block_handlers: Vec<HandlerPtr<PruneBlockEvent>>,
+        propose_handlers: Vec<HandlerPtr<ProposeEvent>>,
+        receive_proposal_handlers: Vec<HandlerPtr<ReceiveProposalEvent>>,
+        nudge_handlers: Vec<HandlerPtr<NudgeEvent>>,
+        receive_nudge_handlers: Vec<HandlerPtr<ReceiveNudgeEvent>>,
+        vote_handlers: Vec<HandlerPtr<VoteEvent>>,
+        receive_vote_handlers: Vec<HandlerPtr<ReceiveVoteEvent>>,
+        new_view_handlers: Vec<HandlerPtr<NewViewEvent>>,
+        receive_new_view_handlers: Vec<HandlerPtr<ReceiveNewViewEvent>>,
+        start_view_handlers: Vec<HandlerPtr<StartViewEvent>>,
+        view_timeout_handlers: Vec<HandlerPtr<ViewTimeoutEvent>>,
+        start_sync_handlers: Vec<HandlerPtr<StartSyncEvent>>,
+        end_sync_handlers: Vec<HandlerPtr<EndSyncEvent>>,
     ) -> Replica<K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
@@ -82,6 +101,7 @@ impl<K: KVStore> Replica<K> {
         );
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
+        let (event_publisher, event_subscriber) = mpsc::channel();
         let algorithm = start_algorithm(
             app,
             messages::Keypair::new(private_key),
@@ -90,8 +110,35 @@ impl<K: KVStore> Replica<K> {
             pm_stub,
             sync_client_stub,
             algorithm_shutdown_receiver,
+            event_publisher,
         );
 
+        let (event_bus_shutdown, event_bus_shutdown_receiver) = mpsc::channel();
+
+        let event_handlers = EventHandlers {
+            insert_block_handlers,
+            commit_block_handlers,
+            prune_block_handlers,
+            propose_handlers,
+            receive_proposal_handlers,
+            nudge_handlers,
+            receive_nudge_handlers,
+            vote_handlers,
+            receive_vote_handlers,
+            new_view_handlers,
+            receive_new_view_handlers,
+            start_view_handlers,
+            view_timeout_handlers,
+            start_sync_handlers,
+            end_sync_handlers
+        };
+
+        let event_bus = start_event_bus(
+            event_handlers,
+            event_subscriber,
+            event_bus_shutdown_receiver,
+        );
+        
         Replica {
             block_tree_camera: BlockTreeCamera::new(kv_store),
             poller: Some(poller),
@@ -100,6 +147,8 @@ impl<K: KVStore> Replica<K> {
             algorithm_shutdown,
             sync_server: Some(sync_server),
             sync_server_shutdown,
+            event_bus: Some(event_bus),
+            event_bus_shutdown,
         }
     }
 
@@ -113,6 +162,9 @@ impl<K: KVStore> Drop for Replica<K> {
         // Safety: the order of thread shutdown in this function is important, as the threads make assumptions about
         // the validity of their channels based on this. The algorithm and sync server threads receive messages from
         // the poller, and assumes that the poller will live longer than them.
+
+        self.event_bus_shutdown.send(()).unwrap();
+        self.event_bus.take().unwrap().join().unwrap();
 
         self.algorithm_shutdown.send(()).unwrap();
         self.algorithm.take().unwrap().join().unwrap();
