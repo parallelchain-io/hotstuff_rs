@@ -50,8 +50,7 @@
 //! - **Highest View Entered** (initialized to 0).
 //! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
 
-use crate::events::{Event, InsertBlockEvent, PruneBlockEvent, CommitBlockEvent};
-use crate::logging::{debug, info};
+use crate::events::{Event, InsertBlockEvent, PruneBlockEvent, CommitBlockEvent, UpdateValidatorSetEvent, UpdateHighestQCEvent, UpdateLockedViewEvent};
 use crate::types::*;
 use borsh::{BorshDeserialize, BorshSerialize};
 use std::iter::successors;
@@ -144,9 +143,10 @@ impl<K: KVStore> BlockTree<K> {
         block: &Block,
         app_state_updates: Option<&AppStateUpdates>,
         validator_set_updates: Option<&ValidatorSetUpdates>,
-        event_publisher: &Sender<Event>,
+        event_publisher: &Option<Sender<Event>>,
     ) -> Option<ValidatorSetUpdates> {
         let mut wb = BlockTreeWriteBatch::new();
+        let mut update_locked_view: Option<ViewNumber> = None;
 
         // Insert block.
         wb.set_block(block);
@@ -164,28 +164,33 @@ impl<K: KVStore> BlockTree<K> {
         siblings.push(block.hash);
         wb.set_children(&block.justify.block, &siblings);
 
-        debug::inserted_block(&block.hash, block.height);
-        let _ = event_publisher.send(Event::InsertBlock(InsertBlockEvent { timestamp: SystemTime::now(), block: block.clone()}));
-
         // Consider updating highest qc.
-        if block.justify.view > self.highest_qc().view {
+        let update_highest_qc = block.justify.view > self.highest_qc().view;
+        if update_highest_qc {
             wb.set_highest_qc(&block.justify);
         }
 
         // If block does not ancestors, return.
         if block.justify.is_genesis_qc() {
             self.write(wb);
+
+            // we publish events that change persistent state right after the corresponding changes are written to the Block Tree
+            Event::publish(event_publisher, Event::InsertBlock(InsertBlockEvent {timestamp: SystemTime::now(), block: block.clone()}));
+            if update_highest_qc {
+                Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: block.justify.clone()}))
+            };
             return None;
         }
 
         // Otherwise, do things to ancestors according to whether the block contains a commit qc or a generic qc.
-        let mut validator_set_updates = match block.justify.phase {
+        let (mut validator_set_updates, committed_blocks) = match block.justify.phase {
             Phase::Generic => {
                 // Consider setting locked view to parent.justify.view.
                 let parent = block.justify.block;
                 let parent_justify_view = self.block_justify(&parent).unwrap().view;
                 if parent_justify_view > self.locked_view() {
                     wb.set_locked_view(parent_justify_view);
+                    update_locked_view = Some(parent_justify_view);
                 }
 
                 // Get great-grandparent.
@@ -207,25 +212,45 @@ impl<K: KVStore> BlockTree<K> {
                 };
 
                 // Commit great_grandparent if not committed yet.
-                self.commit_block(&mut wb, &great_grandparent, event_publisher)
+                self.commit_block(&mut wb, &great_grandparent)
             }
 
             Phase::Commit(precommit_qc_view) => {
                 // Consider setting locked view to precommit_qc_view.
                 if precommit_qc_view > self.locked_view() {
                     wb.set_locked_view(precommit_qc_view);
+                    update_locked_view = Some(precommit_qc_view);
                 }
 
                 let parent = block.justify.block;
 
                 // Commit parent if not committed yet.
-                self.commit_block(&mut wb, &parent, event_publisher)
+                self.commit_block(&mut wb, &parent)
             }
 
             _ => panic!(),
         };
 
         self.write(wb);
+
+        // we publish events that change persistent state right after the corresponding changes are written to the Block Tree
+        // TODO: abstract this
+        Event::publish(event_publisher, Event::InsertBlock(InsertBlockEvent {timestamp: SystemTime::now(), block: block.clone()}));
+        if update_highest_qc {
+            Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: block.justify.clone()}))
+        };
+        if let Some(locked_view) = update_locked_view {
+            Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent {timestamp: SystemTime::now(), locked_view}))
+        };
+        committed_blocks
+        .iter()
+        .for_each(|(b, validator_set_updates_opt)| {
+            Event::publish(event_publisher, Event::PruneBlock(PruneBlockEvent{timestamp: SystemTime::now(), block: *b}));
+            Event::publish(event_publisher, Event::CommitBlock(CommitBlockEvent{timestamp: SystemTime::now(), block: *b}));
+            if let Some(validator_set_updates) = validator_set_updates_opt {
+                Event::publish(event_publisher, Event::UpdateValidatorSet(UpdateValidatorSetEvent { timestamp: SystemTime::now(), cause_block: *b, validator_set_updates: validator_set_updates.clone()}));
+            }
+        });
 
         // Safety: a block that updates the validator set must be followed by a block that contains
         // a commit qc. A block becomes committed immediately if followed by a commit qc. Therefore,
@@ -254,26 +279,24 @@ impl<K: KVStore> BlockTree<K> {
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
         block: &CryptoHash,
-        event_publisher: &Sender<Event>
-    ) -> Vec<ValidatorSetUpdates> {
+    ) -> (Vec<ValidatorSetUpdates>, Vec<(CryptoHash, Option<ValidatorSetUpdates>)>) {
         let min_height = self.highest_committed_block_height();
         let blocks_iter = successors(Some(*block), |b| self.block_justify(b).map(|qc| qc.block));
         let uncommitted_blocks_iter = blocks_iter.take_while(|b| min_height.is_none() || min_height.is_some_and(|h| self.block_height(b).unwrap() > h));
         let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
         let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
+        let mut committed_blocks = Vec::new();
 
         let helper = |mut validator_set_updates: Vec<ValidatorSetUpdates>, b: &CryptoHash| ->  Vec<ValidatorSetUpdates> {
 
             let block_height = self.block_height(b).unwrap();
             // Work steps:
-            info::committing(b, block_height);
 
             // Set block at height.
             wb.set_block_at_height(block_height, b);
 
             // Delete all of block's siblings.
             self.delete_siblings(wb, b);
-            let _ = event_publisher.send(Event::PruneBlock(PruneBlockEvent{timestamp: SystemTime::now(), block: self.block(b).unwrap()}));
 
             // Apply pending app state updates.
             if let Some(pending_app_state_updates) = self.pending_app_state_updates(b) {
@@ -283,26 +306,26 @@ impl<K: KVStore> BlockTree<K> {
 
             // Apply pending validator set updates.
             if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(b) {
-                debug::updating_validator_set(b);
 
                 let mut committed_validator_set = self.committed_validator_set();
                 committed_validator_set.apply_updates(&pending_validator_set_updates);
 
                 wb.set_committed_validator_set(&committed_validator_set);
                 wb.delete_pending_validator_set_updates(block);
-
+                committed_blocks.push((*b, Some(pending_validator_set_updates.clone())));
                 validator_set_updates.push(pending_validator_set_updates);
+            } else {
+                committed_blocks.push((*b, None));
             }
 
             // Update the highest committed block.
             wb.set_highest_committed_block(b);
-            let _ = event_publisher.send(Event::CommitBlock(CommitBlockEvent{timestamp: SystemTime::now(), block: self.block(b).unwrap()}));
 
             validator_set_updates
         };
 
         let init_updates = Vec::new();
-        uncommitted_blocks_ordered_iter.fold(init_updates, helper)
+        (uncommitted_blocks_ordered_iter.fold(init_updates, helper), committed_blocks)
 
     }
 
@@ -653,7 +676,6 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
 
     pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) {
-        debug::replacing_highest_qc(&qc.block, qc.phase);
         self.0.set(&HIGHEST_QC, &qc.try_to_vec().unwrap())
     }
 

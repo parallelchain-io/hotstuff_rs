@@ -9,170 +9,324 @@
 //! printed onto a terminal or to a file, set up a [logging
 //! implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
 //!
-//! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed, while
-//! those with present continuous tense events (e.g. "Committing") indicate an activity that is still ongoing and
-//! may not get to complete because the process exits.
+//! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed
 
-use crate::types::*;
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use log;
 
-/// Logged events that may be of interest to operators to monitor the activities of a replica.
-pub mod info {
-    use super::*;
+pub(crate) use crate::events::*;
 
-    pub const PROPOSED: &str = "Proposed";
-    pub const NUDGING: &str = "Nudged";
-    pub const VOTED: &str = "Voted";
-    pub const COMMITTING: &str = "Committing";
-    pub const VIEW_TIMED_OUT: &str = "ViewTimedOut";
-    pub const START_SYNCING: &str = "StartSyncing";
+pub(crate) trait Logger {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send>;
+}
 
-    pub(crate) fn committing(block: &CryptoHash, height: BlockHeight) {
-        log::info!("{}, {}, {}", COMMITTING, succinct(block), height);
-    }
+pub const INSERT_BLOCK: &str = "InsertedBlock";
+pub const COMMIT_BLOCK: &str = "CommittedBlock";
+pub const PRUNE_BLOCK: &str = "PrunedBlock";
+pub const UPDATE_HIGHEST_QC: &str = "UpdatedHighestQC";
+pub const UPDATE_LOCKED_VIEW: &str = "UpdateLockedView";
+pub const UPDATE_VALIDATOR_SET: &str = "UpdatedValidatorSet";
 
-    pub(crate) fn proposed(view: ViewNumber, block: &CryptoHash, height: BlockHeight) {
-        log::info!("{}, {}, {}, {}", PROPOSED, view, succinct(block), height);
-    }
+pub const PROPOSE: &str = "Proposed";
+pub const NUDGE: &str = "Nudged";
+pub const VOTE: &str = "Voted";
+pub const NEWVIEW: &str = "NewView";
 
-    pub(crate) fn nudged(
-        view: ViewNumber,
-        block: &CryptoHash,
-        height: BlockHeight,
-        justify_phase: Phase,
-    ) {
-        log::info!(
-            "{}, {}, {}, {}, {:?}",
-            NUDGING,
-            view,
-            succinct(block),
-            height,
-            justify_phase
-        );
-    }
+pub const RECEIVED_PROPOSAL: &str = "ReceivedProposal";
+pub const RECEIVED_NUDGE: &str = "ReceivedNudge";
+pub const RECEIVED_VOTE: &str = "ReceivedVote";
+pub const RECEIVED_NEW_VIEW: &str = "ReceivedNewView";
 
-    pub(crate) fn voted(view: ViewNumber, block: &CryptoHash, height: BlockHeight, phase: Phase) {
-        log::info!(
-            "{}, {}, {}, {}, {:?}",
-            VOTED,
-            view,
-            succinct(block),
-            height,
-            phase
-        );
-    }
+pub const START_VIEW: &str = "EnteredView";
+pub const VIEW_TIME_OUT: &str = "ViewTimedOut";
+pub const COLLECT_QC: &str = "CollectedQC";
 
-    pub(crate) fn view_timed_out(
-        view: ViewNumber,
-        highest_qc_justifies_block: &CryptoHash,
-        highest_qc_phase: Phase,
-    ) {
-        log::info!(
-            "{}, {}, {}, {:?}",
-            VIEW_TIMED_OUT,
-            view,
-            succinct(highest_qc_justifies_block),
-            highest_qc_phase
-        );
-    }
+pub const START_SYNC: &str = "StartedSyncing";
+pub const END_SYNC: &str = "FinishedSyncing";
+pub const RECEIVE_SYNC_REQUEST: &str = "ReceivedSyncRequest";
+pub const SEND_SYNC_RESPONSE: &str = "SentSyncResponse";
 
-    pub(crate) fn start_syncing(sync_peer: &PublicKey) {
-        log::info!("{}, {}", START_SYNCING, succinct(&sync_peer.to_bytes()))
+impl Logger for InsertBlockEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |insert_block_event: &InsertBlockEvent| {
+            log::debug!("{}, {:?}, {}, {}", INSERT_BLOCK, insert_block_event.timestamp, succinct(&insert_block_event.block.hash), insert_block_event.block.height)
+        };
+        Box::new(logger)
     }
 }
 
-/// Logged events that may be of interest to programmers and system administrators to troubleshoot unexpected replica behavior.
-pub mod debug {
-    use super::*;
-
-    pub const ENTERED_VIEW: &str = "EnteredView";
-    pub const RECEIVED_PROPOSAL: &str = "ReceivedProposal";
-    pub const RECEIVED_NUDGE: &str = "ReceivedNudge";
-    pub const RECEIVED_VOTE: &str = "ReceivedVote";
-    pub const RECEIVED_NEW_VIEW: &str = "ReceivedNewView";
-    pub const COLLECTED_QC: &str = "CollectedQc";
-    pub const INSERTED_BLOCK: &str = "InsertingBlock";
-    pub const UPDATING_VALIDATOR_SET: &str = "UpdatingValidatorSet";
-    pub const REPLACING_HIGHEST_QC: &str = "ReplacingHighestQc";
-    pub const RECEIVED_SYNC_REQUEST: &str = "ReceivedSyncRequest";
-
-    pub(crate) fn entered_view(view: ViewNumber) {
-        log::debug!("{}, {}", ENTERED_VIEW, view);
+impl Logger for CommitBlockEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |commit_block_event: &CommitBlockEvent| {
+            log::info!("{}, {:?}, {}", COMMIT_BLOCK, commit_block_event.timestamp, succinct(&commit_block_event.block))
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn received_proposal(
-        origin: &PublicKey,
-        block: &CryptoHash,
-        height: BlockHeight,
-    ) {
-        log::debug!(
-            "{}, {}, {}, {}",
-            RECEIVED_PROPOSAL,
-            succinct(&origin.to_bytes()),
-            succinct(block),
-            height
-        );
+impl Logger for PruneBlockEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |prune_block_event: &PruneBlockEvent| {
+            log::info!("{}, {:?}, {}", PRUNE_BLOCK, prune_block_event.timestamp, succinct(&prune_block_event.block))
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn received_nudge(
-        origin: &PublicKey,
-        justify_block: &CryptoHash,
-        justify_phase: Phase,
-    ) {
-        log::debug!(
-            "{}, {}, {}, {:?}",
-            RECEIVED_NUDGE,
-            succinct(&origin.to_bytes()),
-            succinct(justify_block),
-            justify_phase
-        );
+impl Logger for UpdateHighestQCEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |update_highest_qc_event: &UpdateHighestQCEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {:?}",
+                UPDATE_HIGHEST_QC,
+                update_highest_qc_event.timestamp,
+                succinct(&update_highest_qc_event.highest_qc.block),
+                update_highest_qc_event.highest_qc.view,
+                update_highest_qc_event.highest_qc.phase
+            )
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn received_vote(origin: &PublicKey, block: &CryptoHash, phase: Phase) {
-        log::debug!(
-            "{}, {}, {}, {:?}",
-            RECEIVED_VOTE,
-            succinct(&origin.to_bytes()),
-            succinct(block),
-            phase
-        );
+impl Logger for UpdateLockedViewEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |update_locked_view_event: &UpdateLockedViewEvent| {
+            log::info!(
+                "{}, {:?}, {}",
+                UPDATE_LOCKED_VIEW,
+                update_locked_view_event.timestamp,
+                update_locked_view_event.locked_view
+            )
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn received_new_view(
-        origin: &PublicKey,
-        view: ViewNumber,
-        block: &CryptoHash,
-        phase: Phase,
-    ) {
-        log::debug!(
-            "{}, {}, {}, {}, {:?}",
-            RECEIVED_NEW_VIEW,
-            succinct(&origin.to_bytes()),
-            view,
-            succinct(block),
-            phase
-        );
+impl Logger for UpdateValidatorSetEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |update_validator_set_event: &UpdateValidatorSetEvent| {
+            log::info!("{}, {:?}, {}", UPDATE_VALIDATOR_SET, update_validator_set_event.timestamp, succinct(&update_validator_set_event.cause_block))
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn collected_qc(block: &CryptoHash, phase: Phase) {
-        log::debug!("{}, {}, {:?}", COLLECTED_QC, succinct(block), phase);
+impl Logger for ProposeEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |propose_event: &ProposeEvent| {
+            log::info!("{}, {:?}, {}, {}, {}", PROPOSE, propose_event.timestamp, succinct(&propose_event.proposal.block.hash), propose_event.proposal.block.height, propose_event.proposal.view)
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn updating_validator_set(cause_block: &CryptoHash) {
-        log::debug!("{}, {}", UPDATING_VALIDATOR_SET, succinct(cause_block));
+impl Logger for NudgeEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |nudge_event: &NudgeEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {:?}",
+                NUDGE,
+                nudge_event.timestamp,
+                succinct(&nudge_event.nudge.justify.block),
+                nudge_event.nudge.view,
+                nudge_event.nudge.justify.phase
+            )
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn inserted_block(block: &CryptoHash, height: BlockHeight) {
-        log::debug!("{}, {}, {}", INSERTED_BLOCK, succinct(block), height);
+impl Logger for VoteEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |vote_event: &VoteEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {:?}",
+                VOTE,
+                vote_event.timestamp,
+                succinct(&vote_event.vote.block),
+                vote_event.vote.view,
+                vote_event.vote.phase
+            )
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn replacing_highest_qc(block: &CryptoHash, phase: Phase) {
-        log::debug!("{}, {}, {:?}", REPLACING_HIGHEST_QC, succinct(block), phase);
+impl Logger for NewViewEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |new_view_event: &NewViewEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {:?}",
+                VIEW_TIME_OUT,
+                new_view_event.timestamp,
+                succinct(&new_view_event.new_view.highest_qc.block),
+                new_view_event.new_view.view,
+                new_view_event.new_view.highest_qc.phase
+            )
+        };
+        Box::new(logger)
     }
+}
 
-    pub(crate) fn received_sync_request(origin: &PublicKey) {
-        log::debug!("{}, {}", RECEIVED_SYNC_REQUEST, succinct(&origin.to_bytes()));
+impl Logger for ReceiveProposalEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |receive_proposal_event: &ReceiveProposalEvent| {
+            log::debug!(
+                "{}, {:?}, {}, {}, {}",
+                RECEIVED_PROPOSAL,
+                receive_proposal_event.timestamp,
+                succinct(&receive_proposal_event.origin.to_bytes()),
+                succinct(&receive_proposal_event.proposal.block.hash),
+                receive_proposal_event.proposal.block.height
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for ReceiveNudgeEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |receive_nudge_event: &ReceiveNudgeEvent| {
+            log::debug!(
+                "{}, {:?}, {}, {}, {:?}",
+                RECEIVED_NUDGE,
+                receive_nudge_event.timestamp,
+                succinct(&receive_nudge_event.origin.to_bytes()),
+                succinct(&receive_nudge_event.nudge.justify.block),
+                receive_nudge_event.nudge.justify.phase
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for ReceiveVoteEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |receive_vote_event: &ReceiveVoteEvent| {
+            log::debug!(
+                "{}, {:?}, {}, {}, {:?}",
+                RECEIVED_VOTE,
+                receive_vote_event.timestamp,
+                succinct(&receive_vote_event.origin.to_bytes()),
+                succinct(&receive_vote_event.vote.block),
+                receive_vote_event.vote.phase
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for ReceiveNewViewEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |receive_new_view_event: &ReceiveNewViewEvent| {
+            log::debug!(
+                "{}, {:?}, {}, {}, {}, {:?}",
+                RECEIVED_NEW_VIEW,
+                receive_new_view_event.timestamp,
+                succinct(&receive_new_view_event.origin.to_bytes()),
+                succinct(&receive_new_view_event.new_view.highest_qc.block),
+                receive_new_view_event.new_view.view,
+                receive_new_view_event.new_view.highest_qc.phase
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for StartViewEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |start_view_event: &StartViewEvent| {
+            log::debug!(
+                "{}, {:?}, {}, {}",
+                START_VIEW,
+                start_view_event.timestamp,
+                succinct(&start_view_event.leader.to_bytes()),
+                start_view_event.view
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for ViewTimeoutEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |view_timeout_event: &ViewTimeoutEvent| {
+            log::info!(
+                "{}, {:?}, {}, {:?}",
+                VIEW_TIME_OUT,
+                view_timeout_event.timestamp,
+                view_timeout_event.view,
+                view_timeout_event.timeout,
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for CollectQCEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |collect_qc_event: &CollectQCEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {:?}",
+                COLLECT_QC,
+                collect_qc_event.timestamp,
+                succinct(&collect_qc_event.quorum_certificate.block),
+                collect_qc_event.quorum_certificate.view,
+                collect_qc_event.quorum_certificate.phase,
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for StartSyncEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |start_sync_event: &StartSyncEvent| {
+            log::info!("{}, {:?}, {}", START_SYNC, start_sync_event.timestamp, succinct(&start_sync_event.peer.to_bytes()))
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for EndSyncEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |end_sync_event: &EndSyncEvent| {
+            log::info!("{}, {:?}, {}, {}", END_SYNC, end_sync_event.timestamp, succinct(&end_sync_event.peer.to_bytes()), end_sync_event.blocks_synced)
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for ReceiveSyncRequestEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |receive_sync_request_event: &ReceiveSyncRequestEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {}",
+                RECEIVE_SYNC_REQUEST,
+                receive_sync_request_event.timestamp,
+                succinct(&receive_sync_request_event.peer.to_bytes()),
+                receive_sync_request_event.start_height,
+                receive_sync_request_event.limit
+            )  
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for SendSyncResponseEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |send_sync_response_event: &SendSyncResponseEvent| {
+            log::info!(
+                "{}, {:?}, {}, {}, {}",
+                SEND_SYNC_RESPONSE,
+                send_sync_response_event.timestamp,
+                succinct(&send_sync_response_event.peer.to_bytes()),
+                succinct(&send_sync_response_event.highest_qc.block),
+                send_sync_response_event.blocks.len(),
+            )  
+        };
+        Box::new(logger)
     }
 }
 
