@@ -25,6 +25,8 @@
 
 use crate::algorithm::start_algorithm;
 use crate::app::App;
+use crate::event_bus::*;
+use crate::events::*;
 use crate::messages;
 use crate::networking::{
     start_polling, Network, ProgressMessageStub, SyncClientStub, SyncServerStub,
@@ -44,6 +46,8 @@ pub struct Replica<K: KVStore> {
     algorithm_shutdown: Sender<()>,
     sync_server: Option<JoinHandle<()>>,
     sync_server_shutdown: Sender<()>,
+    event_bus: Option<JoinHandle<()>>,
+    event_bus_shutdown: Option<Sender<()>>,
 }
 
 impl<K: KVStore> Replica<K> {
@@ -62,6 +66,28 @@ impl<K: KVStore> Replica<K> {
         mut network: impl Network + 'static,
         kv_store: K,
         pacemaker: impl Pacemaker + 'static,
+        log_events: bool,
+        insert_block_handlers: Vec<HandlerPtr<InsertBlockEvent>>,
+        commit_block_handlers: Vec<HandlerPtr<CommitBlockEvent>>,
+        prune_block_handlers: Vec<HandlerPtr<PruneBlockEvent>>,
+        update_highest_qc_handlers: Vec<HandlerPtr<UpdateHighestQCEvent>>,
+        update_locked_view_handlers: Vec<HandlerPtr<UpdateLockedViewEvent>>,
+        update_validator_set_handlers: Vec<HandlerPtr<UpdateValidatorSetEvent>>,
+        propose_handlers: Vec<HandlerPtr<ProposeEvent>>,
+        nudge_handlers: Vec<HandlerPtr<NudgeEvent>>,
+        vote_handlers: Vec<HandlerPtr<VoteEvent>>,
+        new_view_handlers: Vec<HandlerPtr<NewViewEvent>>,
+        receive_proposal_handlers: Vec<HandlerPtr<ReceiveProposalEvent>>,
+        receive_nudge_handlers: Vec<HandlerPtr<ReceiveNudgeEvent>>,
+        receive_vote_handlers: Vec<HandlerPtr<ReceiveVoteEvent>>,
+        receive_new_view_handlers: Vec<HandlerPtr<ReceiveNewViewEvent>>,
+        start_view_handlers: Vec<HandlerPtr<StartViewEvent>>,
+        view_timeout_handlers: Vec<HandlerPtr<ViewTimeoutEvent>>,
+        collect_qc_handlers: Vec<HandlerPtr<CollectQCEvent>>,
+        start_sync_handlers: Vec<HandlerPtr<StartSyncEvent>>,
+        end_sync_handlers: Vec<HandlerPtr<EndSyncEvent>>,
+        receive_sync_request_handlers: Vec<HandlerPtr<ReceiveSyncRequestEvent>>,
+        send_sync_response_handlers: Vec<HandlerPtr<SendSyncResponseEvent>>,
     ) -> Replica<K> {
         let block_tree = BlockTree::new(kv_store.clone());
 
@@ -73,12 +99,46 @@ impl<K: KVStore> Replica<K> {
         let sync_server_stub = SyncServerStub::new(sync_requests, network.clone());
         let sync_client_stub = SyncClientStub::new(network, sync_responses);
 
+        let mut event_handlers = EventHandlers {
+            insert_block_handlers,
+            commit_block_handlers,
+            prune_block_handlers,
+            update_highest_qc_handlers,
+            update_locked_view_handlers,
+            update_validator_set_handlers,
+            propose_handlers,
+            nudge_handlers,
+            vote_handlers,
+            new_view_handlers,
+            receive_proposal_handlers,
+            receive_nudge_handlers,
+            receive_vote_handlers,
+            receive_new_view_handlers,
+            start_view_handlers,
+            view_timeout_handlers,
+            collect_qc_handlers,
+            start_sync_handlers,
+            end_sync_handlers,
+            receive_sync_request_handlers,
+            send_sync_response_handlers
+        };
+
+        if log_events {
+            event_handlers.add_logging_handlers();
+        };
+
+        let (event_publisher, event_subscriber) = 
+            if !event_handlers.is_empty() {
+                Some(mpsc::channel()).unzip()
+            } else { (None, None) };
+
         let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
         let sync_server = start_sync_server(
             BlockTreeCamera::new(kv_store.clone()),
             sync_server_stub,
             sync_server_shutdown_receiver,
             pacemaker.sync_request_limit(),
+            event_publisher.clone(),
         );
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
@@ -90,8 +150,26 @@ impl<K: KVStore> Replica<K> {
             pm_stub,
             sync_client_stub,
             algorithm_shutdown_receiver,
+            event_publisher,
         );
 
+        let (event_bus_shutdown, event_bus_shutdown_receiver) =
+            if !event_handlers.is_empty() {
+                Some(mpsc::channel()).unzip()
+            } else { (None, None) };
+
+        let event_bus = if !event_handlers.is_empty() {
+            Some(
+                start_event_bus(
+                event_handlers,
+                event_subscriber.unwrap(), // Safety: should be Some(...)
+                event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...)
+                )
+            )
+        } else {
+            None
+        };
+        
         Replica {
             block_tree_camera: BlockTreeCamera::new(kv_store),
             poller: Some(poller),
@@ -100,6 +178,8 @@ impl<K: KVStore> Replica<K> {
             algorithm_shutdown,
             sync_server: Some(sync_server),
             sync_server_shutdown,
+            event_bus,
+            event_bus_shutdown,
         }
     }
 
@@ -113,6 +193,11 @@ impl<K: KVStore> Drop for Replica<K> {
         // Safety: the order of thread shutdown in this function is important, as the threads make assumptions about
         // the validity of their channels based on this. The algorithm and sync server threads receive messages from
         // the poller, and assumes that the poller will live longer than them.
+
+        self.event_bus_shutdown.iter().for_each(|shutdown| shutdown.send(()).unwrap());
+        if self.event_bus.is_some() {
+            self.event_bus.take().unwrap().join().unwrap();
+        }
 
         self.algorithm_shutdown.send(()).unwrap();
         self.algorithm.take().unwrap().join().unwrap();
