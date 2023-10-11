@@ -60,7 +60,7 @@ impl<K: KVStore> Replica<K> {
         block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
-    pub fn start( //TODO: will remove these nasty parameters later by defining a builder
+    pub fn start(
         app: impl App<K> + 'static,
         private_key: PrivateKey,
         mut network: impl Network + 'static,
@@ -153,21 +153,22 @@ impl<K: KVStore> Replica<K> {
             event_publisher,
         );
 
-        let (event_bus_shutdown, event_bus_shutdown_receiver) = mpsc::channel();
+        let (event_bus_shutdown, event_bus_shutdown_receiver) =
+            if !event_handlers.is_empty() {
+                Some(mpsc::channel()).unzip()
+            } else { (None, None) };
 
         let event_bus = if !event_handlers.is_empty() {
             Some(
                 start_event_bus(
                 event_handlers,
-                event_subscriber.unwrap(),
-                event_bus_shutdown_receiver,
+                event_subscriber.unwrap(), // Safety: should be Some(...)
+                event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...)
                 )
             )
         } else {
             None
         };
-
-        let event_bus_shutdown = event_bus.as_ref().and(Some(event_bus_shutdown));
         
         Replica {
             block_tree_camera: BlockTreeCamera::new(kv_store),

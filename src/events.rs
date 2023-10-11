@@ -1,9 +1,10 @@
 //! Definitions of hotstuff-rs events for event handling and logging
 //! Note: an event for a given action indicates that the action has been completed
 
-use std::{time::{SystemTime, Duration}, sync::mpsc::Sender};
-
-use crate::{types::*, messages::{Proposal, Nudge, Vote, NewView}};
+use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, PublicKey};
+use crate::messages::{Proposal, Nudge, Vote, NewView};
+use std::time::{SystemTime, Duration};
+use std::sync::mpsc::Sender;
 
 pub enum Event {
     // Events that change persistent state.

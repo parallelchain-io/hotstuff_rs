@@ -131,7 +131,7 @@ fn execute_view<K: KVStore, N: Network>(
     let cur_leader = pacemaker.view_leader(view, &cur_validators);
     let i_am_cur_leader = me.public() == cur_leader;
 
-    Event::publish(event_publisher, Event::StartView(StartViewEvent {timestamp: SystemTime::now(), leader: cur_leader, view}));
+    Event::publish(event_publisher, Event::StartView(StartViewEvent { timestamp: SystemTime::now(), leader: cur_leader, view}));
 
     // 1. If I am the current leader, broadcast a proposal or a nudge.
     if i_am_cur_leader {
@@ -211,7 +211,7 @@ fn execute_view<K: KVStore, N: Network>(
     }
 
     // 3. If the view times out, send a New View message.
-    Event::publish(event_publisher, Event::ViewTimeout(ViewTimeoutEvent {timestamp: SystemTime::now(), view, timeout}));
+    Event::publish(event_publisher, Event::ViewTimeout(ViewTimeoutEvent { timestamp: SystemTime::now(), view, timeout}));
 
     on_view_timeout(view, app, block_tree, pacemaker, pm_stub, event_publisher);
 
@@ -264,7 +264,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             };
 
             pm_stub.broadcast(proposal_msg);
-            Event::publish(event_publisher, Event::Propose(ProposeEvent{timestamp: SystemTime::now(), proposal}))
+            Event::publish(event_publisher, Event::Propose(ProposeEvent { timestamp: SystemTime::now(), proposal}))
         }
 
         // Produce a nudge.
@@ -277,7 +277,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
             };
 
             pm_stub.broadcast(nudge_msg);
-            Event::publish(event_publisher, Event::Nudge(NudgeEvent{timestamp: SystemTime::now(), nudge}))
+            Event::publish(event_publisher, Event::Nudge(NudgeEvent { timestamp: SystemTime::now(), nudge}))
         }
     };
 }
@@ -296,7 +296,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     new_view_collector: &mut NewViewCollector,
     event_publisher: &Option<Sender<Event>>,
 ) -> (bool, bool) {
-    Event::publish(event_publisher, Event::ReceiveProposal(ReceiveProposalEvent {timestamp: SystemTime::now(), origin: *origin, proposal: proposal.clone()}));
+    Event::publish(event_publisher, Event::ReceiveProposal(ReceiveProposalEvent { timestamp: SystemTime::now(), origin: *origin, proposal: proposal.clone()}));
 
     if !proposal
         .block
@@ -355,7 +355,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
             };
 
             pm_stub.send(next_leader, vote_msg);
-            Event::publish(event_publisher, Event::Vote(VoteEvent{timestamp: SystemTime::now(), vote}))
+            Event::publish(event_publisher, Event::Vote(VoteEvent { timestamp: SystemTime::now(), vote}))
         }
 
         let i_am_next_leader = me.public() == next_leader;
@@ -382,7 +382,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     pm_stub: &mut ProgressMessageStub<N>,
     event_publisher: &Option<Sender<Event>>,
 ) -> (bool, bool) {
-    Event::publish(event_publisher, Event::ReceiveNudge(ReceiveNudgeEvent {timestamp: SystemTime::now(), origin: *origin, nudge: nudge.clone()}));
+    Event::publish(event_publisher, Event::ReceiveNudge(ReceiveNudgeEvent { timestamp: SystemTime::now(), origin: *origin, nudge: nudge.clone()}));
 
     if nudge.justify.phase.is_generic()
         || nudge.justify.phase.is_commit()
@@ -398,9 +398,11 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     }
 
     let mut wb = BlockTreeWriteBatch::new();
+    let mut update_highest_qc: Option<QuorumCertificate> = None;
+    let mut update_locked_view: Option<ViewNumber> = None;
     if nudge.justify.view > block_tree.highest_qc().view {
         wb.set_highest_qc(&nudge.justify);
-        Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: nudge.justify.clone()}))
+        update_highest_qc = Some(nudge.justify.clone());
     }
     let next_phase = match nudge.justify.phase {
         Phase::Prepare => Phase::Precommit(nudge.justify.view),
@@ -408,7 +410,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         Phase::Precommit(prepare_qc_view) => {
             if prepare_qc_view > block_tree.locked_view() {
                 wb.set_locked_view(prepare_qc_view);
-                Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent {timestamp: SystemTime::now(), locked_view: prepare_qc_view}))
+                update_locked_view = Some(prepare_qc_view);
             }
 
             Phase::Commit(nudge.justify.view)
@@ -417,6 +419,13 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         Phase::Generic | Phase::Commit(_) => unreachable!(),
     };
     block_tree.write(wb);
+
+    if let Some(highest_qc) = update_highest_qc {
+        Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}))
+    }
+    if let Some(locked_view) = update_locked_view {
+        Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}))
+    }
 
     let vote_msg = me.vote(app.chain_id(), cur_view, nudge.justify.block, next_phase);
     let vote = if let ProgressMessage::Vote(vote) = vote_msg.clone() {
@@ -429,7 +438,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
     if i_am_validator {
         pm_stub.send(next_leader, vote_msg);
-        Event::publish(event_publisher, Event::Vote(VoteEvent{timestamp: SystemTime::now(), vote}));
+        Event::publish(event_publisher, Event::Vote(VoteEvent{ timestamp: SystemTime::now(), vote}));
     }
 
     let i_am_next_leader = me.public() == next_leader;
@@ -448,29 +457,37 @@ fn on_receive_vote<K: KVStore>(
     pacemaker: &mut impl Pacemaker,
     event_publisher: &Option<Sender<Event>>,
 ) -> (bool, bool) {
-    Event::publish(event_publisher, Event::ReceiveVote(ReceiveVoteEvent {timestamp: SystemTime::now(), origin: *signer, vote: vote.clone()}));
+    Event::publish(event_publisher, Event::ReceiveVote(ReceiveVoteEvent { timestamp: SystemTime::now(), origin: *signer, vote: vote.clone()}));
 
     let highest_qc_updated = if vote.is_correct(signer) {
         if let Some(new_qc) = votes.collect(signer, vote) {
             if block_tree.safe_qc(&new_qc) {
-                Event::publish(event_publisher, Event::CollectQC(CollectQCEvent {timestamp: SystemTime::now(), quorum_certificate: new_qc.clone()}));
+                Event::publish(event_publisher, Event::CollectQC(CollectQCEvent { timestamp: SystemTime::now(), quorum_certificate: new_qc.clone()}));
 
                 let mut wb = BlockTreeWriteBatch::new();
+                let mut update_highest_qc: Option<QuorumCertificate> = None;
+                let mut update_locked_view: Option<ViewNumber> = None;
                 if let Phase::Precommit(prepare_qc_view) = new_qc.phase {
                     if prepare_qc_view > block_tree.locked_view() {
                         wb.set_locked_view(prepare_qc_view);
-                        Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent {timestamp: SystemTime::now(), locked_view: prepare_qc_view}));
+                        update_locked_view = Some(prepare_qc_view);
                     }
                 }
 
                 let highest_qc_updated = if new_qc.view > block_tree.highest_qc().view {
                     wb.set_highest_qc(&new_qc);
-                    Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: new_qc}));
+                    update_highest_qc = Some(new_qc.clone());
                     true
                 } else {
                     false
                 };
                 block_tree.write(wb);
+                if let Some(highest_qc) = update_highest_qc {
+                    Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}));
+                }
+                if let Some(locked_view) = update_locked_view {
+                    Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}));
+                }
 
                 highest_qc_updated
             } else {
@@ -503,7 +520,7 @@ fn on_receive_new_view<K: KVStore>(
     pacemaker: &mut impl Pacemaker,
     event_publisher: &Option<Sender<Event>>,
 ) -> bool {
-    Event::publish(event_publisher, Event::ReceiveNewView(ReceiveNewViewEvent {timestamp: SystemTime::now(), origin: *origin, new_view: new_view.clone()}));
+    Event::publish(event_publisher, Event::ReceiveNewView(ReceiveNewViewEvent { timestamp: SystemTime::now(), origin: *origin, new_view: new_view.clone()}));
 
     if new_view
         .highest_qc
@@ -511,20 +528,28 @@ fn on_receive_new_view<K: KVStore>(
         && block_tree.safe_qc(&new_view.highest_qc)
     {
         let mut wb = BlockTreeWriteBatch::new();
+        let mut update_highest_qc: Option<QuorumCertificate> = None;
+        let mut update_locked_view: Option<ViewNumber> = None;
 
         if let Phase::Precommit(prepare_qc_view) = new_view.highest_qc.phase {
             if prepare_qc_view > block_tree.locked_view() {
                 wb.set_locked_view(prepare_qc_view);
-                Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent {timestamp: SystemTime::now(), locked_view: prepare_qc_view}))
+                update_locked_view = Some(prepare_qc_view);
             }
         }
 
         if new_view.highest_qc.view > block_tree.highest_qc().view {
             wb.set_highest_qc(&new_view.highest_qc);
-            Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: new_view.highest_qc.clone()}))
+            update_highest_qc = Some(new_view.highest_qc);
         };
 
         block_tree.write(wb);
+        if let Some(highest_qc) = update_highest_qc {
+            Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}))
+        }
+        if let Some(locked_view) = update_locked_view {
+            Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}))
+        }
 
         if new_view_collector.collect(origin) {
             let next_leader =
@@ -556,7 +581,7 @@ fn on_view_timeout<K: KVStore, N: Network>(
     let next_leader = pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
 
     pm_stub.send(next_leader, new_view_msg);
-    Event::publish(event_publisher, Event::NewView(NewViewEvent{timestamp: SystemTime::now(), new_view}));
+    Event::publish(event_publisher, Event::NewView(NewViewEvent { timestamp: SystemTime::now(), new_view}));
 }
 
 fn sync<K: KVStore, N: Network>(
@@ -580,11 +605,8 @@ fn sync_with<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     event_publisher: &Option<Sender<Event>>
 ) {
-    Event::publish(event_publisher, Event::StartSync(StartSyncEvent {timestamp: SystemTime::now(), peer: peer.clone()}));
+    Event::publish(event_publisher, Event::StartSync(StartSyncEvent { timestamp: SystemTime::now(), peer: peer.clone()}));
     let mut blocks_synced = 0;
-    let publish_end_sync_event = |t: SystemTime, blocks_synced: &u64| {
-        Event::publish(event_publisher, Event::EndSync(EndSyncEvent {timestamp: t, peer: *peer, blocks_synced: *blocks_synced}));
-    };
 
     loop {
         let request = SyncRequest {
@@ -605,7 +627,7 @@ fn sync_with<K: KVStore, N: Network>(
                     .skip_while(|block| block_tree.contains(&block.hash))
                     .collect();
                 if new_blocks.is_empty() {
-                    publish_end_sync_event(SystemTime::now(), &blocks_synced);
+                    Event::publish(event_publisher, Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}));
                     return;
                 }
 
@@ -613,7 +635,7 @@ fn sync_with<K: KVStore, N: Network>(
                     if !block.is_correct(&block_tree.committed_validator_set())
                         || !block_tree.safe_block(&block)
                     {
-                        publish_end_sync_event(SystemTime::now(), &blocks_synced);
+                        Event::publish(event_publisher, Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}));
                         return;
                     }
 
@@ -642,7 +664,7 @@ fn sync_with<K: KVStore, N: Network>(
 
                         blocks_synced += 1;
                     } else {
-                        publish_end_sync_event(SystemTime::now(), &blocks_synced);
+                        Event::publish(event_publisher, Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}));
                         return;
                     }
                 }
@@ -651,12 +673,12 @@ fn sync_with<K: KVStore, N: Network>(
                     && response.highest_qc.view > block_tree.highest_qc().view
                 {
                     block_tree.set_highest_qc(&response.highest_qc);
-                    Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent {timestamp: SystemTime::now(), highest_qc: response.highest_qc.clone()}))
+                    Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc: response.highest_qc.clone()}))
                 }
 
             },
             None => {
-                publish_end_sync_event(SystemTime::now(), &blocks_synced);
+                Event::publish(event_publisher, Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}));
                 return;
             }
         }

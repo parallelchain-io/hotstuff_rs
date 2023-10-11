@@ -1,8 +1,18 @@
+//! Event bus thread for handling events published from the algorithm and sync_server threads
+//! 
+//! When the thread receives a message containing an event, it fires all handlers for the event
+//! stored in EventHandlers
+//! 
+//! When no handlers are stored in a replica's instance of EventHandlers then this thread is not started
+//! 
+//! A replica's instance of EventHandlers contains the handlers provided upon building the replica,
+//! and if logging is enabled via replica's config its instance of EventHandlers also contains
+//! the default logging handlers defined in logging.rs
+
 use crate::events::*;
 use crate::logging;
 use crate::logging::Logger;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
 

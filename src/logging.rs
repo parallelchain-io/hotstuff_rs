@@ -24,7 +24,7 @@ pub const INSERT_BLOCK: &str = "InsertedBlock";
 pub const COMMIT_BLOCK: &str = "CommittedBlock";
 pub const PRUNE_BLOCK: &str = "PrunedBlock";
 pub const UPDATE_HIGHEST_QC: &str = "UpdatedHighestQC";
-pub const UPDATE_LOCKED_VIEW: &str = "UpdateLockedView";
+pub const UPDATE_LOCKED_VIEW: &str = "UpdatedLockedView";
 pub const UPDATE_VALIDATOR_SET: &str = "UpdatedValidatorSet";
 
 pub const PROPOSE: &str = "Proposed";
@@ -49,7 +49,13 @@ pub const SEND_SYNC_RESPONSE: &str = "SentSyncResponse";
 impl Logger for InsertBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |insert_block_event: &InsertBlockEvent| {
-            log::debug!("{}, {:?}, {}, {}", INSERT_BLOCK, insert_block_event.timestamp, succinct(&insert_block_event.block.hash), insert_block_event.block.height)
+            log::debug!(
+                "{}, {:?}, {}, {}",
+                INSERT_BLOCK,
+                insert_block_event.timestamp,
+                succinct(&insert_block_event.block.hash),
+                insert_block_event.block.height
+            )
         };
         Box::new(logger)
     }
@@ -106,7 +112,12 @@ impl Logger for UpdateLockedViewEvent {
 impl Logger for UpdateValidatorSetEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |update_validator_set_event: &UpdateValidatorSetEvent| {
-            log::info!("{}, {:?}, {}", UPDATE_VALIDATOR_SET, update_validator_set_event.timestamp, succinct(&update_validator_set_event.cause_block))
+            log::info!(
+                "{}, {:?}, {}",
+                UPDATE_VALIDATOR_SET,
+                update_validator_set_event.timestamp,
+                succinct(&update_validator_set_event.cause_block)
+            )
         };
         Box::new(logger)
     }
@@ -115,7 +126,14 @@ impl Logger for UpdateValidatorSetEvent {
 impl Logger for ProposeEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |propose_event: &ProposeEvent| {
-            log::info!("{}, {:?}, {}, {}, {}", PROPOSE, propose_event.timestamp, succinct(&propose_event.proposal.block.hash), propose_event.proposal.block.height, propose_event.proposal.view)
+            log::info!(
+                "{}, {:?}, {}, {}, {}",
+                PROPOSE,
+                propose_event.timestamp,
+                succinct(&propose_event.proposal.block.hash),
+                propose_event.proposal.block.height,
+                propose_event.proposal.view
+            )
         };
         Box::new(logger)
     }

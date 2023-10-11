@@ -27,7 +27,6 @@
 //!       into its block tree, and then jumps back to step 2.
 
 use crate::events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent};
-//use crate::logging::debug;
 use crate::messages::{SyncRequest, SyncResponse};
 use crate::networking::{Network, SyncServerStub};
 use crate::state::{BlockTreeCamera, KVStore};
@@ -60,16 +59,16 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
             },
         )) = sync_stub.recv_request()
         {
-            Event::publish(&event_publisher, Event::ReceiveSyncRequest(ReceiveSyncRequestEvent { timestamp: SystemTime::now(), peer: origin.clone(), start_height, limit}));
+            Event::publish(&event_publisher, Event::ReceiveSyncRequest(ReceiveSyncRequestEvent { timestamp: SystemTime::now(), peer: origin, start_height, limit}));
 
             let bt_snapshot = block_tree.snapshot();
             let blocks = bt_snapshot
                 .blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
             let highest_qc = bt_snapshot.highest_qc();
 
-            sync_stub.send_response(origin, SyncResponse {blocks: blocks.clone(), highest_qc: highest_qc.clone() });
+            sync_stub.send_response(origin, SyncResponse { blocks: blocks.clone(), highest_qc: highest_qc.clone() });
 
-            Event::publish(&event_publisher, Event::SendSyncResponse(SendSyncResponseEvent {timestamp: SystemTime::now(), peer: origin.clone(), blocks: blocks.clone(), highest_qc: highest_qc.clone()}))
+            Event::publish(&event_publisher, Event::SendSyncResponse(SendSyncResponseEvent { timestamp: SystemTime::now(), peer: origin, blocks, highest_qc}))
         }
         thread::yield_now();
     })
