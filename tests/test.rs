@@ -21,21 +21,22 @@
 
 extern crate rand;
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::Keypair as DalekKeypair;
+use ed25519_dalek::SigningKey;
 use hotstuff_rs::app::{
     App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
 };
+use hotstuff_rs::events::InsertBlockEvent;
 use hotstuff_rs::messages::*;
 use hotstuff_rs::networking::Network;
 use hotstuff_rs::pacemaker::DefaultPacemaker;
-use hotstuff_rs::replica::Replica;
+use hotstuff_rs::replica::{Replica, ReplicaBuilder, Configuration};
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
-    AppStateUpdates, ChainID, CryptoHash, Power, PublicKeyBytes, ValidatorSet, ValidatorSetUpdates,
+    AppStateUpdates, ChainID, CryptoHash, Power, PublicKey, ValidatorSet, ValidatorSetUpdates,
     ViewNumber,
 };
 use log::LevelFilter;
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -47,13 +48,15 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+type PublicKeyBytes = [u8; 32];
+
 #[test]
 fn basic_functions_integration_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
-    let keypairs: Vec<DalekKeypair> = (0..3).map(|_| DalekKeypair::generate(&mut csprg)).collect();
-    let network_stubs = mock_network(keypairs.iter().map(|kp| kp.public.to_bytes()));
+    let keypairs: Vec<SigningKey> = (0..3).map(|_| SigningKey::generate(&mut csprg)).collect();
+    let network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
     let init_as = {
         let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
@@ -61,7 +64,7 @@ fn basic_functions_integration_test() {
     };
     let init_vs = {
         let mut validator_set = ValidatorSetUpdates::new();
-        validator_set.insert(keypairs[0].public.to_bytes(), 1);
+        validator_set.insert(keypairs[0].verifying_key(), 1);
         validator_set
     };
 
@@ -115,8 +118,8 @@ fn default_pacemaker_view_sync_integration_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
-    let keypair_1 = DalekKeypair::generate(&mut csprg);
-    let keypair_2 = DalekKeypair::generate(&mut csprg);
+    let keypair_1 = SigningKey::generate(&mut csprg);
+    let keypair_2 = SigningKey::generate(&mut csprg);
     let init_as = {
         let mut state = AppStateUpdates::new();
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
@@ -124,13 +127,13 @@ fn default_pacemaker_view_sync_integration_test() {
     };
     let init_vs = {
         let mut validator_set = ValidatorSetUpdates::new();
-        validator_set.insert(keypair_1.public.to_bytes(), 1);
-        validator_set.insert(keypair_2.public.to_bytes(), 1);
+        validator_set.insert(keypair_1.verifying_key(), 1);
+        validator_set.insert(keypair_2.verifying_key(), 1);
         validator_set
     };
     let (network_stub_1, network_stub_2) = {
         let mut network_stubs =
-            mock_network([keypair_1.public.to_bytes(), keypair_2.public.to_bytes()].into_iter());
+            mock_network([keypair_1.verifying_key(), keypair_2.verifying_key()].into_iter());
         (network_stubs.remove(0), network_stubs.remove(0))
     };
 
@@ -190,9 +193,9 @@ fn setup_logger(level: LevelFilter) {
 /// A mock network stub which passes messages from and to threads using channels.  
 #[derive(Clone)]
 struct NetworkStub {
-    my_public_key: PublicKeyBytes,
-    all_peers: HashMap<PublicKeyBytes, Sender<(PublicKeyBytes, Message)>>,
-    inbox: Arc<Mutex<Receiver<(PublicKeyBytes, Message)>>>,
+    my_public_key: PublicKey,
+    all_peers: HashMap<PublicKey, Sender<(PublicKey, Message)>>,
+    inbox: Arc<Mutex<Receiver<(PublicKey, Message)>>>,
 }
 
 impl Network for NetworkStub {
@@ -200,7 +203,7 @@ impl Network for NetworkStub {
 
     fn update_validator_set(&mut self, _: ValidatorSetUpdates) {}
 
-    fn send(&mut self, peer: PublicKeyBytes, message: Message) {
+    fn send(&mut self, peer: PublicKey, message: Message) {
         if let Some(peer) = self.all_peers.get(&peer) {
             let _ = peer.send((self.my_public_key, message));
         }
@@ -212,7 +215,7 @@ impl Network for NetworkStub {
         }
     }
 
-    fn recv(&mut self) -> Option<(PublicKeyBytes, Message)> {
+    fn recv(&mut self) -> Option<(PublicKey, Message)> {
         match self.inbox.lock().unwrap().try_recv() {
             Ok(o_m) => Some(o_m),
             Err(TryRecvError::Empty) => None,
@@ -221,9 +224,9 @@ impl Network for NetworkStub {
     }
 }
 
-fn mock_network(peers: impl Iterator<Item = PublicKeyBytes>) -> Vec<NetworkStub> {
+fn mock_network(peers: impl Iterator<Item = PublicKey>) -> Vec<NetworkStub> {
     let mut all_peers = HashMap::new();
-    let peer_and_inboxes: Vec<([u8; 32], Receiver<([u8; 32], Message)>)> = peers
+    let peer_and_inboxes: Vec<(PublicKey, Receiver<(PublicKey, Message)>)> = peers
         .map(|peer| {
             let (sender, receiver) = mpsc::channel();
             all_peers.insert(peer, sender);
@@ -426,10 +429,10 @@ impl NumberApp {
                 }
                 NumberAppTransaction::SetValidator(validator, power) => {
                     if let Some(updates) = &mut validator_set_updates {
-                        updates.insert(*validator, *power);
+                        updates.insert(PublicKey::from_bytes(validator).unwrap(), *power);
                     } else {
                         let mut vsu = ValidatorSetUpdates::new();
-                        vsu.insert(*validator, *power);
+                        vsu.insert(PublicKey::from_bytes(validator).unwrap(), *power);
                         validator_set_updates = Some(vsu);
                     }
                 }
@@ -454,7 +457,7 @@ struct Node {
 
 impl Node {
     fn new(
-        keypair: DalekKeypair,
+        keypair: SigningKey,
         network: NetworkStub,
         init_as: AppStateUpdates,
         init_vs: ValidatorSetUpdates,
@@ -463,17 +466,34 @@ impl Node {
 
         Replica::initialize(kv_store.clone(), init_as, init_vs);
 
-        let public_key = *keypair.public.as_bytes();
+        let public_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
         let pacemaker =
             DefaultPacemaker::new(Duration::from_millis(500), 10, Duration::from_secs(3));
-        let replica = Replica::start(
-            NumberApp::new(tx_queue.clone()),
-            keypair,
-            network,
-            kv_store,
-            pacemaker,
-        );
+
+        let configuration = Configuration {
+            me: keypair,
+            sync_request_limit: 500,
+            sync_trigger_timeout: Duration::new(10, 0),
+            sync_response_timeout: Duration::new(10, 0),
+            progress_msg_buffer_capacity: 1000,
+            log_events: true,
+        };
+
+        let insert_block_handler = |insert_block_event: &InsertBlockEvent| {
+            println!("Inserted block with hash: {:?}, timestamp: {:?}", insert_block_event.block.hash, insert_block_event.timestamp)
+        };
+
+        let replica = 
+            ReplicaBuilder :: builder()
+            .app(NumberApp::new(tx_queue.clone()))
+            .pacemaker(pacemaker)
+            .network(network)
+            .kv_store(kv_store)
+            .configuration(configuration)
+            .on_insert_block(Box::new(insert_block_handler))
+            .build()
+            .start();
 
         Node {
             public_key,

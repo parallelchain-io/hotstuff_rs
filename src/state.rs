@@ -294,7 +294,14 @@ impl<K: KVStore> BlockTree<K> {
         block: &CryptoHash,
     ) -> Vec<(CryptoHash, Option<ValidatorSetUpdates>)> {
         let min_height = self.highest_committed_block_height();
-        let blocks_iter = successors(Some(*block), |b| self.block_justify(b).map(|qc| qc.block));
+        let blocks_iter =
+            successors(
+            Some(*block), 
+            |b| 
+                self.block_justify(b)
+                .map(|qc| if !qc.is_genesis_qc() {Some(qc.block)} else {None})
+                .flatten()
+            );
         let uncommitted_blocks_iter = blocks_iter.take_while(|b| min_height.is_none() || min_height.is_some_and(|h| self.block_height(b).unwrap() > h));
         let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
         let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();

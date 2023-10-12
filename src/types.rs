@@ -16,7 +16,7 @@ use std::{
     slice,
 };
 
-pub use ed25519_dalek::{SigningKey as PrivateKey, VerifyingKey as PublicKey, Signature};
+pub use ed25519_dalek::{SigningKey, VerifyingKey as PublicKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
 pub type ChainID = u64;

@@ -34,7 +34,7 @@ use crate::networking::{
 use crate::pacemaker::Pacemaker;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::sync_server::start_sync_server;
-use crate::types::{AppStateUpdates, ValidatorSetUpdates, PrivateKey, ChainID};
+use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey};
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -42,8 +42,7 @@ use typed_builder::TypedBuilder;
 
 #[derive(TypedBuilder)]
 pub struct Configuration {
-    pub me: PrivateKey,
-    pub chain_id: ChainID,
+    pub me: SigningKey,
     pub sync_trigger_timeout: Duration,
     pub sync_request_limit: u64,
     pub sync_response_timeout: Duration,
@@ -60,48 +59,48 @@ pub struct ReplicaBuilder<K: KVStore, A: App<K> + 'static, N: Network + 'static,
     pacemaker: P,
     configuration: Configuration,
     // Optional parameters
-    #[builder(default, setter(transform = |on_insert_block: HandlerPtr<InsertBlockEvent>| vec![on_insert_block]))]
-    insert_block_handlers: Vec<HandlerPtr<InsertBlockEvent>>,
-    #[builder(default, setter(transform = |on_commit_block: HandlerPtr<CommitBlockEvent>| vec![on_commit_block]))]
-    commit_block_handlers: Vec<HandlerPtr<CommitBlockEvent>>,
-    #[builder(default, setter(transform = |on_prune_block: HandlerPtr<PruneBlockEvent>| vec![on_prune_block]))]
-    prune_block_handlers: Vec<HandlerPtr<PruneBlockEvent>>,
-    #[builder(default, setter(transform = |on_update_highest_qc: HandlerPtr<UpdateHighestQCEvent>| vec![on_update_highest_qc]))]
-    update_highest_qc_handlers: Vec<HandlerPtr<UpdateHighestQCEvent>>,
-    #[builder(default, setter(transform = |on_update_locked_view: HandlerPtr<UpdateLockedViewEvent>| vec![on_update_locked_view]))]
-    update_locked_view_handlers: Vec<HandlerPtr<UpdateLockedViewEvent>>,
-    #[builder(default, setter(transform = |on_update_validator_set: HandlerPtr<UpdateValidatorSetEvent>| vec![on_update_validator_set]))]
-    update_validator_set_handlers: Vec<HandlerPtr<UpdateValidatorSetEvent>>,
-    #[builder(default, setter(transform = |on_propose: HandlerPtr<ProposeEvent>| vec![on_propose]))]
-    propose_handlers: Vec<HandlerPtr<ProposeEvent>>,
-    #[builder(default, setter(transform = |on_nudge: HandlerPtr<NudgeEvent>| vec![on_nudge]))]
-    nudge_handlers: Vec<HandlerPtr<NudgeEvent>>,
-    #[builder(default, setter(transform = |on_vote: HandlerPtr<VoteEvent>| vec![on_vote]))]
-    vote_handlers: Vec<HandlerPtr<VoteEvent>>,
-    #[builder(default, setter(transform = |on_new_view: HandlerPtr<NewViewEvent>| vec![on_new_view]))]
-    new_view_handlers: Vec<HandlerPtr<NewViewEvent>>,
-    #[builder(default, setter(transform = |on_receive_proposal: HandlerPtr<ReceiveProposalEvent>| vec![on_receive_proposal]))]
-    receive_proposal_handlers: Vec<HandlerPtr<ReceiveProposalEvent>>,
-    #[builder(default, setter(transform = |on_receive_nudge: HandlerPtr<ReceiveNudgeEvent>| vec![on_receive_nudge]))]
-    receive_nudge_handlers: Vec<HandlerPtr<ReceiveNudgeEvent>>,
-    #[builder(default, setter(transform = |on_receive_vote: HandlerPtr<ReceiveVoteEvent>| vec![on_receive_vote]))]
-    receive_vote_handlers: Vec<HandlerPtr<ReceiveVoteEvent>>,
-    #[builder(default, setter(transform = |on_receive_new_view: HandlerPtr<ReceiveNewViewEvent>| vec![on_receive_new_view]))]
-    receive_new_view_handlers: Vec<HandlerPtr<ReceiveNewViewEvent>>,
-    #[builder(default, setter(transform = |on_start_view: HandlerPtr<StartViewEvent>| vec![on_start_view]))]
-    start_view_handlers: Vec<HandlerPtr<StartViewEvent>>,
-    #[builder(default, setter(transform = |on_view_timeout: HandlerPtr<ViewTimeoutEvent>| vec![on_view_timeout]))]
-    view_timeout_handlers: Vec<HandlerPtr<ViewTimeoutEvent>>,
-    #[builder(default, setter(transform = |on_collect_qc: HandlerPtr<CollectQCEvent>| vec![on_collect_qc]))]
-    collect_qc_handlers: Vec<HandlerPtr<CollectQCEvent>>,
-    #[builder(default, setter(transform = |on_start_sync: HandlerPtr<StartSyncEvent>| vec![on_start_sync]))]
-    start_sync_handlers: Vec<HandlerPtr<StartSyncEvent>>,
-    #[builder(default, setter(transform = |on_end_sync: HandlerPtr<EndSyncEvent>| vec![on_end_sync]))]
-    end_sync_handlers: Vec<HandlerPtr<EndSyncEvent>>,
-    #[builder(default, setter(transform = |on_receive_sync_request: HandlerPtr<ReceiveSyncRequestEvent>| vec![on_receive_sync_request]))]
-    receive_sync_request_handlers: Vec<HandlerPtr<ReceiveSyncRequestEvent>>,
-    #[builder(default, setter(transform = |on_send_sync_response: HandlerPtr<SendSyncResponseEvent>| vec![on_send_sync_response]))]
-    send_sync_response_handlers: Vec<HandlerPtr<SendSyncResponseEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<InsertBlockEvent>| vec![handler_ptr]))]
+    on_insert_block: Vec<HandlerPtr<InsertBlockEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<CommitBlockEvent>| vec![handler_ptr]))]
+    on_commit_block: Vec<HandlerPtr<CommitBlockEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<PruneBlockEvent>| vec![handler_ptr]))]
+    on_prune_block: Vec<HandlerPtr<PruneBlockEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateHighestQCEvent>| vec![handler_ptr]))]
+    on_update_highest_qc: Vec<HandlerPtr<UpdateHighestQCEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateLockedViewEvent>| vec![handler_ptr]))]
+    on_update_locked_view: Vec<HandlerPtr<UpdateLockedViewEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateValidatorSetEvent>| vec![handler_ptr]))]
+    on_update_validator_set: Vec<HandlerPtr<UpdateValidatorSetEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ProposeEvent>| vec![handler_ptr]))]
+    on_propose: Vec<HandlerPtr<ProposeEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<NudgeEvent>| vec![handler_ptr]))]
+    on_nudge: Vec<HandlerPtr<NudgeEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<VoteEvent>| vec![handler_ptr]))]
+    on_vote: Vec<HandlerPtr<VoteEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<NewViewEvent>| vec![handler_ptr]))]
+    on_new_view: Vec<HandlerPtr<NewViewEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveProposalEvent>| vec![handler_ptr]))]
+    on_receive_proposal: Vec<HandlerPtr<ReceiveProposalEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveNudgeEvent>| vec![handler_ptr]))]
+    on_receive_nudge: Vec<HandlerPtr<ReceiveNudgeEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveVoteEvent>| vec![handler_ptr]))]
+    on_receive_vote: Vec<HandlerPtr<ReceiveVoteEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveNewViewEvent>| vec![handler_ptr]))]
+    on_receive_new_view: Vec<HandlerPtr<ReceiveNewViewEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<StartViewEvent>| vec![handler_ptr]))]
+    on_start_view: Vec<HandlerPtr<StartViewEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ViewTimeoutEvent>| vec![handler_ptr]))]
+    on_view_timeout: Vec<HandlerPtr<ViewTimeoutEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<CollectQCEvent>| vec![handler_ptr]))]
+    on_collect_qc: Vec<HandlerPtr<CollectQCEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<StartSyncEvent>| vec![handler_ptr]))]
+    on_start_sync: Vec<HandlerPtr<StartSyncEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<EndSyncEvent>| vec![handler_ptr]))]
+    on_end_sync: Vec<HandlerPtr<EndSyncEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveSyncRequestEvent>| vec![handler_ptr]))]
+    on_receive_sync_request: Vec<HandlerPtr<ReceiveSyncRequestEvent>>,
+    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<SendSyncResponseEvent>| vec![handler_ptr]))]
+    on_send_sync_response: Vec<HandlerPtr<SendSyncResponseEvent>>,
 }
 
 impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> ReplicaBuilder<K, A, N, P> {
@@ -118,27 +117,27 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
         let sync_client_stub = SyncClientStub::new(self.network, sync_responses);
 
         let mut event_handlers = EventHandlers {
-            insert_block_handlers: self.insert_block_handlers,
-            commit_block_handlers: self.commit_block_handlers,
-            prune_block_handlers: self.prune_block_handlers,
-            update_highest_qc_handlers: self.update_highest_qc_handlers,
-            update_locked_view_handlers: self.update_locked_view_handlers,
-            update_validator_set_handlers: self.update_validator_set_handlers,
-            propose_handlers: self.propose_handlers,
-            nudge_handlers: self.nudge_handlers,
-            vote_handlers: self.vote_handlers,
-            new_view_handlers: self.new_view_handlers,
-            receive_proposal_handlers: self.receive_proposal_handlers,
-            receive_nudge_handlers: self.receive_nudge_handlers,
-            receive_vote_handlers: self.receive_vote_handlers,
-            receive_new_view_handlers: self.receive_new_view_handlers,
-            start_view_handlers: self.start_view_handlers,
-            view_timeout_handlers: self.view_timeout_handlers,
-            collect_qc_handlers: self.collect_qc_handlers,
-            start_sync_handlers: self.start_sync_handlers,
-            end_sync_handlers: self.end_sync_handlers,
-            receive_sync_request_handlers: self.receive_sync_request_handlers,
-            send_sync_response_handlers: self.send_sync_response_handlers
+            insert_block_handlers: self.on_insert_block,
+            commit_block_handlers: self.on_commit_block,
+            prune_block_handlers: self.on_prune_block,
+            update_highest_qc_handlers: self.on_update_highest_qc,
+            update_locked_view_handlers: self.on_update_locked_view,
+            update_validator_set_handlers: self.on_update_validator_set,
+            propose_handlers: self.on_propose,
+            nudge_handlers: self.on_nudge,
+            vote_handlers: self.on_vote,
+            new_view_handlers: self.on_new_view,
+            receive_proposal_handlers: self.on_receive_proposal,
+            receive_nudge_handlers: self.on_receive_nudge,
+            receive_vote_handlers: self.on_receive_vote,
+            receive_new_view_handlers: self.on_receive_new_view,
+            start_view_handlers: self.on_start_view,
+            view_timeout_handlers: self.on_view_timeout,
+            collect_qc_handlers: self.on_collect_qc,
+            start_sync_handlers: self.on_start_sync,
+            end_sync_handlers: self.on_end_sync,
+            receive_sync_request_handlers: self.on_receive_sync_request,
+            send_sync_response_handlers: self.on_send_sync_response
         };
 
         if self.configuration.log_events {

@@ -49,7 +49,7 @@ pub const SEND_SYNC_RESPONSE: &str = "SentSyncResponse";
 impl Logger for InsertBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |insert_block_event: &InsertBlockEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}",
                 INSERT_BLOCK,
                 insert_block_event.timestamp,
@@ -190,7 +190,7 @@ impl Logger for NewViewEvent {
 impl Logger for ReceiveProposalEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |receive_proposal_event: &ReceiveProposalEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}, {}",
                 RECEIVED_PROPOSAL,
                 receive_proposal_event.timestamp,
@@ -206,7 +206,7 @@ impl Logger for ReceiveProposalEvent {
 impl Logger for ReceiveNudgeEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |receive_nudge_event: &ReceiveNudgeEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}, {:?}",
                 RECEIVED_NUDGE,
                 receive_nudge_event.timestamp,
@@ -222,7 +222,7 @@ impl Logger for ReceiveNudgeEvent {
 impl Logger for ReceiveVoteEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |receive_vote_event: &ReceiveVoteEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}, {:?}",
                 RECEIVED_VOTE,
                 receive_vote_event.timestamp,
@@ -238,7 +238,7 @@ impl Logger for ReceiveVoteEvent {
 impl Logger for ReceiveNewViewEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |receive_new_view_event: &ReceiveNewViewEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}, {}, {:?}",
                 RECEIVED_NEW_VIEW,
                 receive_new_view_event.timestamp,
@@ -255,7 +255,7 @@ impl Logger for ReceiveNewViewEvent {
 impl Logger for StartViewEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |start_view_event: &StartViewEvent| {
-            log::debug!(
+            log::info!(
                 "{}, {:?}, {}, {}",
                 START_VIEW,
                 start_view_event.timestamp,

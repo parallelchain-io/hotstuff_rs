@@ -148,10 +148,10 @@ pub struct SyncResponse {
 
 /// A wrapper around SigningKey which implements [a convenience method](ProgressMessage::vote) for creating properly
 /// signed [votes](Vote).
-pub(crate) struct Keypair(pub(crate) PrivateKey);
+pub(crate) struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
-    pub(crate) fn new(private_key: PrivateKey) -> Keypair {
+    pub(crate) fn new(private_key: SigningKey) -> Keypair {
         Keypair(private_key)
     }
 
