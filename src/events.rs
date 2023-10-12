@@ -38,7 +38,7 @@ pub enum Event {
 impl Event {
     pub(crate) fn publish(event_publisher: &Option<Sender<Event>>, event: Event) {
         if let Some(event_publisher) = event_publisher {
-            event_publisher.send(event).unwrap()
+            let _ = event_publisher.send(event);
         }
     }
 }
