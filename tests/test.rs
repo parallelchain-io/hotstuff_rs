@@ -32,7 +32,7 @@ use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::{Replica, ReplicaBuilder, Configuration};
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
-    AppStateUpdates, ChainID, CryptoHash, Power, PublicKey, ValidatorSet, ValidatorSetUpdates,
+    AppStateUpdates, CryptoHash, Power, PublicKey, ValidatorSet, ValidatorSetUpdates,
     ViewNumber,
 };
 use log::LevelFilter;
@@ -337,9 +337,6 @@ enum NumberAppTransaction {
 }
 
 impl App<MemDB> for NumberApp {
-    fn chain_id(&self) -> ChainID {
-        0
-    }
 
     fn produce_block(&mut self, request: ProduceBlockRequest<MemDB>) -> ProduceBlockResponse {
         thread::sleep(Duration::from_millis(250));
@@ -407,6 +404,10 @@ impl App<MemDB> for NumberApp {
             }
         }
     }
+
+    fn validate_block_for_sync(&mut self, request: ValidateBlockRequest<MemDB>) -> ValidateBlockResponse {
+        self.validate_block(request)
+    }
 }
 
 impl NumberApp {
@@ -473,6 +474,7 @@ impl Node {
 
         let configuration = Configuration {
             me: keypair,
+            chain_id: 0,
             sync_request_limit: 10,
             sync_trigger_timeout: Duration::new(10, 0),
             sync_response_timeout: Duration::new(3, 0),

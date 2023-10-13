@@ -104,9 +104,9 @@ impl<K: KVStore> BlockTree<K> {
     ///
     /// # Precondition
     /// [Block::is_correct]
-    pub fn safe_block(&self, block: &Block) -> bool {
+    pub fn safe_block(&self, block: &Block, chain_id: ChainID) -> bool {
         /* 1 */
-        self.safe_qc(&block.justify) &&
+        self.safe_qc(&block.justify, chain_id) &&
         /* 2 */ !self.contains(&block.hash)  &&
         /* 3 */ (block.justify.phase.is_generic() || block.justify.phase.is_commit())
     }
@@ -116,19 +116,22 @@ impl<K: KVStore> BlockTree<K> {
     /// locked view.
     ///
     /// For this, it is necessary that:
-    /// 1. It justifies a known block, or is the genesis qc.
-    /// 2. Its view number is greater than or equal to locked view.
-    /// 3. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
-    /// 4. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
+    /// 1. Its chain ID matches the chain ID of the replica
+    /// 2. It justifies a known block, or is the genesis qc.
+    /// 3. Its view number is greater than or equal to locked view.
+    /// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
+    /// 5. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
     ///
     /// # Precondition
     /// [QuorumCertificate::is_correct]
-    pub fn safe_qc(&self, qc: &QuorumCertificate) -> bool {
+    pub fn safe_qc(&self, qc: &QuorumCertificate, chain_id: ChainID) -> bool {
         /* 1 */
+        qc.chain_id == chain_id &&
+        /* 2 */
         (self.contains(&qc.block) || qc.is_genesis_qc()) &&
-        /* 2 */ qc.view >= self.locked_view() &&
-        /* 3 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit()) && self.pending_validator_set_updates(&qc.block).is_some()) ||
-        /* 4 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none()))
+        /* 3 */ qc.view >= self.locked_view() &&
+        /* 4 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit()) && self.pending_validator_set_updates(&qc.block).is_some()) ||
+        /* 5 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none()))
     }
 
     /// Insert a block, causing all of the necessary state changes, including possibly block commit, to happen.

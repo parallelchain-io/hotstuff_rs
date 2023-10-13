@@ -69,6 +69,7 @@ use std::time::{Instant, SystemTime};
 pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     mut app: impl App<K> + 'static,
     me: Keypair,
+    chain_id: ChainID,
     mut block_tree: BlockTree<K>,
     mut pacemaker: impl Pacemaker + 'static,
     mut pm_stub: ProgressMessageStub<N>,
@@ -101,6 +102,7 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
 
             let view_result = execute_view(
                 &me,
+                chain_id,
                 cur_view,
                 &mut pacemaker,
                 &mut block_tree,
@@ -109,7 +111,7 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
                 &event_publisher,
             );
             if let Err(ShouldSync) = view_result {
-                sync(&mut block_tree, &mut sync_stub, &mut app, &event_publisher, sync_request_limit, sync_response_timeout)
+                sync(&mut block_tree, &mut sync_stub, &mut app, chain_id, &event_publisher, sync_request_limit, sync_response_timeout)
             }
         }
     })
@@ -119,6 +121,7 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
 /// progress at a higher view, so we should probably sync up to them.
 fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
+    chain_id: ChainID,
     view: ViewNumber,
     pacemaker: &mut impl Pacemaker,
     block_tree: &mut BlockTree<K>,
@@ -138,14 +141,14 @@ fn execute_view<K: KVStore, N: Network>(
 
     // 1. If I am the current leader, broadcast a proposal or a nudge.
     if i_am_cur_leader {
-        propose_or_nudge(view, app, block_tree, pm_stub, event_publisher);
+        propose_or_nudge(chain_id, view, app, block_tree, pm_stub, event_publisher);
     }
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
-    let mut vote_collector = VoteCollector::new(app.chain_id(), view, cur_validators.clone());
+    let mut vote_collector = VoteCollector::new(chain_id, view, cur_validators.clone());
     let mut new_view_collector = NewViewCollector::new(cur_validators.clone());
     while Instant::now() < view_deadline {
-        match pm_stub.recv(app.chain_id(), view, view_deadline) {
+        match pm_stub.recv(chain_id, view, view_deadline) {
             Ok((origin, msg)) => match msg {
                 ProgressMessage::Proposal(proposal) => {
                     if origin == cur_leader {
@@ -153,6 +156,7 @@ fn execute_view<K: KVStore, N: Network>(
                             &origin,
                             &proposal,
                             me,
+                            chain_id,
                             view,
                             block_tree,
                             app,
@@ -170,7 +174,7 @@ fn execute_view<K: KVStore, N: Network>(
                 ProgressMessage::Nudge(nudge) => {
                     if origin == cur_leader {
                         let (voted, i_am_next_leader) = on_receive_nudge(
-                            &origin, &nudge, me, view, block_tree, app, pacemaker, pm_stub, event_publisher,
+                            &origin, &nudge, me, chain_id, view, block_tree, pacemaker, pm_stub, event_publisher,
                         );
                         if voted && !i_am_next_leader {
                             return Ok(());
@@ -184,6 +188,7 @@ fn execute_view<K: KVStore, N: Network>(
                         &mut vote_collector,
                         block_tree,
                         view,
+                        chain_id,
                         me,
                         pacemaker,
                         event_publisher,
@@ -198,6 +203,7 @@ fn execute_view<K: KVStore, N: Network>(
                         new_view,
                         &mut new_view_collector,
                         block_tree,
+                        chain_id,
                         view,
                         me,
                         pacemaker,
@@ -216,7 +222,7 @@ fn execute_view<K: KVStore, N: Network>(
     // 3. If the view times out, send a New View message.
     Event::publish(event_publisher, Event::ViewTimeout(ViewTimeoutEvent { timestamp: SystemTime::now(), view, timeout}));
 
-    on_view_timeout(view, app, block_tree, pacemaker, pm_stub, event_publisher);
+    on_view_timeout(chain_id, view, block_tree, pacemaker, pm_stub, event_publisher);
 
     Ok(())
 }
@@ -225,6 +231,7 @@ struct ShouldSync;
 
 /// Create a proposal or a nudge and broadcast it to the network.
 fn propose_or_nudge<K: KVStore, N: Network>(
+    chain_id: ChainID,
     cur_view: ViewNumber,
     app: &mut impl App<K>,
     block_tree: &mut BlockTree<K>,
@@ -259,7 +266,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
 
             let block = Block::new(child_height, highest_qc, data_hash, data);
 
-            let proposal_msg = ProgressMessage::proposal(app.chain_id(), cur_view, block);
+            let proposal_msg = ProgressMessage::proposal(chain_id, cur_view, block);
             let proposal = if let ProgressMessage::Proposal(proposal) = proposal_msg.clone() {
                 proposal
             } else {
@@ -272,7 +279,7 @@ fn propose_or_nudge<K: KVStore, N: Network>(
 
         // Produce a nudge.
         Phase::Prepare | Phase::Precommit(_) => {
-            let nudge_msg = ProgressMessage::nudge(app.chain_id(), cur_view, highest_qc);
+            let nudge_msg = ProgressMessage::nudge(chain_id, cur_view, highest_qc);
             let nudge = if let ProgressMessage::Nudge(nudge) = nudge_msg.clone() {
                 nudge
             } else {
@@ -290,6 +297,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     origin: &PublicKey,
     proposal: &Proposal,
     me: &Keypair,
+    chain_id: ChainID,
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<K>,
     app: &mut impl App<K>,
@@ -304,7 +312,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     if !proposal
         .block
         .is_correct(&block_tree.committed_validator_set())
-        || !block_tree.safe_block(&proposal.block)
+        || !block_tree.safe_block(&proposal.block, chain_id)
     {
         let next_leader =
             pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
@@ -334,7 +342,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         if let Some(updates) = validator_set_updates_because_of_commit {
             pm_stub.update_validator_set(updates);
             *vote_collector = VoteCollector::new(
-                app.chain_id(),
+                chain_id,
                 cur_view,
                 block_tree.committed_validator_set(),
             );
@@ -350,7 +358,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
             } else {
                 Phase::Generic
             };
-            let vote_msg = me.vote(app.chain_id(), cur_view, proposal.block.hash, vote_phase);
+            let vote_msg = me.vote(chain_id, cur_view, proposal.block.hash, vote_phase);
             let vote = if let ProgressMessage::Vote(vote) = vote_msg.clone() {
                 vote
             } else {
@@ -378,9 +386,9 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     origin: &PublicKey,
     nudge: &Nudge,
     me: &Keypair,
+    chain_id: ChainID,
     cur_view: ViewNumber,
     block_tree: &mut BlockTree<K>,
-    app: &mut impl App<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
     event_publisher: &Option<Sender<Event>>,
@@ -392,7 +400,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         || !nudge
             .justify
             .is_correct(&block_tree.committed_validator_set())
-        || !block_tree.safe_qc(&nudge.justify)
+        || !block_tree.safe_qc(&nudge.justify, chain_id)
     {
         let next_leader =
             pacemaker.view_leader(cur_view + 1, &block_tree.committed_validator_set());
@@ -430,7 +438,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}))
     }
 
-    let vote_msg = me.vote(app.chain_id(), cur_view, nudge.justify.block, next_phase);
+    let vote_msg = me.vote(chain_id, cur_view, nudge.justify.block, next_phase);
     let vote = if let ProgressMessage::Vote(vote) = vote_msg.clone() {
         vote
     } else {
@@ -455,6 +463,7 @@ fn on_receive_vote<K: KVStore>(
     vote: Vote,
     votes: &mut VoteCollector,
     block_tree: &mut BlockTree<K>,
+    chain_id: ChainID,
     cur_view: ViewNumber,
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
@@ -464,7 +473,7 @@ fn on_receive_vote<K: KVStore>(
 
     let highest_qc_updated = if vote.is_correct(signer) {
         if let Some(new_qc) = votes.collect(signer, vote) {
-            if block_tree.safe_qc(&new_qc) {
+            if block_tree.safe_qc(&new_qc, chain_id) {
                 Event::publish(event_publisher, Event::CollectQC(CollectQCEvent { timestamp: SystemTime::now(), quorum_certificate: new_qc.clone()}));
 
                 let mut wb = BlockTreeWriteBatch::new();
@@ -518,6 +527,7 @@ fn on_receive_new_view<K: KVStore>(
     new_view: NewView,
     new_view_collector: &mut NewViewCollector,
     block_tree: &mut BlockTree<K>,
+    chain_id: ChainID,
     cur_view: ViewNumber,
     me: &Keypair,
     pacemaker: &mut impl Pacemaker,
@@ -528,7 +538,7 @@ fn on_receive_new_view<K: KVStore>(
     if new_view
         .highest_qc
         .is_correct(&block_tree.committed_validator_set())
-        && block_tree.safe_qc(&new_view.highest_qc)
+        && block_tree.safe_qc(&new_view.highest_qc, chain_id)
     {
         let mut wb = BlockTreeWriteBatch::new();
         let mut update_highest_qc: Option<QuorumCertificate> = None;
@@ -567,14 +577,14 @@ fn on_receive_new_view<K: KVStore>(
 }
 
 fn on_view_timeout<K: KVStore, N: Network>(
+    chain_id: ChainID,
     cur_view: ViewNumber,
-    app: &impl App<K>,
     block_tree: &BlockTree<K>,
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
     event_publisher: &Option<Sender<Event>>,
 ) {
-    let new_view_msg = ProgressMessage::new_view(app.chain_id(), cur_view, block_tree.highest_qc());
+    let new_view_msg = ProgressMessage::new_view(chain_id, cur_view, block_tree.highest_qc());
     let new_view = if let ProgressMessage::NewView(new_view) = new_view_msg.clone() {
         new_view
     } else {
@@ -591,13 +601,14 @@ fn sync<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
+    chain_id: ChainID,
     event_publisher: &Option<Sender<Event>>,
     sync_request_limit: u32,
     sync_response_timeout: Duration,
 ) {
     // Pick random validator.
     if let Some(peer) = block_tree.committed_validator_set().random() {
-        sync_with(peer, block_tree, sync_stub, app, event_publisher, sync_request_limit, sync_response_timeout);
+        sync_with(peer, block_tree, sync_stub, app, chain_id, event_publisher, sync_request_limit, sync_response_timeout);
     }
 }
 
@@ -606,6 +617,7 @@ fn sync_with<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
+    chain_id: ChainID,
     event_publisher: &Option<Sender<Event>>,
     sync_request_limit: u32,
     sync_response_timeout: Duration,
@@ -638,7 +650,7 @@ fn sync_with<K: KVStore, N: Network>(
 
                 for block in new_blocks {
                     if !block.is_correct(&block_tree.committed_validator_set())
-                        || !block_tree.safe_block(&block)
+                        || !block_tree.safe_block(&block, chain_id)
                     {
                         Event::publish(event_publisher, Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}));
                         return;
@@ -654,7 +666,7 @@ fn sync_with<K: KVStore, N: Network>(
                     if let ValidateBlockResponse::Valid {
                         app_state_updates,
                         validator_set_updates,
-                    } = app.validate_block(validate_block_request)
+                    } = app.validate_block_for_sync(validate_block_request)
                     {
                         let validator_set_updates_because_of_commit = block_tree.insert_block(
                             &block,
@@ -674,7 +686,7 @@ fn sync_with<K: KVStore, N: Network>(
                     }
                 }
 
-                if block_tree.safe_qc(&response.highest_qc)
+                if block_tree.safe_qc(&response.highest_qc, chain_id)
                     && response.highest_qc.view > block_tree.highest_qc().view
                 {
                     block_tree.set_highest_qc(&response.highest_qc);

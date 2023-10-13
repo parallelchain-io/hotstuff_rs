@@ -34,6 +34,7 @@ use crate::networking::{
 use crate::pacemaker::Pacemaker;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::sync_server::start_sync_server;
+use crate::types::ChainID;
 use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey};
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
@@ -43,6 +44,7 @@ use typed_builder::TypedBuilder;
 #[derive(TypedBuilder)]
 pub struct Configuration {
     pub me: SigningKey,
+    pub chain_id: ChainID,
     pub sync_trigger_timeout: Duration,
     pub sync_request_limit: u32,
     pub sync_response_timeout: Duration,
@@ -162,6 +164,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
         let algorithm = start_algorithm(
             self.app,
             messages::Keypair::new(self.configuration.me),
+            self.configuration.chain_id,
             block_tree,
             self.pacemaker,
             pm_stub,
