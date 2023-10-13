@@ -11,6 +11,7 @@
 //! that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
 use std::collections::{BTreeMap, VecDeque};
+use std::mem;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
@@ -99,18 +100,23 @@ pub(crate) fn start_polling<N: Network + 'static>(
 pub(crate) struct ProgressMessageStub<N: Network> {
     network: N,
     receiver: Receiver<(PublicKey, ProgressMessage)>,
+    msg_buffer_capacity: u64,
     msg_buffer: BTreeMap<ViewNumber, VecDeque<(PublicKey, ProgressMessage)>>,
+    msg_buffer_size: u64,
 }
 
 impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn new(
         network: N,
         receiver: Receiver<(PublicKey, ProgressMessage)>,
+        msg_buffer_capacity: u64,
     ) -> ProgressMessageStub<N> {
         Self {
             network,
             receiver,
+            msg_buffer_capacity,
             msg_buffer: BTreeMap::new(),
+            msg_buffer_size: 0,
         }
     }
 
@@ -159,17 +165,39 @@ impl<N: Network> ProgressMessageStub<N> {
                     if msg.view() == cur_view {
                         return Ok((sender, msg));
                     }
-                    // Cache the message if its for a future view.
+                    // Cache the message if its for a future view 
+                    // (unless the buffer is overloaded in which case we need to make space or ignore the message).
                     else if msg.view() > cur_view {
-                        let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
-                        {
-                            msg_queue
-                        } else {
-                            self.msg_buffer.insert(msg.view(), VecDeque::new());
-                            self.msg_buffer.get_mut(&msg.view()).unwrap()
+
+                        let bytes_requested = mem::size_of::<PublicKey>() as u64 + Self::size_of_msg(&msg);
+                        let overloaded_buffer = self.msg_buffer_size + bytes_requested > self.msg_buffer_capacity;
+                        let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_some() && msg.view() < self.msg_buffer.keys().max().copied().unwrap();
+                
+                        // We only need to make space in the buffer if:
+                        // (1) it will be overloaded after stroing the message, and 
+                        // (2) we want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
+                        // (otherwise we ignore the message to avoid overloading the buffer)
+                        if overloaded_buffer && cache_message_if_overloaded_buffer {
+                            Self::remove_from_overloaded_buffer(&mut self.msg_buffer, bytes_requested);
                         };
 
-                        msg_queue.push_back((sender, msg));
+                        // We only store the message in the buffer if either:
+                        // (1) there is no risk of overloading the buffer upon storing this message, or
+                        // (2) the buffer might be overloaded, but we have already made space for the new message
+                        if !overloaded_buffer || (overloaded_buffer && cache_message_if_overloaded_buffer) {
+                            let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
+                            {
+                                msg_queue
+                            } else {
+                                self.msg_buffer.insert(msg.view(), VecDeque::new());
+                                self.msg_buffer.get_mut(&msg.view()).unwrap()
+                            };
+
+                            self.msg_buffer_size += bytes_requested;
+                            msg_queue.push_back((sender, msg));
+
+                        };
+
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => thread::yield_now(),
@@ -194,6 +222,51 @@ impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
         self.network.update_validator_set(updates)
     }
+
+    fn remove_from_overloaded_buffer(buffer: &mut BTreeMap<u64, VecDeque<(PublicKey, ProgressMessage)>>, bytes_to_remove: u64) {
+        let public_key_size = mem::size_of::<PublicKey>() as u64;
+        
+        let mut bytes_removed = 0;
+        let mut views_removed = Vec::new();
+        let mut msg_queues_iter = buffer.iter_mut().rev(); // msg_queues from highest view to lowest view
+
+        while bytes_removed < bytes_to_remove {
+            if let Some((view, msg_queue)) = msg_queues_iter.next() {
+                let removals = 
+                    msg_queue.iter().rev()
+                    .take_while(|(_, msg)| 
+                        {
+                            if bytes_removed < bytes_to_remove {
+                                bytes_removed += Self::size_of_msg(msg) + public_key_size;
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    )
+                    .count() as u64;
+                let _ = (0..removals).into_iter().for_each(|_| {let _ = msg_queue.pop_back();});
+                if msg_queue.is_empty() {
+                    views_removed.push(*view)
+                }
+            } else {
+                break
+            }
+        };
+
+        views_removed.iter().for_each(|view| {let _ = buffer.remove(view);});
+
+    }
+
+    fn size_of_msg(msg: &ProgressMessage) -> u64 {
+        match msg {
+            ProgressMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
+            ProgressMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
+            ProgressMessage:: Vote(_) => mem::size_of::<Vote>() as u64,
+            ProgressMessage::NewView(_) => mem::size_of::<NewView>() as u64,
+        }
+    }
+
 }
 
 pub(crate) enum ProgressMessageReceiveError {

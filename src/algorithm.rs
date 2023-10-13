@@ -63,6 +63,7 @@ use crate::types::*;
 use std::cmp::max;
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use std::time::{Instant, SystemTime};
 
 pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
@@ -74,6 +75,8 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     mut sync_stub: SyncClientStub<N>,
     shutdown_signal: Receiver<()>,
     event_publisher: Option<Sender<Event>>,
+    sync_request_limit: u32,
+    sync_response_timeout: Duration,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut cur_view = 0;
@@ -106,7 +109,7 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
                 &event_publisher,
             );
             if let Err(ShouldSync) = view_result {
-                sync(&mut block_tree, &mut sync_stub, &mut app, &mut pacemaker, &event_publisher)
+                sync(&mut block_tree, &mut sync_stub, &mut app, &event_publisher, sync_request_limit, sync_response_timeout)
             }
         }
     })
@@ -588,12 +591,13 @@ fn sync<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
-    pacemaker: &mut impl Pacemaker,
     event_publisher: &Option<Sender<Event>>,
+    sync_request_limit: u32,
+    sync_response_timeout: Duration,
 ) {
     // Pick random validator.
     if let Some(peer) = block_tree.committed_validator_set().random() {
-        sync_with(peer, block_tree, sync_stub, app, pacemaker, event_publisher);
+        sync_with(peer, block_tree, sync_stub, app, event_publisher, sync_request_limit, sync_response_timeout);
     }
 }
 
@@ -602,8 +606,9 @@ fn sync_with<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     sync_stub: &mut SyncClientStub<N>,
     app: &mut impl App<K>,
-    pacemaker: &mut impl Pacemaker,
-    event_publisher: &Option<Sender<Event>>
+    event_publisher: &Option<Sender<Event>>,
+    sync_request_limit: u32,
+    sync_response_timeout: Duration,
 ) {
     Event::publish(event_publisher, Event::StartSync(StartSyncEvent { timestamp: SystemTime::now(), peer: peer.clone()}));
     let mut blocks_synced = 0;
@@ -615,11 +620,11 @@ fn sync_with<K: KVStore, N: Network>(
             } else {
                 0
             },
-            limit: pacemaker.sync_request_limit(),
+            limit: sync_request_limit,
         };
         sync_stub.send_request(*peer, request);
 
-        match sync_stub.recv_response(*peer, Instant::now() + pacemaker.sync_response_timeout()) {
+        match sync_stub.recv_response(*peer, Instant::now() + sync_response_timeout) {
             Some(response) => {
                 let new_blocks: Vec<Block> = response
                     .blocks

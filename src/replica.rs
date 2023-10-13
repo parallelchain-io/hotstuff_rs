@@ -44,7 +44,7 @@ use typed_builder::TypedBuilder;
 pub struct Configuration {
     pub me: SigningKey,
     pub sync_trigger_timeout: Duration,
-    pub sync_request_limit: u64,
+    pub sync_request_limit: u32,
     pub sync_response_timeout: Duration,
     pub progress_msg_buffer_capacity: u64,
     pub log_events: bool,
@@ -112,7 +112,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
         let (poller, progress_msgs, sync_requests, sync_responses) =
             start_polling(self.network.clone(), poller_shutdown_receiver);
-        let pm_stub = ProgressMessageStub::new(self.network.clone(), progress_msgs);
+        let pm_stub = ProgressMessageStub::new(self.network.clone(), progress_msgs, self.configuration.progress_msg_buffer_capacity);
         let sync_server_stub = SyncServerStub::new(sync_requests, self.network.clone());
         let sync_client_stub = SyncClientStub::new(self.network, sync_responses);
 
@@ -154,7 +154,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             BlockTreeCamera::new(self.kv_store.clone()),
             sync_server_stub,
             sync_server_shutdown_receiver,
-            self.pacemaker.sync_request_limit(),
+            self.configuration.sync_request_limit,
             event_publisher.clone(),
         );
 
@@ -168,6 +168,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             sync_client_stub,
             algorithm_shutdown_receiver,
             event_publisher,
+            self.configuration.sync_request_limit,
+            self.configuration.sync_response_timeout
         );
 
         let (event_bus_shutdown, event_bus_shutdown_receiver) =

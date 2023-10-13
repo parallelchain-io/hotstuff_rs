@@ -36,18 +36,12 @@ pub trait Pacemaker: Send {
 
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
         -> PublicKey;
-
-    fn sync_request_limit(&self) -> u32;
-
-    fn sync_response_timeout(&self) -> Duration;
 }
 
 /// A pacemaker which selects leaders in a round-robin fashion, and prescribes exponentially increasing view timeouts to
 /// eventually bring replicas into the same view.
 pub struct DefaultPacemaker {
     minimum_view_timeout: Duration,
-    sync_request_limit: u32,
-    sync_response_timeout: Duration,
 }
 
 impl DefaultPacemaker {
@@ -55,15 +49,9 @@ impl DefaultPacemaker {
     ///
     /// `minimum_view_timeout` and `sync_response_timeout` must not be larger than [u32::MAX] seconds for reasons
     /// explained in [Pacemaker].
-    pub fn new(
-        minimum_view_timeout: Duration,
-        sync_request_limit: u32,
-        sync_response_timeout: Duration,
-    ) -> DefaultPacemaker {
+    pub fn new(minimum_view_timeout: Duration) -> DefaultPacemaker {
         Self {
             minimum_view_timeout,
-            sync_request_limit,
-            sync_response_timeout,
         }
     }
 }
@@ -92,13 +80,5 @@ impl Pacemaker for DefaultPacemaker {
                 u32::checked_pow(2, exp).map_or(u32::MAX, identity) as u64,
                 0,
             )
-    }
-
-    fn sync_request_limit(&self) -> u32 {
-        self.sync_request_limit
-    }
-
-    fn sync_response_timeout(&self) -> Duration {
-        self.sync_response_timeout
     }
 }

@@ -39,7 +39,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
     mut sync_stub: SyncServerStub<N>,
     shutdown_signal: Receiver<()>,
-    server_sync_request_limit: u32,
+    sync_request_limit: u32,
     event_publisher: Option<Sender<Event>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || loop {
@@ -63,7 +63,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
 
             let bt_snapshot = block_tree.snapshot();
             let blocks = bt_snapshot
-                .blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
+                .blocks_from_height_to_newest(start_height, max(limit, sync_request_limit));
             let highest_qc = bt_snapshot.highest_qc();
 
             sync_stub.send_response(origin, SyncResponse { blocks: blocks.clone(), highest_qc: highest_qc.clone() });

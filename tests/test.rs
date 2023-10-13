@@ -469,14 +469,14 @@ impl Node {
         let public_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
         let pacemaker =
-            DefaultPacemaker::new(Duration::from_millis(500), 10, Duration::from_secs(3));
+            DefaultPacemaker::new(Duration::from_millis(500));
 
         let configuration = Configuration {
             me: keypair,
-            sync_request_limit: 500,
+            sync_request_limit: 10,
             sync_trigger_timeout: Duration::new(10, 0),
-            sync_response_timeout: Duration::new(10, 0),
-            progress_msg_buffer_capacity: 1000,
+            sync_response_timeout: Duration::new(3, 0),
+            progress_msg_buffer_capacity: 10000,
             log_events: true,
         };
 
