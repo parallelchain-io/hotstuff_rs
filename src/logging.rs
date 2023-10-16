@@ -176,7 +176,7 @@ impl Logger for NewViewEvent {
         let logger = |new_view_event: &NewViewEvent| {
             log::info!(
                 "{}, {:?}, {}, {}, {:?}",
-                VIEW_TIME_OUT,
+                NEWVIEW,
                 new_view_event.timestamp,
                 succinct(&new_view_event.new_view.highest_qc.block),
                 new_view_event.new_view.view,

@@ -13,7 +13,7 @@ use sha2::Digest;
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet},
     hash::Hash,
-    slice,
+    slice, time::{Duration, Instant},
 };
 
 pub use ed25519_dalek::{SigningKey, VerifyingKey as PublicKey, Signature};
@@ -563,5 +563,28 @@ impl NewViewCollector {
         }
 
         self.accumulated_power >= QuorumCertificate::quorum(self.total_power)
+    }
+}
+
+pub struct SyncTriggerTimer {
+    last_update: Instant,
+    sync_trigger_timeout: Duration,
+}
+
+impl SyncTriggerTimer {
+
+    pub(crate) fn new(sync_trigger_timeout: Duration) -> SyncTriggerTimer {
+        Self {
+            last_update: Instant::now(),
+            sync_trigger_timeout
+        }
+    }
+
+    pub(crate) fn update(&mut self) {
+        self.last_update = Instant::now()
+    }
+
+    pub(crate) fn timeout(&self) -> bool {
+        Instant::now() - self.last_update >= self.sync_trigger_timeout
     }
 }

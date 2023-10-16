@@ -172,7 +172,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             algorithm_shutdown_receiver,
             event_publisher,
             self.configuration.sync_request_limit,
-            self.configuration.sync_response_timeout
+            self.configuration.sync_response_timeout,
+            self.configuration.sync_trigger_timeout
         );
 
         let (event_bus_shutdown, event_bus_shutdown_receiver) =

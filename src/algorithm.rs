@@ -78,9 +78,11 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     event_publisher: Option<Sender<Event>>,
     sync_request_limit: u32,
     sync_response_timeout: Duration,
+    sync_trigger_timeout: Duration,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut cur_view = 0;
+        let mut sync_trigger_timer = SyncTriggerTimer::new(sync_trigger_timeout);
 
         loop {
             match shutdown_signal.try_recv() {
@@ -109,9 +111,10 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
                 &mut pm_stub,
                 &mut app,
                 &event_publisher,
+                &mut sync_trigger_timer,
             );
             if let Err(ShouldSync) = view_result {
-                sync(&mut block_tree, &mut sync_stub, &mut app, chain_id, &event_publisher, sync_request_limit, sync_response_timeout)
+                sync(&mut block_tree, &mut sync_stub, &mut app, chain_id, &event_publisher, sync_request_limit, sync_response_timeout, &mut sync_trigger_timer)
             }
         }
     })
@@ -128,6 +131,7 @@ fn execute_view<K: KVStore, N: Network>(
     pm_stub: &mut ProgressMessageStub<N>,
     app: &mut impl App<K>,
     event_publisher: &Option<Sender<Event>>,
+    sync_trigger_timer: &mut SyncTriggerTimer,
 ) -> Result<(), ShouldSync> {
 
     let timeout = pacemaker.view_timeout(view, block_tree.highest_qc().view);
@@ -165,6 +169,7 @@ fn execute_view<K: KVStore, N: Network>(
                             &mut vote_collector,
                             &mut new_view_collector,
                             &event_publisher,
+                            sync_trigger_timer,
                         );
                         if voted && !i_am_next_leader {
                             return Ok(());
@@ -174,7 +179,7 @@ fn execute_view<K: KVStore, N: Network>(
                 ProgressMessage::Nudge(nudge) => {
                     if origin == cur_leader {
                         let (voted, i_am_next_leader) = on_receive_nudge(
-                            &origin, &nudge, me, chain_id, view, block_tree, pacemaker, pm_stub, event_publisher,
+                            &origin, &nudge, me, chain_id, view, block_tree, pacemaker, pm_stub, event_publisher, sync_trigger_timer
                         );
                         if voted && !i_am_next_leader {
                             return Ok(());
@@ -187,8 +192,8 @@ fn execute_view<K: KVStore, N: Network>(
                         vote,
                         &mut vote_collector,
                         block_tree,
-                        view,
                         chain_id,
+                        view,
                         me,
                         pacemaker,
                         event_publisher,
@@ -214,8 +219,10 @@ fn execute_view<K: KVStore, N: Network>(
                     }
                 }
             },
-            Err(ProgressMessageReceiveError::ReceivedQCFromFuture) => return Err(ShouldSync),
             Err(ProgressMessageReceiveError::Timeout) => continue,
+        };
+        if sync_trigger_timer.timeout() {
+            return Err(ShouldSync)
         }
     }
 
@@ -306,6 +313,7 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     vote_collector: &mut VoteCollector,
     new_view_collector: &mut NewViewCollector,
     event_publisher: &Option<Sender<Event>>,
+    sync_trigger_timer: &mut SyncTriggerTimer,
 ) -> (bool, bool) {
     Event::publish(event_publisher, Event::ReceiveProposal(ReceiveProposalEvent { timestamp: SystemTime::now(), origin: *origin, proposal: proposal.clone()}));
 
@@ -332,7 +340,10 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         app_state_updates,
         validator_set_updates,
     } = app.validate_block(validate_block_request)
-    {
+    {   
+        // Progress: on receiving acceptable proposal
+        sync_trigger_timer.update();
+
         let validator_set_updates_because_of_commit = block_tree.insert_block(
             &proposal.block,
             app_state_updates.as_ref(),
@@ -392,6 +403,7 @@ fn on_receive_nudge<K: KVStore, N: Network>(
     pacemaker: &mut impl Pacemaker,
     pm_stub: &mut ProgressMessageStub<N>,
     event_publisher: &Option<Sender<Event>>,
+    sync_trigger_timer: &mut SyncTriggerTimer,
 ) -> (bool, bool) {
     Event::publish(event_publisher, Event::ReceiveNudge(ReceiveNudgeEvent { timestamp: SystemTime::now(), origin: *origin, nudge: nudge.clone()}));
 
@@ -407,6 +419,9 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         let i_am_next_leader = me.public() == next_leader;
         return (false, i_am_next_leader);
     }
+
+    // Progress: on receiving acceptable nudge
+    sync_trigger_timer.update();
 
     let mut wb = BlockTreeWriteBatch::new();
     let mut update_highest_qc: Option<QuorumCertificate> = None;
@@ -605,10 +620,11 @@ fn sync<K: KVStore, N: Network>(
     event_publisher: &Option<Sender<Event>>,
     sync_request_limit: u32,
     sync_response_timeout: Duration,
+    sync_trigger_timer: &mut SyncTriggerTimer,
 ) {
     // Pick random validator.
     if let Some(peer) = block_tree.committed_validator_set().random() {
-        sync_with(peer, block_tree, sync_stub, app, chain_id, event_publisher, sync_request_limit, sync_response_timeout);
+        sync_with(peer, block_tree, sync_stub, app, chain_id, event_publisher, sync_request_limit, sync_response_timeout, sync_trigger_timer);
     }
 }
 
@@ -621,6 +637,7 @@ fn sync_with<K: KVStore, N: Network>(
     event_publisher: &Option<Sender<Event>>,
     sync_request_limit: u32,
     sync_response_timeout: Duration,
+    sync_trigger_timer: &mut SyncTriggerTimer,
 ) {
     Event::publish(event_publisher, Event::StartSync(StartSyncEvent { timestamp: SystemTime::now(), peer: peer.clone()}));
     let mut blocks_synced = 0;
@@ -667,7 +684,10 @@ fn sync_with<K: KVStore, N: Network>(
                         app_state_updates,
                         validator_set_updates,
                     } = app.validate_block_for_sync(validate_block_request)
-                    {
+                    {   
+                        // Progress: on receiving acceptable block via sync
+                        sync_trigger_timer.update();
+
                         let validator_set_updates_because_of_commit = block_tree.insert_block(
                             &block,
                             app_state_updates.as_ref(),
@@ -688,7 +708,7 @@ fn sync_with<K: KVStore, N: Network>(
 
                 if block_tree.safe_qc(&response.highest_qc, chain_id)
                     && response.highest_qc.view > block_tree.highest_qc().view
-                {
+                {   
                     block_tree.set_highest_qc(&response.highest_qc);
                     Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc: response.highest_qc.clone()}))
                 }
