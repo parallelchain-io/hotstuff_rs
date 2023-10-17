@@ -431,7 +431,15 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         update_highest_qc = Some(nudge.justify.clone());
     }
     let next_phase = match nudge.justify.phase {
-        Phase::Prepare => Phase::Precommit(nudge.justify.view),
+        Phase::Prepare => {
+            let current_block = nudge.justify.block;
+            let current_block_justify_view = block_tree.block_justify(&current_block).unwrap().view;
+            if current_block_justify_view > block_tree.locked_view() {
+                wb.set_locked_view(current_block_justify_view);
+                update_locked_view = Some(current_block_justify_view);
+            }
+            Phase::Precommit(nudge.justify.view)
+        },
 
         Phase::Precommit(prepare_qc_view) => {
             if prepare_qc_view > block_tree.locked_view() {
@@ -494,6 +502,15 @@ fn on_receive_vote<K: KVStore>(
                 let mut wb = BlockTreeWriteBatch::new();
                 let mut update_highest_qc: Option<QuorumCertificate> = None;
                 let mut update_locked_view: Option<ViewNumber> = None;
+
+                if Phase::Prepare == new_qc.phase {
+                    let current_block_justify_view = block_tree.block_justify(&new_qc.block).unwrap().view;
+                    if current_block_justify_view > block_tree.locked_view() {
+                        wb.set_locked_view(current_block_justify_view);
+                        update_locked_view = Some(current_block_justify_view);
+                    }
+                }
+
                 if let Phase::Precommit(prepare_qc_view) = new_qc.phase {
                     if prepare_qc_view > block_tree.locked_view() {
                         wb.set_locked_view(prepare_qc_view);
@@ -558,6 +575,14 @@ fn on_receive_new_view<K: KVStore>(
         let mut wb = BlockTreeWriteBatch::new();
         let mut update_highest_qc: Option<QuorumCertificate> = None;
         let mut update_locked_view: Option<ViewNumber> = None;
+
+        if Phase::Prepare == new_view.highest_qc.phase {
+            let current_block_justify_view = block_tree.block_justify(&new_view.highest_qc.block).unwrap().view;
+            if current_block_justify_view > block_tree.locked_view() {
+                wb.set_locked_view(current_block_justify_view);
+                update_locked_view = Some(current_block_justify_view);
+            }
+        }
 
         if let Phase::Precommit(prepare_qc_view) = new_view.highest_qc.phase {
             if prepare_qc_view > block_tree.locked_view() {
