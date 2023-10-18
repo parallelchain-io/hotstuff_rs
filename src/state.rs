@@ -254,23 +254,30 @@ impl<K: KVStore> BlockTree<K> {
         update_locked_view: Option<ViewNumber>,
         committed_blocks: Vec<(CryptoHash, Option<ValidatorSetUpdates>)>
     ) {
-        Event::publish(event_publisher, Event::InsertBlock(InsertBlockEvent { timestamp: SystemTime::now(), block}));
+        Event::InsertBlock(InsertBlockEvent { timestamp: SystemTime::now(), block}).publish(event_publisher);
 
         if let Some(highest_qc) = update_highest_qc {
-            Event::publish(event_publisher, Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}))
+            Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}).publish(event_publisher)
         };
 
         if let Some(locked_view) = update_locked_view {
-            Event::publish(event_publisher, Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}))
+            Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}).publish(event_publisher)
         };
 
         committed_blocks
         .iter()
         .for_each(|(b, validator_set_updates_opt)| {
-            Event::publish(event_publisher, Event::PruneBlock(PruneBlockEvent { timestamp: SystemTime::now(), block: *b}));
-            Event::publish(event_publisher, Event::CommitBlock(CommitBlockEvent { timestamp: SystemTime::now(), block: *b}));
+            Event::PruneBlock(PruneBlockEvent { timestamp: SystemTime::now(), block: *b}).publish(event_publisher);
+            Event::CommitBlock(CommitBlockEvent { timestamp: SystemTime::now(), block: *b}).publish(event_publisher);
             if let Some(validator_set_updates) = validator_set_updates_opt {
-                Event::publish(event_publisher, Event::UpdateValidatorSet(UpdateValidatorSetEvent { timestamp: SystemTime::now(), cause_block: *b, validator_set_updates: validator_set_updates.clone()}));
+                Event::UpdateValidatorSet(UpdateValidatorSetEvent 
+                    { 
+                      timestamp: SystemTime::now(),
+                      cause_block: *b,
+                      validator_set_updates: validator_set_updates.clone()
+                    }
+                )
+                .publish(event_publisher);
             }
         });
     }

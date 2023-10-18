@@ -34,8 +34,7 @@ use crate::networking::{
 use crate::pacemaker::Pacemaker;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::sync_server::start_sync_server;
-use crate::types::ChainID;
-use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey};
+use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey, ChainID};
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -53,7 +52,7 @@ pub struct Configuration {
 }
 
 #[derive(TypedBuilder)]
-pub struct ReplicaBuilder<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> {
+pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> {
     // Required parameters
     app: A,
     network: N,
@@ -105,7 +104,7 @@ pub struct ReplicaBuilder<K: KVStore, A: App<K> + 'static, N: Network + 'static,
     on_send_sync_response: Vec<HandlerPtr<SendSyncResponseEvent>>,
 }
 
-impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> ReplicaBuilder<K, A, N, P> {
+impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> ReplicaSpec<K, A, N, P> {
 
     pub fn start(mut self) -> Replica<K> {
         let block_tree = BlockTree::new(self.kv_store.clone());
@@ -184,9 +183,9 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
         let event_bus = if !event_handlers.is_empty() {
             Some(
                 start_event_bus(
-                event_handlers,
-                event_subscriber.unwrap(), // Safety: should be Some(...)
-                event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...)
+                    event_handlers,
+                    event_subscriber.unwrap(), // Safety: should be Some(...)
+                    event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...)
                 )
             )
         } else {

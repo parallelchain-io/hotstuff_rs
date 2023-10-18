@@ -16,10 +16,6 @@ use log;
 
 pub(crate) use crate::events::*;
 
-pub(crate) trait Logger {
-    fn get_logger() -> Box<dyn Fn(&Self) + Send>;
-}
-
 pub const INSERT_BLOCK: &str = "InsertedBlock";
 pub const COMMIT_BLOCK: &str = "CommittedBlock";
 pub const PRUNE_BLOCK: &str = "PrunedBlock";
@@ -45,6 +41,10 @@ pub const START_SYNC: &str = "StartedSyncing";
 pub const END_SYNC: &str = "FinishedSyncing";
 pub const RECEIVE_SYNC_REQUEST: &str = "ReceivedSyncRequest";
 pub const SEND_SYNC_RESPONSE: &str = "SentSyncResponse";
+
+pub(crate) trait Logger {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send>;
+}
 
 impl Logger for InsertBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {

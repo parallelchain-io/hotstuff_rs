@@ -151,8 +151,8 @@ pub struct SyncResponse {
 pub(crate) struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
-    pub(crate) fn new(private_key: SigningKey) -> Keypair {
-        Keypair(private_key)
+    pub(crate) fn new(signing_key: SigningKey) -> Keypair {
+        Keypair(signing_key)
     }
 
     pub(crate) fn vote(

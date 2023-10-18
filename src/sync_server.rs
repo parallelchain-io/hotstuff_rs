@@ -59,7 +59,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
             },
         )) = sync_stub.recv_request()
         {
-            Event::publish(&event_publisher, Event::ReceiveSyncRequest(ReceiveSyncRequestEvent { timestamp: SystemTime::now(), peer: origin, start_height, limit}));
+            Event::ReceiveSyncRequest(ReceiveSyncRequestEvent { timestamp: SystemTime::now(), peer: origin, start_height, limit}).publish(&event_publisher);
 
             let bt_snapshot = block_tree.snapshot();
             let blocks = bt_snapshot
@@ -68,7 +68,7 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
 
             sync_stub.send_response(origin, SyncResponse { blocks: blocks.clone(), highest_qc: highest_qc.clone() });
 
-            Event::publish(&event_publisher, Event::SendSyncResponse(SendSyncResponseEvent { timestamp: SystemTime::now(), peer: origin, blocks, highest_qc}))
+            Event::SendSyncResponse(SendSyncResponseEvent { timestamp: SystemTime::now(), peer: origin, blocks, highest_qc}).publish(&event_publisher)
         }
         thread::yield_now();
     })

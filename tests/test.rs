@@ -29,7 +29,7 @@ use hotstuff_rs::events::InsertBlockEvent;
 use hotstuff_rs::messages::*;
 use hotstuff_rs::networking::Network;
 use hotstuff_rs::pacemaker::DefaultPacemaker;
-use hotstuff_rs::replica::{Replica, ReplicaBuilder, Configuration};
+use hotstuff_rs::replica::{Replica, ReplicaSpec, Configuration};
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
     AppStateUpdates, CryptoHash, Power, PublicKey, ValidatorSet, ValidatorSetUpdates,
@@ -472,22 +472,23 @@ impl Node {
         let pacemaker =
             DefaultPacemaker::new(Duration::from_millis(500));
 
-        let configuration = Configuration {
-            me: keypair,
-            chain_id: 0,
-            sync_request_limit: 10,
-            sync_trigger_timeout: Duration::new(40, 0),
-            sync_response_timeout: Duration::new(3, 0),
-            progress_msg_buffer_capacity: 10000,
-            log_events: true,
-        };
+        let configuration = 
+            Configuration :: builder()
+            .me(keypair)
+            .chain_id(0)
+            .sync_request_limit(10)
+            .sync_trigger_timeout(Duration::new(40, 0))
+            .sync_response_timeout(Duration::new(3, 0))
+            .progress_msg_buffer_capacity(10000)
+            .log_events(true)
+            .build();
 
         let insert_block_handler = |insert_block_event: &InsertBlockEvent| {
             println!("Inserted block with hash: {:?}, timestamp: {:?}", insert_block_event.block.hash, insert_block_event.timestamp)
         };
 
         let replica = 
-            ReplicaBuilder :: builder()
+            ReplicaSpec :: builder()
             .app(NumberApp::new(tx_queue.clone()))
             .pacemaker(pacemaker)
             .network(network)
