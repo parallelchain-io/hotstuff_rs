@@ -155,7 +155,8 @@ impl<N: Network> ProgressMessageStub<N> {
                     else if msg.view() > cur_view {
 
                         let bytes_requested = mem::size_of::<PublicKey>() as u64 + Self::size_of_msg(&msg);
-                        let overloaded_buffer = self.msg_buffer_size + bytes_requested > self.msg_buffer_capacity;
+                        let new_buffer_size = self.msg_buffer_size.checked_add(bytes_requested);
+                        let overloaded_buffer = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
                         let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_some() && msg.view() < self.msg_buffer.keys().max().copied().unwrap();
                 
                         // We only need to make space in the buffer if:
@@ -163,7 +164,7 @@ impl<N: Network> ProgressMessageStub<N> {
                         // (2) we want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
                         // (otherwise we ignore the message to avoid overloading the buffer)
                         if overloaded_buffer && cache_message_if_overloaded_buffer {
-                            Self::remove_from_overloaded_buffer(&mut self.msg_buffer, bytes_requested);
+                            self.remove_from_overloaded_buffer(bytes_requested);
                         };
 
                         // We only store the message in the buffer if either:
@@ -208,12 +209,12 @@ impl<N: Network> ProgressMessageStub<N> {
         self.network.update_validator_set(updates)
     }
 
-    fn remove_from_overloaded_buffer(buffer: &mut BTreeMap<u64, VecDeque<(PublicKey, ProgressMessage)>>, bytes_to_remove: u64) {
+    fn remove_from_overloaded_buffer(&mut self, bytes_to_remove: u64) {
         let public_key_size = mem::size_of::<PublicKey>() as u64;
         
         let mut bytes_removed = 0;
         let mut views_removed = Vec::new();
-        let mut msg_queues_iter = buffer.iter_mut().rev(); // msg_queues from highest view to lowest view
+        let mut msg_queues_iter = self.msg_buffer.iter_mut().rev(); // msg_queues from highest view to lowest view
 
         while bytes_removed < bytes_to_remove {
             if let Some((view, msg_queue)) = msg_queues_iter.next() {
@@ -239,7 +240,7 @@ impl<N: Network> ProgressMessageStub<N> {
             }
         };
 
-        views_removed.iter().for_each(|view| {let _ = buffer.remove(view);});
+        views_removed.iter().for_each(|view| {let _ = self.msg_buffer.remove(view);});
 
     }
 
