@@ -154,7 +154,7 @@ impl<N: Network> ProgressMessageStub<N> {
                     // (unless the buffer is overloaded in which case we need to make space or ignore the message).
                     else if msg.view() > cur_view {
 
-                        let bytes_requested = mem::size_of::<PublicKey>() as u64 + Self::size_of_msg(&msg);
+                        let bytes_requested = mem::size_of::<PublicKey>() as u64 + msg.size();
                         let new_buffer_size = self.msg_buffer_size.checked_add(bytes_requested);
                         let overloaded_buffer = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
                         let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_some() && msg.view() < self.msg_buffer.keys().max().copied().unwrap();
@@ -223,7 +223,7 @@ impl<N: Network> ProgressMessageStub<N> {
                     .take_while(|(_, msg)| 
                         {
                             if bytes_removed < bytes_to_remove {
-                                bytes_removed += Self::size_of_msg(msg) + public_key_size;
+                                bytes_removed += msg.size() + public_key_size;
                                 true
                             } else {
                                 false
@@ -242,15 +242,6 @@ impl<N: Network> ProgressMessageStub<N> {
 
         views_removed.iter().for_each(|view| {let _ = self.msg_buffer.remove(view);});
 
-    }
-
-    fn size_of_msg(msg: &ProgressMessage) -> u64 {
-        match msg {
-            ProgressMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
-            ProgressMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
-            ProgressMessage:: Vote(_) => mem::size_of::<Vote>() as u64,
-            ProgressMessage::NewView(_) => mem::size_of::<NewView>() as u64,
-        }
     }
 
 }

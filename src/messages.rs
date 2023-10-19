@@ -7,6 +7,7 @@
 //!
 //! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
+use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, Signer, Verifier};
 
@@ -79,6 +80,15 @@ impl ProgressMessage {
             ProgressMessage::Nudge(Nudge { view, .. }) => *view,
             ProgressMessage::Vote(Vote { view, .. }) => *view,
             ProgressMessage::NewView(NewView { view, .. }) => *view,
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        match self {
+            ProgressMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
+            ProgressMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
+            ProgressMessage:: Vote(_) => mem::size_of::<Vote>() as u64,
+            ProgressMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
     }
 }
