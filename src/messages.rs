@@ -119,7 +119,7 @@ pub struct Vote {
 impl Vote {
     /// # Panics
     /// pk must be a valid public key.
-    pub fn is_correct(&self, pk: &PublicKey) -> bool {
+    pub fn is_correct(&self, pk: &VerifyingKey) -> bool {
         let signature = Signature::from_bytes(&self.signature);
         pk.verify(
         &(self.chain_id, self.view, self.block, self.phase)
@@ -185,7 +185,7 @@ impl Keypair {
         })
     }
 
-    pub(crate) fn public(&self) -> PublicKey {
+    pub(crate) fn public(&self) -> VerifyingKey {
         self.0.verifying_key()
     }
 }

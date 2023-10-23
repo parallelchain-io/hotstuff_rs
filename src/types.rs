@@ -16,7 +16,7 @@ use std::{
     slice, time::{Duration, Instant},
 };
 
-pub use ed25519_dalek::{SigningKey, VerifyingKey as PublicKey, Signature};
+pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
 pub type ChainID = u64;
@@ -32,7 +32,7 @@ pub type SignatureBytes = [u8; 64];
 pub type SignatureSet = Vec<Option<SignatureBytes>>;
 pub type ViewNumber = u64;
 
-type PublicKeyBytes = [u8; 32];
+type VerifyingKeyBytes = [u8; 32];
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
@@ -197,26 +197,26 @@ impl Phase {
 }
 
 pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
-pub type ValidatorSetUpdates = UpdateSet<PublicKey, Power>;
+pub type ValidatorSetUpdates = UpdateSet<VerifyingKey, Power>;
 
 //internal representation of ValidatorSetUpdates
-pub(crate) type ValidatorSetUpdatesBytes = UpdateSet<PublicKeyBytes, Power>;
+pub(crate) type ValidatorSetUpdatesBytes = UpdateSet<VerifyingKeyBytes, Power>;
 
 impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
     type Error = ed25519_dalek::SignatureError;
 
     fn try_from(value: ValidatorSetUpdatesBytes) -> Result<Self, Self::Error> {
-        let mut new_inserts = <HashMap<PublicKey, Power>> :: new();
+        let mut new_inserts = <HashMap<VerifyingKey, Power>> :: new();
         let convert_and_insert_inserts = |(k, v): (&[u8; 32], &u64)| -> Result<(), Error> {
-            let pk = PublicKey::from_bytes(k)?;
+            let pk = VerifyingKey::from_bytes(k)?;
             new_inserts.insert(pk, *v); //insert should always return None
             Ok(())
         };
         let _ = value.inserts.keys().zip(value.inserts.values()).try_for_each(convert_and_insert_inserts);
 
-        let mut new_deletes: HashSet<PublicKey> = HashSet::new();
+        let mut new_deletes: HashSet<VerifyingKey> = HashSet::new();
         let convert_and_insert_deletes = |k: &[u8; 32]| -> Result<(), Error> {
-            let pk = PublicKey::from_bytes(k)?;
+            let pk = VerifyingKey::from_bytes(k)?;
             new_deletes.insert(pk); //insert should never return false
             Ok(())
         };
@@ -232,11 +232,11 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
 
 impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
     fn into(self) -> ValidatorSetUpdatesBytes {
-        let mut new_inserts = <HashMap<PublicKeyBytes, Power>> :: new();
+        let mut new_inserts = <HashMap<VerifyingKeyBytes, Power>> :: new();
         self.inserts.keys().zip(self.inserts.values())
         .for_each(|(k,v)| match new_inserts.insert(k.to_bytes(), *v) {_ => ()}); //insert should always return None
 
-        let mut new_deletes: HashSet<PublicKeyBytes> = HashSet::new();
+        let mut new_deletes: HashSet<VerifyingKeyBytes> = HashSet::new();
         self.deletes.iter().for_each(|k| match new_deletes.insert(k.to_bytes()) {_ => ()}); //insert should never return false
 
         ValidatorSetUpdatesBytes {
@@ -294,7 +294,7 @@ where
 
 /// Identities of validators and their voting powers.
 ///
-/// The validator set maintains the list of validators in ascending order of their public keys, and avails methods:
+/// The validator set maintains the list of validators in ascending order of their verifying keys (public keys), and avails methods:
 /// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order.
 /// 
 /// # Limits to total power
@@ -302,9 +302,9 @@ where
 /// The total power of a validator set must not exceed `u128::MAX/2`.
 #[derive(Clone)]
 pub struct ValidatorSet {
-    // The public keys of validators are included here in ascending order.
-    validators: Vec<PublicKey>,
-    powers: HashMap<PublicKey, Power>,
+    // The verifying keys of validators are included here in ascending order.
+    validators: Vec<VerifyingKey>,
+    powers: HashMap<VerifyingKey, Power>,
 }
 
 impl Default for ValidatorSet {
@@ -321,7 +321,7 @@ impl ValidatorSet {
         }
     }
 
-    pub fn put(&mut self, validator: &PublicKey, power: Power) {
+    pub fn put(&mut self, validator: &VerifyingKey, power: Power) {
         if !self.powers.contains_key(validator) {
             let validator_bytes = validator.to_bytes();
             let insert_pos = self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)).unwrap_err();
@@ -341,7 +341,7 @@ impl ValidatorSet {
         }
     }
 
-    pub fn power(&self, validator: &PublicKey) -> Option<&Power> {
+    pub fn power(&self, validator: &VerifyingKey) -> Option<&Power> {
         self.powers.get(validator)
     }
 
@@ -353,11 +353,11 @@ impl ValidatorSet {
         total_power
     }
 
-    pub fn contains(&self, validator: &PublicKey) -> bool {
+    pub fn contains(&self, validator: &VerifyingKey) -> bool {
         self.powers.contains_key(validator)
     }
 
-    pub fn remove(&mut self, validator: &PublicKey) -> Option<(PublicKey, Power)> {
+    pub fn remove(&mut self, validator: &VerifyingKey) -> Option<(VerifyingKey, Power)> {
         let validator_bytes = validator.to_bytes();
         if let Ok(pos) = self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)) {
             self.validators.remove(pos);
@@ -367,13 +367,13 @@ impl ValidatorSet {
         }
     }
 
-    /// Get an iterator through validators' public keys which walks through them in ascending order.
-    pub fn validators(&self) -> slice::Iter<PublicKey> {
+    /// Get an iterator through validators' verifying keys which walks through them in ascending order.
+    pub fn validators(&self) -> slice::Iter<VerifyingKey> {
         self.validators.iter()
     }
 
-    /// Get a vector containing each validator and its power, in ascending order of the validators' public keys.
-    pub fn validators_and_powers(&self) -> Vec<(PublicKey, u64)> {
+    /// Get a vector containing each validator and its power, in ascending order of the validators' verifying keys.
+    pub fn validators_and_powers(&self) -> Vec<(VerifyingKey, u64)> {
         self.validators()
             .map(|v| (*v, *self.power(v).unwrap()))
             .collect()
@@ -387,7 +387,7 @@ impl ValidatorSet {
         self.len() == 0
     }
 
-    pub fn position(&self, validator: &PublicKey) -> Option<usize> {
+    pub fn position(&self, validator: &VerifyingKey) -> Option<usize> {
         let validator_bytes = validator.to_bytes();
         match self.validators.binary_search_by(|v| v.to_bytes().cmp(&validator_bytes)) {
             Ok(pos) => Some(pos),
@@ -395,7 +395,7 @@ impl ValidatorSet {
         }
     }
 
-    pub(crate) fn random(&self) -> Option<&PublicKey> {
+    pub(crate) fn random(&self) -> Option<&VerifyingKey> {
         self.validators.choose(&mut rand::thread_rng())
     }
 }
@@ -403,20 +403,20 @@ impl ValidatorSet {
 // internal representation of ValidatorSet
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub(crate) struct ValidatorSetBytes {
-    // The public keys of validators are included here in ascending order.
-    validators: Vec<PublicKeyBytes>,
-    powers: HashMap<PublicKeyBytes, Power>,
+    // The verifying keys of validators are included here in ascending order.
+    validators: Vec<VerifyingKeyBytes>,
+    powers: HashMap<VerifyingKeyBytes, Power>,
 }
 
 impl TryFrom<ValidatorSetBytes> for ValidatorSet {
     type Error = ed25519_dalek::SignatureError;
 
     fn try_from(value: ValidatorSetBytes) -> Result<Self, Self::Error> {
-        let new_validators = value.validators.iter().flat_map(|pk_bytes| PublicKey::from_bytes(pk_bytes)).collect();
+        let new_validators = value.validators.iter().flat_map(|pk_bytes| VerifyingKey::from_bytes(pk_bytes)).collect();
 
-        let mut new_powers = <HashMap<PublicKey, Power>> :: new();
+        let mut new_powers = <HashMap<VerifyingKey, Power>> :: new();
         let convert_and_insert = |(k, v): (&[u8; 32], &u64)| -> Result<(), Error> {
-            let pk = PublicKey::from_bytes(k)?;
+            let pk = VerifyingKey::from_bytes(k)?;
             new_powers.insert(pk, *v);
             Ok(())
         };
@@ -434,7 +434,7 @@ impl Into<ValidatorSetBytes> for &ValidatorSet {
     fn into(self) -> ValidatorSetBytes {
         let new_validators = self.validators.iter().map(|pk| pk.to_bytes()).collect();
 
-        let mut new_powers = <HashMap<PublicKeyBytes, Power>> :: new();
+        let mut new_powers = <HashMap<VerifyingKeyBytes, Power>> :: new();
         self.powers.keys().zip(self.powers.values())
         .for_each(|(k,v)| match new_powers.insert(k.to_bytes(), *v) {_ => ()}); //insert should always return None
 
@@ -483,7 +483,7 @@ impl VoteCollector {
     /// vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
     pub(crate) fn collect(
         &mut self,
-        signer: &PublicKey,
+        signer: &VerifyingKey,
         vote: Vote,
     ) -> Option<QuorumCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
@@ -535,7 +535,7 @@ impl VoteCollector {
 pub(crate) struct NewViewCollector {
     validator_set: ValidatorSet,
     total_power: TotalPower,
-    collected_from: HashSet<PublicKey>,
+    collected_from: HashSet<VerifyingKey>,
     accumulated_power: TotalPower,
 }
 
@@ -552,7 +552,7 @@ impl NewViewCollector {
     /// Notes that we have collected a new view message from the specified replica in the given view. Then, returns whether
     /// by collecting this message we have collected new view messages from a quorum of validators in this view. If the sender
     /// is not part of the validator set, then this function does nothing and returns false.
-    pub(crate) fn collect(&mut self, sender: &PublicKey) -> bool {
+    pub(crate) fn collect(&mut self, sender: &VerifyingKey) -> bool {
         if !self.validator_set.contains(sender) {
             return false;
         }

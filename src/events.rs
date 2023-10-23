@@ -1,7 +1,7 @@
 //! Definitions of hotstuff-rs events for event handling and logging
 //! Note: an event for a given action indicates that the action has been completed
 
-use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, PublicKey};
+use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, VerifyingKey};
 use crate::messages::{Proposal, Nudge, Vote, NewView};
 use std::time::{SystemTime, Duration};
 use std::sync::mpsc::Sender;
@@ -96,31 +96,31 @@ pub struct NewViewEvent {
 
 pub struct ReceiveProposalEvent {
     pub timestamp: SystemTime,
-    pub origin: PublicKey,
+    pub origin: VerifyingKey,
     pub proposal: Proposal,
 }
 
 pub struct ReceiveNudgeEvent {
     pub timestamp: SystemTime,
-    pub origin: PublicKey,
+    pub origin: VerifyingKey,
     pub nudge: Nudge,
 }
 
 pub struct ReceiveVoteEvent {
     pub timestamp: SystemTime,
-    pub origin: PublicKey,
+    pub origin: VerifyingKey,
     pub vote: Vote,
 }
 
 pub struct ReceiveNewViewEvent {
     pub timestamp: SystemTime,
-    pub origin: PublicKey,
+    pub origin: VerifyingKey,
     pub new_view: NewView,
 }
 
 pub struct StartViewEvent {
     pub timestamp: SystemTime,
-    pub leader: PublicKey,
+    pub leader: VerifyingKey,
     pub view: ViewNumber,
 }
 
@@ -137,25 +137,25 @@ pub struct CollectQCEvent {
 
 pub struct StartSyncEvent {
     pub timestamp: SystemTime,
-    pub peer: PublicKey,
+    pub peer: VerifyingKey,
 }
 
 pub struct EndSyncEvent {
     pub timestamp: SystemTime,
-    pub peer: PublicKey,
+    pub peer: VerifyingKey,
     pub blocks_synced: u64,
 }
 
 pub struct ReceiveSyncRequestEvent {
     pub timestamp: SystemTime,
-    pub peer: PublicKey,
+    pub peer: VerifyingKey,
     pub start_height: u64,
     pub limit: u32,
 }
 
 pub struct SendSyncResponseEvent {
     pub timestamp: SystemTime,
-    pub peer: PublicKey,
+    pub peer: VerifyingKey,
     pub blocks: Vec<Block>,
     pub highest_qc: QuorumCertificate,
 }

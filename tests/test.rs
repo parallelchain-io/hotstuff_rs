@@ -21,7 +21,7 @@
 
 extern crate rand;
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use hotstuff_rs::app::{
     App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
 };
@@ -32,7 +32,7 @@ use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::{Replica, ReplicaSpec, Configuration};
 use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
 use hotstuff_rs::types::{
-    AppStateUpdates, CryptoHash, Power, PublicKey, ValidatorSet, ValidatorSetUpdates,
+    AppStateUpdates, CryptoHash, Power, ValidatorSet, ValidatorSetUpdates,
     ViewNumber,
 };
 use log::LevelFilter;
@@ -48,7 +48,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-type PublicKeyBytes = [u8; 32];
+type VerifyingKeyBytes = [u8; 32];
 
 #[test]
 fn basic_functions_integration_test() {
@@ -86,9 +86,9 @@ fn basic_functions_integration_test() {
 
     // Submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.
     log::debug!("Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
-    let node_1 = nodes[1].public_key();
+    let node_1 = nodes[1].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, 1));
-    let node_2 = nodes[2].public_key();
+    let node_2 = nodes[2].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, 1));
 
     // Poll the validator set of every replica until we have 3 validators.
@@ -193,9 +193,9 @@ fn setup_logger(level: LevelFilter) {
 /// A mock network stub which passes messages from and to threads using channels.  
 #[derive(Clone)]
 struct NetworkStub {
-    my_public_key: PublicKey,
-    all_peers: HashMap<PublicKey, Sender<(PublicKey, Message)>>,
-    inbox: Arc<Mutex<Receiver<(PublicKey, Message)>>>,
+    my_verifying_key: VerifyingKey,
+    all_peers: HashMap<VerifyingKey, Sender<(VerifyingKey, Message)>>,
+    inbox: Arc<Mutex<Receiver<(VerifyingKey, Message)>>>,
 }
 
 impl Network for NetworkStub {
@@ -203,19 +203,19 @@ impl Network for NetworkStub {
 
     fn update_validator_set(&mut self, _: ValidatorSetUpdates) {}
 
-    fn send(&mut self, peer: PublicKey, message: Message) {
+    fn send(&mut self, peer: VerifyingKey, message: Message) {
         if let Some(peer) = self.all_peers.get(&peer) {
-            let _ = peer.send((self.my_public_key, message));
+            let _ = peer.send((self.my_verifying_key, message));
         }
     }
 
     fn broadcast(&mut self, message: Message) {
         for (_, peer) in &self.all_peers {
-            let _ = peer.send((self.my_public_key, message.clone()));
+            let _ = peer.send((self.my_verifying_key, message.clone()));
         }
     }
 
-    fn recv(&mut self) -> Option<(PublicKey, Message)> {
+    fn recv(&mut self) -> Option<(VerifyingKey, Message)> {
         match self.inbox.lock().unwrap().try_recv() {
             Ok(o_m) => Some(o_m),
             Err(TryRecvError::Empty) => None,
@@ -224,9 +224,9 @@ impl Network for NetworkStub {
     }
 }
 
-fn mock_network(peers: impl Iterator<Item = PublicKey>) -> Vec<NetworkStub> {
+fn mock_network(peers: impl Iterator<Item = VerifyingKey>) -> Vec<NetworkStub> {
     let mut all_peers = HashMap::new();
-    let peer_and_inboxes: Vec<(PublicKey, Receiver<(PublicKey, Message)>)> = peers
+    let peer_and_inboxes: Vec<(VerifyingKey, Receiver<(VerifyingKey, Message)>)> = peers
         .map(|peer| {
             let (sender, receiver) = mpsc::channel();
             all_peers.insert(peer, sender);
@@ -237,8 +237,8 @@ fn mock_network(peers: impl Iterator<Item = PublicKey>) -> Vec<NetworkStub> {
 
     peer_and_inboxes
         .into_iter()
-        .map(|(my_public_key, inbox)| NetworkStub {
-            my_public_key,
+        .map(|(my_verifying_key, inbox)| NetworkStub {
+            my_verifying_key,
             all_peers: all_peers.clone(),
             inbox: Arc::new(Mutex::new(inbox)),
         })
@@ -333,7 +333,7 @@ const NUMBER_KEY: [u8; 1] = [0];
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 enum NumberAppTransaction {
     Increment,
-    SetValidator(PublicKeyBytes, Power),
+    SetValidator(VerifyingKeyBytes, Power),
 }
 
 impl App<MemDB> for NumberApp {
@@ -430,10 +430,10 @@ impl NumberApp {
                 }
                 NumberAppTransaction::SetValidator(validator, power) => {
                     if let Some(updates) = &mut validator_set_updates {
-                        updates.insert(PublicKey::from_bytes(validator).unwrap(), *power);
+                        updates.insert(VerifyingKey::from_bytes(validator).unwrap(), *power);
                     } else {
                         let mut vsu = ValidatorSetUpdates::new();
-                        vsu.insert(PublicKey::from_bytes(validator).unwrap(), *power);
+                        vsu.insert(VerifyingKey::from_bytes(validator).unwrap(), *power);
                         validator_set_updates = Some(vsu);
                     }
                 }
@@ -451,7 +451,7 @@ impl NumberApp {
     }
 }
 struct Node {
-    public_key: PublicKeyBytes,
+    verifying_key: VerifyingKeyBytes,
     tx_queue: Arc<Mutex<Vec<NumberAppTransaction>>>,
     replica: Replica<MemDB>,
 }
@@ -467,7 +467,7 @@ impl Node {
 
         Replica::initialize(kv_store.clone(), init_as, init_vs);
 
-        let public_key = keypair.verifying_key().to_bytes();
+        let verifying_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
         let pacemaker =
             DefaultPacemaker::new(Duration::from_millis(500));
@@ -499,7 +499,7 @@ impl Node {
             .start();
 
         Node {
-            public_key,
+            verifying_key,
             replica,
             tx_queue,
         }
@@ -535,7 +535,7 @@ impl Node {
             .highest_view_entered()
     }
 
-    fn public_key(&self) -> PublicKeyBytes {
-        self.public_key
+    fn verifying_key(&self) -> VerifyingKeyBytes {
+        self.verifying_key
     }
 }

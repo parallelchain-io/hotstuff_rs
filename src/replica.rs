@@ -8,7 +8,7 @@
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, these processes are
 //! called 'replicas', and therefore the set of all replicas is called the 'replica set'. Each replica is uniquely identified
-//! by an Ed25519 public key.
+//! by an Ed25519 public key (ed25519-dalek::VerifyingKey).
 //!
 //! ## Validators and Listeners
 //!

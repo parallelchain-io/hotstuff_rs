@@ -35,7 +35,7 @@ pub trait Pacemaker: Send {
     ) -> Duration;
 
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
-        -> PublicKey;
+        -> VerifyingKey;
 }
 
 /// A pacemaker which selects leaders in a round-robin fashion, and prescribes exponentially increasing view timeouts to
@@ -61,7 +61,7 @@ impl Pacemaker for DefaultPacemaker {
         &mut self,
         cur_view: ViewNumber,
         validator_set: &ValidatorSet,
-    ) -> PublicKey {
+    ) -> VerifyingKey {
         let num_validators = validator_set.len();
         *validator_set
             .validators()
