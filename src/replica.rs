@@ -60,47 +60,47 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P:
     pacemaker: P,
     configuration: Configuration,
     // Optional parameters
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<InsertBlockEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&InsertBlockEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<InsertBlockEvent>]))]
     on_insert_block: Vec<HandlerPtr<InsertBlockEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<CommitBlockEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&CommitBlockEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<CommitBlockEvent>]))]
     on_commit_block: Vec<HandlerPtr<CommitBlockEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<PruneBlockEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&PruneBlockEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<PruneBlockEvent>]))]
     on_prune_block: Vec<HandlerPtr<PruneBlockEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateHighestQCEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>]))]
     on_update_highest_qc: Vec<HandlerPtr<UpdateHighestQCEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateLockedViewEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedViewEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<UpdateLockedViewEvent>]))]
     on_update_locked_view: Vec<HandlerPtr<UpdateLockedViewEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<UpdateValidatorSetEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateValidatorSetEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<UpdateValidatorSetEvent>]))]
     on_update_validator_set: Vec<HandlerPtr<UpdateValidatorSetEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ProposeEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ProposeEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ProposeEvent>]))]
     on_propose: Vec<HandlerPtr<ProposeEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<NudgeEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&NudgeEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<NudgeEvent>]))]
     on_nudge: Vec<HandlerPtr<NudgeEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<VoteEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&VoteEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<VoteEvent>]))]
     on_vote: Vec<HandlerPtr<VoteEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<NewViewEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&NewViewEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<NewViewEvent>]))]
     on_new_view: Vec<HandlerPtr<NewViewEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveProposalEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveProposalEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ReceiveProposalEvent>]))]
     on_receive_proposal: Vec<HandlerPtr<ReceiveProposalEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveNudgeEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNudgeEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ReceiveNudgeEvent>]))]
     on_receive_nudge: Vec<HandlerPtr<ReceiveNudgeEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveVoteEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveVoteEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ReceiveVoteEvent>]))]
     on_receive_vote: Vec<HandlerPtr<ReceiveVoteEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveNewViewEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNewViewEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ReceiveNewViewEvent>]))]
     on_receive_new_view: Vec<HandlerPtr<ReceiveNewViewEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<StartViewEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&StartViewEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<StartViewEvent>]))]
     on_start_view: Vec<HandlerPtr<StartViewEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ViewTimeoutEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ViewTimeoutEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ViewTimeoutEvent>]))]
     on_view_timeout: Vec<HandlerPtr<ViewTimeoutEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<CollectQCEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&CollectQCEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<CollectQCEvent>]))]
     on_collect_qc: Vec<HandlerPtr<CollectQCEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<StartSyncEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&StartSyncEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<StartSyncEvent>]))]
     on_start_sync: Vec<HandlerPtr<StartSyncEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<EndSyncEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&EndSyncEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<EndSyncEvent>]))]
     on_end_sync: Vec<HandlerPtr<EndSyncEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<ReceiveSyncRequestEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveSyncRequestEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<ReceiveSyncRequestEvent>]))]
     on_receive_sync_request: Vec<HandlerPtr<ReceiveSyncRequestEvent>>,
-    #[builder(default = Vec::with_capacity(1), setter(transform = |handler_ptr: HandlerPtr<SendSyncResponseEvent>| vec![handler_ptr]))]
+    #[builder(default, setter(transform = |handler: impl Fn(&SendSyncResponseEvent) + Send + 'static| vec![Box::new(handler) as HandlerPtr<SendSyncResponseEvent>]))]
     on_send_sync_response: Vec<HandlerPtr<SendSyncResponseEvent>>,
 }
 

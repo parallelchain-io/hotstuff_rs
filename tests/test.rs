@@ -494,7 +494,7 @@ impl Node {
             .network(network)
             .kv_store(kv_store)
             .configuration(configuration)
-            .on_insert_block(Box::new(insert_block_handler))
+            .on_insert_block(insert_block_handler)
             .build()
             .start();
 
