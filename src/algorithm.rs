@@ -341,8 +341,10 @@ fn on_receive_proposal<K: KVStore, N: Network>(
         validator_set_updates,
     } = app.validate_block(validate_block_request)
     {   
-        // Progress: on receiving acceptable proposal
-        sync_trigger_timer.update();
+        // Progress: on receiving acceptable proposal that extends the blockchain
+        if parent_block.is_none() || block_tree.children(parent_block.unwrap()).is_none() {
+            sync_trigger_timer.update()
+        }
 
         let validator_set_updates_because_of_commit = block_tree.insert_block(
             &proposal.block,
@@ -420,15 +422,15 @@ fn on_receive_nudge<K: KVStore, N: Network>(
         return (false, i_am_next_leader);
     }
 
-    // Progress: on receiving acceptable nudge
-    sync_trigger_timer.update();
-
     let mut wb = BlockTreeWriteBatch::new();
     let mut update_highest_qc: Option<QuorumCertificate> = None;
     let mut update_locked_view: Option<ViewNumber> = None;
     if nudge.justify.view > block_tree.highest_qc().view {
         wb.set_highest_qc(&nudge.justify);
         update_highest_qc = Some(nudge.justify.clone());
+
+        // Progress: on receiving acceptable nudge with a **new** highest_qc
+        sync_trigger_timer.update();
     }
     let next_phase = match nudge.justify.phase {
         Phase::Prepare => {
@@ -710,8 +712,10 @@ fn sync_with<K: KVStore, N: Network>(
                         validator_set_updates,
                     } = app.validate_block_for_sync(validate_block_request)
                     {   
-                        // Progress: on receiving acceptable block via sync
-                        sync_trigger_timer.update();
+                        // Progress: on receiving acceptable block that extends the blockchain via sync
+                        if parent_block.is_none() || block_tree.children(parent_block.unwrap()).is_none() {
+                            sync_trigger_timer.update()
+                        }
 
                         let validator_set_updates_because_of_commit = block_tree.insert_block(
                             &block,
