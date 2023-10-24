@@ -221,15 +221,16 @@ fn execute_view<K: KVStore, N: Network>(
             },
             Err(ProgressMessageReceiveError::Timeout) => continue,
         };
-        if sync_trigger_timer.timeout() {
-            return Err(ShouldSync)
-        }
     }
 
     // 3. If the view times out, send a New View message.
     Event::ViewTimeout(ViewTimeoutEvent { timestamp: SystemTime::now(), view, timeout}).publish(event_publisher);
 
     on_view_timeout(chain_id, view, block_tree, pacemaker, pm_stub, event_publisher);
+
+    if sync_trigger_timer.timeout() {
+        return Err(ShouldSync)
+    }
 
     Ok(())
 }
