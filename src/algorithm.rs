@@ -342,7 +342,8 @@ fn on_receive_proposal<K: KVStore, N: Network>(
     } = app.validate_block(validate_block_request)
     {   
         // Progress: on receiving acceptable proposal that extends the blockchain
-        if parent_block.is_none() || block_tree.children(parent_block.unwrap()).is_none() {
+        if block_tree.children(&proposal.block.justify.block).is_none() || 
+            (block_tree.children(&proposal.block.justify.block).is_some() && block_tree.children(&proposal.block.justify.block).unwrap().is_empty()) {
             sync_trigger_timer.update()
         }
 
@@ -713,7 +714,8 @@ fn sync_with<K: KVStore, N: Network>(
                     } = app.validate_block_for_sync(validate_block_request)
                     {   
                         // Progress: on receiving acceptable block that extends the blockchain via sync
-                        if parent_block.is_none() || block_tree.children(parent_block.unwrap()).is_none() {
+                        if block_tree.children(&block.justify.block).is_none() || 
+                            (block_tree.children(&block.justify.block).is_some() && block_tree.children(&block.justify.block).unwrap().is_empty()) {
                             sync_trigger_timer.update()
                         }
 
