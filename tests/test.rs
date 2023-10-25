@@ -477,7 +477,6 @@ impl Node {
             .me(keypair)
             .chain_id(0)
             .sync_request_limit(10)
-            .sync_trigger_timeout(Duration::new(40, 0))
             .sync_response_timeout(Duration::new(3, 0))
             .progress_msg_buffer_capacity(10000)
             .log_events(true)

@@ -44,7 +44,6 @@ use typed_builder::TypedBuilder;
 pub struct Configuration {
     pub me: SigningKey,
     pub chain_id: ChainID,
-    pub sync_trigger_timeout: Duration,
     pub sync_request_limit: u32,
     pub sync_response_timeout: Duration,
     pub progress_msg_buffer_capacity: u64,
@@ -169,7 +168,6 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             event_publisher,
             self.configuration.sync_request_limit,
             self.configuration.sync_response_timeout,
-            self.configuration.sync_trigger_timeout
         );
 
         let (event_bus_shutdown, event_bus_shutdown_receiver) =

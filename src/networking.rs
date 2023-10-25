@@ -142,6 +142,21 @@ impl<N: Network> ProgressMessageStub<N> {
                         continue;
                     }
 
+                    // Inform the caller that we've received a QC from the future.
+                    let received_qc_from_future = match &msg {
+                        ProgressMessage::Proposal(Proposal { block, .. }) => {
+                            block.justify.view > cur_view
+                        }
+                        ProgressMessage::Nudge(Nudge { justify, .. }) => justify.view > cur_view,
+                        ProgressMessage::NewView(NewView { highest_qc, .. }) => {
+                            highest_qc.view > cur_view
+                        }
+                        _ => false,
+                    };
+                    if received_qc_from_future {
+                        return Err(ProgressMessageReceiveError::ReceivedQCFromFuture);
+                    }
+
                     // Return the message if its for the current view.
                     if msg.view() == cur_view {
                         return Ok((sender, msg));
@@ -244,6 +259,7 @@ impl<N: Network> ProgressMessageStub<N> {
 
 pub(crate) enum ProgressMessageReceiveError {
     Timeout,
+    ReceivedQCFromFuture,
 }
 
 pub(crate) struct SyncClientStub<N: Network> {
