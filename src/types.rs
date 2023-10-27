@@ -136,9 +136,9 @@ impl QuorumCertificate {
         }
     }
 
-    pub const fn genesis_qc() -> QuorumCertificate {
+    pub const fn genesis_qc(chain_id: ChainID) -> QuorumCertificate {
         QuorumCertificate {
-            chain_id: 0,
+            chain_id: chain_id,
             view: 0,
             block: [0u8; 32],
             phase: Phase::Generic,
@@ -147,7 +147,7 @@ impl QuorumCertificate {
     }
 
     pub fn is_genesis_qc(&self) -> bool {
-        *self == Self::genesis_qc()
+        *self == Self::genesis_qc(self.chain_id)
     }
 
     pub fn quorum(validator_set_power: TotalPower) -> TotalPower {

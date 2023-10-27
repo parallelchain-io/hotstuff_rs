@@ -218,9 +218,10 @@ impl<K: KVStore> Replica<K> {
         kv_store: K,
         initial_app_state: AppStateUpdates,
         initial_validator_set: ValidatorSetUpdates,
+        chain_id: ChainID
     ) {
         let mut block_tree = BlockTree::new(kv_store);
-        block_tree.initialize(&initial_app_state, &initial_validator_set);
+        block_tree.initialize(&initial_app_state, &initial_validator_set, chain_id);
     }
 
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
