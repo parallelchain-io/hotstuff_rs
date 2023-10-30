@@ -75,7 +75,6 @@ impl<K: KVStore> BlockTree<K> {
         &mut self,
         initial_app_state: &AppStateUpdates,
         initial_validator_set: &ValidatorSetUpdates,
-        chain_id: ChainID
     ) {
         let mut wb = BlockTreeWriteBatch::new();
 
@@ -89,7 +88,7 @@ impl<K: KVStore> BlockTree<K> {
 
         wb.set_highest_view_entered(0);
 
-        wb.set_highest_qc(&QuorumCertificate::genesis_qc(chain_id));
+        wb.set_highest_qc(&QuorumCertificate::genesis_qc());
 
         self.write(wb);
     }
@@ -812,7 +811,7 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
                     }
                 }
 
-                if block_justify == QuorumCertificate::genesis_qc(block_justify.chain_id) {
+                if block_justify == QuorumCertificate::genesis_qc() {
                     break;
                 }
 

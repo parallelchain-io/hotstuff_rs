@@ -465,7 +465,7 @@ impl Node {
     ) -> Node {
         let kv_store = MemDB::new();
 
-        Replica::initialize(kv_store.clone(), init_as, init_vs, 0);
+        Replica::initialize(kv_store.clone(), init_as, init_vs);
 
         let verifying_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
