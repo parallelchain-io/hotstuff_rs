@@ -116,7 +116,7 @@ impl<K: KVStore> BlockTree<K> {
     /// locked view.
     ///
     /// For this, it is necessary that:
-    /// 1. Its chain ID matches the chain ID of the replica
+    /// 1. Its chain ID matches the chain ID of the replica, or is the genesis qc
     /// 2. It justifies a known block, or is the genesis qc.
     /// 3. Its view number is greater than or equal to locked view.
     /// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
@@ -126,7 +126,7 @@ impl<K: KVStore> BlockTree<K> {
     /// [QuorumCertificate::is_correct]
     pub fn safe_qc(&self, qc: &QuorumCertificate, chain_id: ChainID) -> bool {
         /* 1 */
-        qc.chain_id == chain_id &&
+        (qc.chain_id == chain_id || qc.is_genesis_qc()) &&
         /* 2 */
         (self.contains(&qc.block) || qc.is_genesis_qc()) &&
         /* 3 */ qc.view >= self.locked_view() &&
