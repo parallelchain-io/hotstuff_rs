@@ -408,6 +408,10 @@ impl<K: KVStore> BlockTree<K> {
         wb.delete_children(tail);
         wb.delete_pending_app_state_updates(tail);
         wb.delete_pending_validator_set_updates(tail);
+
+        if let Some(data_len) = self.block_data_len(tail) {
+            wb.delete_block(tail, data_len)
+        }
     }
 
     /* ↓↓↓ Extra state getters for convenience ↓↓↓ */
