@@ -398,20 +398,33 @@ impl<K: KVStore> BlockTree<K> {
         wb.set_children(&parent_or_genesis, &vec![*block]);
     }
 
-    fn delete_branch(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, tail: &CryptoHash) {
-        if let Some(children) = self.children(tail) {
-            for child in children {
-                self.delete_branch(wb, &child);
+    /// Deletes all data of blocks in a branch starting from a given root by iterating over the blocks in the branch.
+    fn delete_branch(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, root: &CryptoHash) {
+        for block in self.blocks_in_branch(*root) {
+            wb.delete_children(&block);
+            wb.delete_pending_app_state_updates(&block);
+            wb.delete_pending_validator_set_updates(&block);
+
+            if let Some(data_len) = self.block_data_len(&block) {
+                wb.delete_block(&block, data_len)
             }
         }
+    }
 
-        wb.delete_children(tail);
-        wb.delete_pending_app_state_updates(tail);
-        wb.delete_pending_validator_set_updates(tail);
+    /// Performs depth-first search to collect all blocks in a branch into a single iterator.
+    fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
+        let mut stack: Vec<CryptoHash> = vec![root];
+        let mut branch: Vec<CryptoHash> = vec![];
 
-        if let Some(data_len) = self.block_data_len(tail) {
-            wb.delete_block(tail, data_len)
+        while let Some(block) = stack.pop() {
+            if let Some(children) = self.children(&block) {
+                for child in children {
+                    stack.push(child)
+                }
+            };
+            branch.push(block)
         }
+        branch.into_iter()
     }
 
     /* ↓↓↓ Extra state getters for convenience ↓↓↓ */
