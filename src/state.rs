@@ -1007,9 +1007,8 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         /* ↓↓↓ Pending Validator Set Updates */
 
         fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-            ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?,)
-            .ok()
-            .map(|validator_set_updates_bytes| ValidatorSetUpdates::try_from(validator_set_updates_bytes).unwrap())
+            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?,).unwrap();
+            Some(ValidatorSetUpdates::try_from(validator_set_updates_bytes).unwrap())
         }
 
         /* ↓↓↓ Locked View ↓↓↓ */
