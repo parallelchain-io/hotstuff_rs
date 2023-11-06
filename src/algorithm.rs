@@ -51,6 +51,12 @@
 //! 3. If the view times out and reaches this step without reaching a step that transitions it into the next view, then
 //!    send a new view message containing my highest qc to the next leader.
 
+use std::cmp::max;
+use std::sync::mpsc::{Sender, Receiver, TryRecvError};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+use std::time::{Instant, SystemTime};
+
 use crate::app::App;
 use crate::app::ProduceBlockResponse;
 use crate::app::{ProduceBlockRequest, ValidateBlockRequest, ValidateBlockResponse};
@@ -60,11 +66,6 @@ use crate::networking::*;
 use crate::pacemaker::Pacemaker;
 use crate::state::*;
 use crate::types::*;
-use std::cmp::max;
-use std::sync::mpsc::{Sender, Receiver, TryRecvError};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-use std::time::{Instant, SystemTime};
 
 /// Starts the algorithm thread, which runs an infinite loop until a shutdown signal is received.
 /// In each iteration of the loop the thread executes a view in the progress mode, and enters

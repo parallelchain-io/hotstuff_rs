@@ -8,6 +8,7 @@
 //! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
 use std::mem;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, Signer, Verifier};
 
@@ -65,7 +66,7 @@ impl ProgressMessage {
         })
     }
 
-    /// Returns the chain ID associated with a given [ProgressMessage](ProgressMessage).
+    /// Returns the chain ID associated with a given [ProgressMessage].
     pub fn chain_id(&self) -> ChainID {
         match self {
             ProgressMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
@@ -75,7 +76,7 @@ impl ProgressMessage {
         }
     }
 
-    /// Returns the view number associated with a given [ProgressMessage](ProgressMessage).
+    /// Returns the view number associated with a given [ProgressMessage].
     pub fn view(&self) -> ViewNumber {
         match self {
             ProgressMessage::Proposal(Proposal { view, .. }) => *view,
@@ -85,7 +86,7 @@ impl ProgressMessage {
         }
     }
 
-    /// Returns the number of bytes required to store a given instance of the [ProgressMessage](ProgressMessage).
+    /// Returns the number of bytes required to store a given instance of the [ProgressMessage] enum.
     pub fn size(&self) -> u64 {
         match self {
             ProgressMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,

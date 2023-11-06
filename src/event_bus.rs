@@ -15,11 +15,12 @@
 //! 2. If logging is enabled via replica's [config](crate::replica::Configuration) then also
 //!    the default logging handlers defined in [logging](crate::logging).
 
-use crate::events::*;
-use crate::logging::Logger;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
+
+use crate::events::*;
+use crate::logging::Logger;
 
 /// Pointer to a handler closure, parametrised by the argument (for our use case, event) type. 
 pub(crate) type HandlerPtr<T> = Box<dyn Fn(&T) + Send>;
@@ -43,7 +44,7 @@ impl<T: Logger> HandlerPair<T> {
     pub(crate) fn new(log: bool, user_defined_handler: Option<HandlerPtr<T>>) -> HandlerPair<T> {
         HandlerPair {
             user_defined_handler,
-            logging_handler: if log {Some(T::get_logger())} else {None}
+            logging_handler: if log { Some(T::get_logger()) } else { None }
         }
     }
 }

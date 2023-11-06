@@ -5,7 +5,7 @@
 
 //! Functions for logging out hotstuff-rs events defined in [events](crate::events).
 //!
-//! The logs defined in this module are enabled if the user enabled them via replica's [config](crate::replica::Configuration).
+//! The logs defined in this module are printed if the user enabled them via replica's [config](crate::replica::Configuration).
 //! 
 //! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
 //! printed onto a terminal or to a file, set up a [logging

@@ -26,14 +26,15 @@
 //!     - If it does contain new blocks, then the replica validates the blocks and quorum certificate and inserts them
 //!       into its block tree, and then jumps back to step 2.
 
-use crate::events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent};
-use crate::messages::{SyncRequest, SyncResponse};
-use crate::networking::{Network, SyncServerStub};
-use crate::state::{BlockTreeCamera, KVStore};
 use std::cmp::max;
 use std::sync::mpsc::{Receiver, TryRecvError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
+
+use crate::events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent};
+use crate::messages::{SyncRequest, SyncResponse};
+use crate::networking::{Network, SyncServerStub};
+use crate::state::{BlockTreeCamera, KVStore};
 
 /// Starts the sync server thread, which runs an infinite loop until a shutdown signal is received.
 /// In each iteration of the loop the thread checks if it received any [sync requests](crate::messages::SyncRequest)

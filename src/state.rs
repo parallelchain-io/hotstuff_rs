@@ -50,12 +50,14 @@
 //! - **Highest View Entered** (initialized to 0).
 //! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
 
-use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
-use crate::types::*;
-use borsh::{BorshDeserialize, BorshSerialize};
 use std::iter::successors;
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
+
+use borsh::{BorshDeserialize, BorshSerialize};
+
+use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
+use crate::types::*;
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
 pub struct BlockTree<K: KVStore>(K);
@@ -1001,7 +1003,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
 
         fn committed_validator_set(&self) -> ValidatorSet {
             let validator_set_bytes = ValidatorSetBytes::deserialize(&mut &*self.get(&COMMITTED_VALIDATOR_SET).unwrap()).unwrap();
-            ValidatorSet::try_from(validator_set_bytes).unwrap() //error should not happen so we unwrap
+            ValidatorSet::try_from(validator_set_bytes).unwrap()
         }
 
         /* ↓↓↓ Pending Validator Set Updates */

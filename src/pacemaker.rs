@@ -11,10 +11,11 @@
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
 //!    the current leader?
 
-use crate::types::*;
 use std::cmp::min;
 use std::convert::identity;
 use std::time::Duration;
+
+use crate::types::*;
 
 /// # Safety
 ///

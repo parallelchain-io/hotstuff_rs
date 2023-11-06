@@ -5,19 +5,20 @@
 
 //! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
 
-use crate::messages::Vote;
-use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{Verifier, ed25519::Error};
-use rand::seq::SliceRandom;
-use sha2::Digest;
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet},
     hash::Hash,
     slice,
 };
 
+use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::{Verifier, ed25519::Error};
+use rand::seq::SliceRandom;
+use sha2::Digest;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
+
+use crate::messages::Vote;
 
 pub type ChainID = u64;
 pub type BlockHeight = u64;
@@ -209,7 +210,7 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
         let mut new_inserts = <HashMap<VerifyingKey, Power>> :: new();
         let convert_and_insert_inserts = |(k, v): (&[u8; 32], &u64)| -> Result<(), Error> {
             let pk = VerifyingKey::from_bytes(k)?;
-            new_inserts.insert(pk, *v); //insert should always return None
+            new_inserts.insert(pk, *v); // Safety: Insert should always return None.
             Ok(())
         };
         let _ = value.inserts.keys().zip(value.inserts.values()).try_for_each(convert_and_insert_inserts);
@@ -217,7 +218,7 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
         let mut new_deletes: HashSet<VerifyingKey> = HashSet::new();
         let convert_and_insert_deletes = |k: &[u8; 32]| -> Result<(), Error> {
             let pk = VerifyingKey::from_bytes(k)?;
-            new_deletes.insert(pk); //insert should never return false
+            new_deletes.insert(pk); // Safety: Insert should never return false.
             Ok(())
         };
         let _ = value.deletes.iter().try_for_each(convert_and_insert_deletes);
@@ -234,10 +235,10 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
     fn into(self) -> ValidatorSetUpdatesBytes {
         let mut new_inserts = <HashMap<VerifyingKeyBytes, Power>> :: new();
         self.inserts.keys().zip(self.inserts.values())
-        .for_each(|(k,v)| match new_inserts.insert(k.to_bytes(), *v) {_ => ()}); //insert should always return None
+        .for_each(|(k,v)| match new_inserts.insert(k.to_bytes(), *v) {_ => ()}); //Safety: Insert should always return None.
 
         let mut new_deletes: HashSet<VerifyingKeyBytes> = HashSet::new();
-        self.deletes.iter().for_each(|k| match new_deletes.insert(k.to_bytes()) {_ => ()}); //insert should never return false
+        self.deletes.iter().for_each(|k| match new_deletes.insert(k.to_bytes()) {_ => ()}); //Safety: Insert should never return false.
 
         ValidatorSetUpdatesBytes {
             inserts: new_inserts,
@@ -436,7 +437,7 @@ impl Into<ValidatorSetBytes> for &ValidatorSet {
 
         let mut new_powers = <HashMap<VerifyingKeyBytes, Power>> :: new();
         self.powers.keys().zip(self.powers.values())
-        .for_each(|(k,v)| match new_powers.insert(k.to_bytes(), *v) {_ => ()}); //insert should always return None
+        .for_each(|(k,v)| match new_powers.insert(k.to_bytes(), *v) {_ => ()}); // Safety: Insert should always return None
 
         ValidatorSetBytes {
             validators: new_validators,

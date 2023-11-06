@@ -18,10 +18,11 @@
 //! Additionally, a [convenience method](Event::publish) is defined for publishing an event by sending it
 //! via an appropriate channel.
 
-use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, VerifyingKey};
-use crate::messages::{Proposal, Nudge, Vote, NewView};
 use std::time::{SystemTime, Duration};
 use std::sync::mpsc::Sender;
+
+use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, VerifyingKey};
+use crate::messages::{Proposal, Nudge, Vote, NewView};
 
 /// Enumerates all events defined for hotstuff-rs.
 pub enum Event {
@@ -205,7 +206,7 @@ pub struct EndSyncEvent {
     pub blocks_synced: u64,
 }
 
-/// This event corresponds to a replica's [sync_server](crate::sync_server) receiving a [sync request](crate::messages::SyncRequest)
+/// This event corresponds to the replica's [sync_server](crate::sync_server) receiving a [sync request](crate::messages::SyncRequest)
 /// from a peer identified by its [public key](ed25519_dalek::VerifyingKey). The event includes information
 /// about the requested start height from which the peer wants to sync, and the limit on the number of blocks
 /// that can be sent in a [sync response](crate::messages::SyncResponse).
@@ -216,7 +217,7 @@ pub struct ReceiveSyncRequestEvent {
     pub limit: u32,
 }
 
-/// This event corresponds to a replica's [sync_server](crate::sync_server) sending a [sync response](crate::messages::SyncResponse)
+/// This event corresponds to the replica's [sync_server](crate::sync_server) sending a [sync response](crate::messages::SyncResponse)
 /// to a peer identified by its [public key](ed25519_dalek::VerifyingKey). The event includes information
 /// about the vector of [blocks](crate::types::Block) and the Highest [Quroum Certificate](crate::types::QuorumCertificate) sent to the peer.
 pub struct SendSyncResponseEvent {

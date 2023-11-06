@@ -23,6 +23,11 @@
 //! messages to all peers it is connected to, and not only the validators. The library user is free to design and implement
 //! their own mechanism for deciding which peers, besides those in the validator set, should be connected to the network.
 
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use typed_builder::TypedBuilder;
+
 use crate::algorithm::start_algorithm;
 use crate::app::App;
 use crate::event_bus::*;
@@ -36,9 +41,6 @@ use crate::state::{BlockTree, BlockTreeCamera, KVStore};
 use crate::sync_server::start_sync_server;
 use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey, ChainID};
 use std::sync::mpsc::{self, Sender};
-use std::thread::JoinHandle;
-use std::time::Duration;
-use typed_builder::TypedBuilder;
 
 /// Stores the user-defined parameters required to start the replica, that is:
 /// 1. The replica's [keypair](ed25519_dalek::SigningKey).
@@ -47,14 +49,14 @@ use typed_builder::TypedBuilder;
 /// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the replica should wait for a sync response.
 /// 5. The progress message buffer capacity, which defines the maximum allowed capacity of the progress message buffer. If this capacity
 ///    is about to be exceeded, some messages might be removed to make space for new messages.
-/// 6. The "Log Events" flag, if true then logs should be printed. 
+/// 6. The "Log Events" flag, if set to "true" then logs should be printed. 
 /// 
 /// ## Chain ID
 /// 
 /// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::ChainID). This
 /// is included in votes and other messages so that replicas don't mistake messages and blocks for
 /// one HotStuff-rs blockchain does not get mistaken for those for another blockchain.
-/// //! In most cases, having a chain ID that collides with another blockchain is harmless. But
+/// In most cases, having a chain ID that collides with another blockchain is harmless. But
 /// if your application is a Proof of Stake public blockchain, this may cause a slashable offence
 /// if you operate validators in two chains that use the same keypair. So ensure that you don't
 /// operate a validator in two blockchains with the same keypair.
@@ -79,9 +81,9 @@ pub struct Configuration {
     pub me: SigningKey,
     #[builder(setter(doc = "Sets the chain ID of the blockchain. Required."))]
     pub chain_id: ChainID,
-    #[builder(setter(doc = "Sets the limit for the number of blocks that can be sent from the replica's sync server to a syncing peer. Required."))]
+    #[builder(setter(doc = "Sets the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
     pub sync_request_limit: u32,
-    #[builder(setter(doc = "Sets the timeout for receiving sync responses from a peer (in seconds). Required."))]
+    #[builder(setter(doc = "Sets the timeout for receiving a sync response from a peer (in seconds). Required."))]
     pub sync_response_timeout: Duration,
     #[builder(setter(doc = "Sets the maximum number of bytes that can be stored in the replica's message buffer at any given moment. Required."))]
     pub progress_msg_buffer_capacity: u64,

@@ -167,26 +167,26 @@ impl<N: Network> ProgressMessageStub<N> {
                     if msg.view() == cur_view {
                         return Ok((sender, msg));
                     }
-                    // Cache the message if its for a future view 
-                    // (unless the buffer is overloaded in which case we need to make space or ignore the message).
+                    // Cache the message if it is for a future view, 
+                    // unless the buffer is overloaded in which case we need to make space or ignore the message.
                     else if msg.view() > cur_view {
 
                         let bytes_requested = mem::size_of::<VerifyingKey>() as u64 + msg.size();
                         let new_buffer_size = self.msg_buffer_size.checked_add(bytes_requested);
                         let overloaded_buffer = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
-                        let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_some() && msg.view() < self.msg_buffer.keys().max().copied().unwrap();
+                        let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_none() || self.msg_buffer.keys().max().is_some_and(|max_view| msg.view() < *max_view);
                 
                         // We only need to make space in the buffer if:
-                        // (1) it will be overloaded after stroing the message, and 
-                        // (2) we want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
+                        // (1) It will be overloaded after stroing the message, and 
+                        // (2) We want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
                         // (otherwise we ignore the message to avoid overloading the buffer).
                         if overloaded_buffer && cache_message_if_overloaded_buffer {
                             self.remove_from_overloaded_buffer(bytes_requested);
                         };
 
                         // We only store the message in the buffer if either:
-                        // (1) there is no risk of overloading the buffer upon storing this message, or
-                        // (2) the buffer might be overloaded, but we have already made space for the new message.
+                        // (1) There is no risk of overloading the buffer upon storing this message, or
+                        // (2) The buffer might be overloaded, but we have already made space for the new message.
                         if !overloaded_buffer || (overloaded_buffer && cache_message_if_overloaded_buffer) {
                             let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
                             {
@@ -235,7 +235,9 @@ impl<N: Network> ProgressMessageStub<N> {
         let mut views_removed = Vec::new();
         let mut msg_queues_iter = self.msg_buffer.iter_mut().rev(); // msg_queues from highest view to lowest view
 
+        // Removes messages from the message buffer until the required number of bytes is freed.
         while bytes_removed < bytes_to_remove {
+            // Take the message queue for the next highest view, and remove its messages until the required number of bytes is freed.
             if let Some((view, msg_queue)) = msg_queues_iter.next() {
                 let removals = 
                     msg_queue.iter().rev()
@@ -250,7 +252,7 @@ impl<N: Network> ProgressMessageStub<N> {
                         }
                     )
                     .count() as u64;
-                let _ = (0..removals).into_iter().for_each(|_| {let _ = msg_queue.pop_back();});
+                let _ = (0..removals).into_iter().for_each(|_| { let _ = msg_queue.pop_back(); });
                 if msg_queue.is_empty() {
                     views_removed.push(*view)
                 }
@@ -259,6 +261,10 @@ impl<N: Network> ProgressMessageStub<N> {
             }
         };
 
+        self.msg_buffer_size -= bytes_removed;
+        
+        // If some views in the message buffer have lost all messages as a result of the removal,
+        // then also remove their corresponding keys from the buffer.
         views_removed.iter().for_each(|view| {let _ = self.msg_buffer.remove(view);});
 
     }
