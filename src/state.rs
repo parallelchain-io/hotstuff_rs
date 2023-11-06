@@ -10,7 +10,7 @@
 //! can provide a type that implements [KVStore]. This state can be mutated through an instance of [BlockTree],
 //! and read through an instance of [BlockTreeSnapshot], which can be created using [BlockTreeCamera].
 //!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the Block Tree, and users can
+//! In normal operation, HotStuff-rs code will internally be making all writes to the [Block Tree](crate::state::BlockTree), and users can
 //! get a [BlockTreeCamera] using replica's [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from an error
@@ -116,7 +116,7 @@ impl<K: KVStore> BlockTree<K> {
     /// locked view.
     ///
     /// For this, it is necessary that:
-    /// 1. Its chain ID matches the chain ID of the replica, or is the genesis qc
+    /// 1. Its chain ID matches the chain ID of the replica, or is the genesis qc.
     /// 2. It justifies a known block, or is the genesis qc.
     /// 3. Its view number is greater than or equal to locked view.
     /// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
@@ -236,10 +236,10 @@ impl<K: KVStore> BlockTree<K> {
 
         publish_insert_block_events(event_publisher, block.clone(), update_highest_qc, update_locked_view, committed_blocks.clone());
 
-        /// Publish all events resulting from calling insert_block on a block, 
-        /// These events change persistent state, and always include InsertBlockEvent, 
-        /// possibly include: UpdateHighestQCEvent, UpdatedLockedViewEvent, PruneBlockEvent, CommitBlockEvent, UpdateValidatorSetEvent
-        /// Invariant: invoked immediately after the corresponding changes are written to the Block Tree
+        /// Publish all events resulting from calling [self::insert_block] on a block, 
+        /// These events change persistent state, and always include [InsertBlockEvent], 
+        /// possibly include: [UpdateHighestQCEvent], [UpdateLockedViewEvent], [PruneBlockEvent], [CommitBlockEvent], [UpdateValidatorSetEvent].
+        /// Invariant: this method is invoked immediately after the corresponding changes are written to the [BlockTree].
         fn publish_insert_block_events(
             event_publisher: &Option<Sender<Event>>,
             block: Block,
@@ -324,9 +324,9 @@ impl<K: KVStore> BlockTree<K> {
         let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
         
         // Helper closure that
-        // (1) commits block b, applying all related updates to the write batch
-        // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional validator set updates associated with b
-        // (3) returns the extended vector of blocks committed so far (updated accumulator)
+        // (1) commits block b, applying all related updates to the write batch,
+        // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional validator set updates associated with b,
+        // (3) returns the extended vector of blocks committed so far (updated accumulator).
         let commit = |mut committed_blocks: Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, b: &CryptoHash| ->  Vec<(CryptoHash, Option<ValidatorSetUpdates>)>{
 
             let block_height = self.block_height(b).unwrap();
@@ -367,8 +367,8 @@ impl<K: KVStore> BlockTree<K> {
 
         // Iterate over the uncommitted blocks from oldest to newest, 
         // (1) applying related updates (by mutating the write batch), and
-        // (2) building up the vector of committed blocks (by pushing the newely committed blocks to the accumulator vector)
-        // Finally, return the accumulator
+        // (2) building up the vector of committed blocks (by pushing the newely committed blocks to the accumulator vector).
+        // Finally, return the accumulator.
         uncommitted_blocks_ordered_iter.fold(Vec::new(), commit)
 
     }

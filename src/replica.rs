@@ -8,7 +8,7 @@
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, these processes are
 //! called 'replicas', and therefore the set of all replicas is called the 'replica set'. Each replica is uniquely identified
-//! by an Ed25519 public key (ed25519-dalek::VerifyingKey).
+//! by an [Ed25519 public key](ed25519_dalek::VerifyingKey).
 //!
 //! ## Validators and Listeners
 //!
@@ -40,6 +40,38 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use typed_builder::TypedBuilder;
 
+/// Stores the user-defined parameters required to start the replica, that is:
+/// 1. The replica's [keypair](ed25519_dalek::SigningKey).
+/// 2. The [chain ID](crate::types::ChainID) of the target blockchain.
+/// 3. The sync request limit, which determines how many blocks should the replica request from its peer when syncing.
+/// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the replica should wait for a sync response.
+/// 5. The progress message buffer capacity, which defines the maximum allowed capacity of the progress message buffer. If this capacity
+///    is about to be exceeded, some messages might be removed to make space for new messages.
+/// 6. The "Log Events" flag, if true then logs should be printed. 
+/// 
+/// ## Chain ID
+/// 
+/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::ChainID). This
+/// is included in votes and other messages so that replicas don't mistake messages and blocks for
+/// one HotStuff-rs blockchain does not get mistaken for those for another blockchain.
+/// //! In most cases, having a chain ID that collides with another blockchain is harmless. But
+/// if your application is a Proof of Stake public blockchain, this may cause a slashable offence
+/// if you operate validators in two chains that use the same keypair. So ensure that you don't
+/// operate a validator in two blockchains with the same keypair.
+///
+/// ## Sync response timeout
+/// 
+/// Durations stored in [Configuration.sync_response_timeout] must be "well below"
+/// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
+/// 
+/// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
+/// durations lower than [u64::MAX] avoids overflows in calling code, which may add to the returned duration.
+/// 
+/// ## Log Events
+/// 
+/// HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
+/// printed onto a terminal or to a file, set up a [logging
+/// implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
 #[derive(TypedBuilder)]
 #[builder(doc)]
 pub struct Configuration {
@@ -57,6 +89,7 @@ pub struct Configuration {
     pub log_events: bool,
 }
 
+/// Stores all necessary parameters and trait implementations required to run the [Replica].
 #[derive(TypedBuilder)]
 #[builder(doc)]
 pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> {
@@ -139,6 +172,7 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P:
 
 impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> ReplicaSpec<K, A, N, P> {
 
+    /// Starts all threads and channels associated with running a replica, and returns the handles to them in a [Replica] struct.
     pub fn start(mut self) -> Replica<K> {
         let block_tree = BlockTree::new(self.kv_store.clone());
 
@@ -235,6 +269,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
     }
 }
 
+/// Stores the handles to the running threads and the sender ends of the channels used to communicate with them.
 pub struct Replica<K: KVStore> {
     block_tree_camera: BlockTreeCamera<K>,
     poller: Option<JoinHandle<()>>,
@@ -248,6 +283,8 @@ pub struct Replica<K: KVStore> {
 }
 
 impl<K: KVStore> Replica<K> {
+    /// Initializes the replica's [Block Tree](crate::state::BlockTree) with the intial
+    /// [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
@@ -257,6 +294,8 @@ impl<K: KVStore> Replica<K> {
         block_tree.initialize(&initial_app_state, &initial_validator_set);
     }
 
+    /// Returns a [Block Tree Camera](crate::state::BlockTreeCamera) which can be used to peek into
+    /// the [Block Tree](crate::state::BlockTree).
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }

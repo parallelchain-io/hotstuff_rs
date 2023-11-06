@@ -35,6 +35,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
+/// Starts the sync server thread, which runs an infinite loop until a shutdown signal is received.
+/// In each iteration of the loop the thread checks if it received any [sync requests](crate::messages::SyncRequest)
+/// from a peer, and proceeds accordingly to send a [sync response](crate::messages::SyncResponse).
 pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
     mut sync_stub: SyncServerStub<N>,

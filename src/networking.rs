@@ -6,8 +6,8 @@
 //! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and functions
 //! that replicas use to interact with the network.
 //!
-//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their VerifyingKey. Networking providers
-//! interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has five methods
+//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their [VerifyingKey](ed25519_dalek::VerifyingKey). 
+//! Networking providers interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has five methods
 //! that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
 use std::collections::{BTreeMap, VecDeque};
@@ -88,11 +88,14 @@ pub(crate) fn start_polling<N: Network + 'static>(
 
 /// A sending and receiving end for progress messages.
 ///
-/// This type's [ViewAwareProgressMessageReceiver::recv] method only returns messages from the specified
+/// This type's recv method only returns messages from the specified
 /// current view, and caches messages from future views for later consumption.
 ///
 /// This helps prevents interruptions to progress when replicas' views are mostly synchronized but they
 /// enter views at slightly different times.
+/// 
+/// If the message buffer grows beyond its maximum capacity, some highest-viewed messages might
+/// be removed from the buffer to make space for the new message.
 pub(crate) struct ProgressMessageStub<N: Network> {
     network: N,
     receiver: Receiver<(VerifyingKey, ProgressMessage)>,
@@ -116,8 +119,11 @@ impl<N: Network> ProgressMessageStub<N> {
         }
     }
 
-    // Receive a message matching the given chain id and current view. Messages from cur_view + 1 are cached for future
-    // consumption, while messages from other views are dropped immediately.
+    /// Receive a message matching the given chain id and current view. Messages from cur_view + 1 are cached for future
+    /// consumption, while messages from other views are dropped immediately. In case caching the message makes the buffer
+    /// grow beyond its capacity either:
+    /// 1. If the message has the highest view among the views of messages currently in the buffer, then the message is dropped, or
+    /// 2. Otherwise, just enough highest-viewed messages are removed from the buffer to make space for the new message.
     pub(crate) fn recv(
         &mut self,
         chain_id: ChainID,
@@ -173,14 +179,14 @@ impl<N: Network> ProgressMessageStub<N> {
                         // We only need to make space in the buffer if:
                         // (1) it will be overloaded after stroing the message, and 
                         // (2) we want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
-                        // (otherwise we ignore the message to avoid overloading the buffer)
+                        // (otherwise we ignore the message to avoid overloading the buffer).
                         if overloaded_buffer && cache_message_if_overloaded_buffer {
                             self.remove_from_overloaded_buffer(bytes_requested);
                         };
 
                         // We only store the message in the buffer if either:
                         // (1) there is no risk of overloading the buffer upon storing this message, or
-                        // (2) the buffer might be overloaded, but we have already made space for the new message
+                        // (2) the buffer might be overloaded, but we have already made space for the new message.
                         if !overloaded_buffer || (overloaded_buffer && cache_message_if_overloaded_buffer) {
                             let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
                             {
@@ -220,6 +226,8 @@ impl<N: Network> ProgressMessageStub<N> {
         self.network.update_validator_set(updates)
     }
 
+    /// Given the number of bytes that need to be removed, removes just enough highest-viewed messages
+    /// to free up (at least) the required number of bytes in the buffer.
     fn remove_from_overloaded_buffer(&mut self, bytes_to_remove: u64) {
         let verifying_key_size = mem::size_of::<VerifyingKey>() as u64;
         
@@ -310,6 +318,8 @@ pub(crate) struct SyncServerStub<N: Network> {
     network: N,
 }
 
+/// A sending and receiving end for sync messages. 
+/// The [SyncServerStub::recv_request] method returns the received request.
 impl<N: Network> SyncServerStub<N> {
     pub(crate) fn new(
         requests: Receiver<(VerifyingKey, SyncRequest)>,

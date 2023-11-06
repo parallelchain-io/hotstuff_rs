@@ -199,7 +199,7 @@ impl Phase {
 pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
 pub type ValidatorSetUpdates = UpdateSet<VerifyingKey, Power>;
 
-//internal representation of ValidatorSetUpdates
+/// Intermediate representation of [ValidatorSetUpdates] for safe serialization and deserialization.
 pub(crate) type ValidatorSetUpdatesBytes = UpdateSet<VerifyingKeyBytes, Power>;
 
 impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
@@ -294,8 +294,8 @@ where
 
 /// Identities of validators and their voting powers.
 ///
-/// The validator set maintains the list of validators in ascending order of their verifying keys (public keys), and avails methods:
-/// [ValidatorSet::validators] and [Validators::validators_and_powers] to get them in this order.
+/// The validator set maintains the list of validators in ascending order of their [public keys](VerifyingKey), and avails methods:
+/// [ValidatorSet::validators] and [ValidatorSet::validators_and_powers] to get them in this order.
 /// 
 /// # Limits to total power
 /// 
@@ -400,7 +400,7 @@ impl ValidatorSet {
     }
 }
 
-// internal representation of ValidatorSet
+/// Intermediate representation of [ValidatorSet] for safe serialization and deserialization.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub(crate) struct ValidatorSetBytes {
     // The verifying keys of validators are included here in ascending order.
@@ -445,8 +445,8 @@ impl Into<ValidatorSetBytes> for &ValidatorSet {
     }
 }
 
-/// Helps leaders incrementally form QuorumCertificates by combining votes for the same chain_id, view, block, and phase by replicas
-/// in a given validator set.
+/// Helps leaders incrementally form [QuorumCertificate]s by combining votes for the same chain_id, view, block, and phase by replicas
+/// in a given [validator set](ValidatorSet).
 pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,

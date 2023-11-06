@@ -3,13 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions for logging out library events of varying levels of importance.
+//! Functions for logging out hotstuff-rs events defined in [events](crate::events).
 //!
+//! The logs defined in this module are enabled if the user enabled them via replica's [config](crate::replica::Configuration).
+//! 
 //! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
 //! printed onto a terminal or to a file, set up a [logging
 //! implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
-//!
-//! Log messages with past tense event names (e.g., "Proposed") indicate an activity that has completed
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use log;
@@ -42,7 +42,9 @@ pub const END_SYNC: &str = "FinishedSyncing";
 pub const RECEIVE_SYNC_REQUEST: &str = "ReceivedSyncRequest";
 pub const SEND_SYNC_RESPONSE: &str = "SentSyncResponse";
 
+/// Abstraction for event types that have default logging handlers defined.
 pub(crate) trait Logger {
+    /// Returns a pointer to the default logging handler for a given event type.
     fn get_logger() -> Box<dyn Fn(&Self) + Send>;
 }
 

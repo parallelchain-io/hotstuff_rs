@@ -10,32 +10,20 @@
 //! After receiving your app through [start](crate::replica::Replica::start), replicas communicate with it
 //! by calling the methods it has implemented as part of the App trait when specific things happen.
 //!
-//! The App trait has three methods.
-//!
-//! The two most important ones--[produce_block](App::produce_block) and
-//! [validate_block](App::validate_block)--is called with a request and returns a response:
+//! The App trait has three methods, each of which returns a response when called with a request:
 //! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
 //!    block. Your app should respond with the data and the data hash of a block extending the
 //!    [parent block](ProduceBlockRequest::parent_block) included in the request, as well as the
 //!    [app state updates](crate::types::AppStateUpdates) and
 //!    [validator set updates](crate::types::ValidatorSetUpdates) that executing it causes.
-//! 2. `validate_block` is called in two situations: when the replica receives a proposal, and when
-//!    the replica is syncing. Your app should respond with whether the block is valid (according to
-//!    the semantics of the application), and again with the app state updates and validator set
-//!    updates that executing the block causes.
-//!
-//! ## Chain ID
-//!
-//! The [third method](App::chain_id) is called to get a "chain ID".
-//!
-//! Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::ChainID). This
-//! is included in votes and other messages so that replicas don't mistake messages and blocks for
-//! one HotStuff-rs blockchain does not get mistaken for those for another blockchain.
-//!
-//! In most cases, having a chain ID that collides with another blockchain is harmless. But
-//! if your application is a Proof of Stake public blockchain, this may cause a slashable offence
-//! if you operate validators in two chains that use the same keypair. So ensure that you don't
-//! operate a validator in two blockchains with the same keypair.
+//! 2. `validate_block` is called  when the replica receives a proposal. Your app should respond
+//!    with whether the block is valid (according to the semantics of the application), and again 
+//!    with the [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates)
+//!    that executing the block causes.
+//! 3. `validate_block_for_sync` is called when the replica is syncing. Your app should respond
+//!    with whether the block is valid (according to the semantics of the application), and again
+//!    with the [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates)\
+//!    that executing the block causes.
 
 use crate::state::{AppBlockTreeView, KVStore};
 use crate::types::*;
@@ -46,6 +34,8 @@ pub trait App<K: KVStore>: Send {
     fn validate_block_for_sync(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
 }
 
+/// Request for the app to produce a new block extending the parent block. Contains information about the current [view number](crate::types::ViewNumber),
+/// the parent [block](crate::types::CryptoHash) (if any), and the relevant [state of the Block Tree](crate::state::AppBlockTreeView).
 pub struct ProduceBlockRequest<'a, K: KVStore> {
     cur_view: ViewNumber,
     parent_block: Option<CryptoHash>,
@@ -78,6 +68,10 @@ impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
     }
 }
 
+/// Response from the app upon receiving a [request to produce a new block](ProduceBlockRequest).
+/// Contains the new block's [data](crate::types::Data), the [hash of the data](crate::types::CryptoHash),
+/// the [app state updates](crate::types::AppStateUpdates) associated with the block (if any),
+/// and the [validator set updates](crate::types::ValidatorSetUpdates) associated with the block (if any).
 pub struct ProduceBlockResponse {
     pub data_hash: CryptoHash,
     pub data: Data,
@@ -85,6 +79,8 @@ pub struct ProduceBlockResponse {
     pub validator_set_updates: Option<ValidatorSetUpdates>,
 }
 
+/// Request for the app to validate a proposed block. Contains information about the proposed
+/// [block](crate::types::Block), and the relevant [state of the Block Tree](crate::state::AppBlockTreeView).
 pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
     proposed_block: &'a Block,
     block_tree_view: AppBlockTreeView<'b, K>,
@@ -107,6 +103,11 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
     }
 }
 
+/// Response from the app upon receiving a [request to validate a block](ValidateBlockRequest). 
+/// The response can either:
+/// 1. Assert that the block is valid, and return the [app state updates](crate::types::AppStateUpdates) associated with the block (if any),
+///    as well as the [validator set updates](crate::types::ValidatorSetUpdates) associated with the block (if any), or
+/// 2. Assert that the block is invalid.
 pub enum ValidateBlockResponse {
     Valid {
         app_state_updates: Option<AppStateUpdates>,

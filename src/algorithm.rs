@@ -66,6 +66,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::time::{Instant, SystemTime};
 
+/// Starts the algorithm thread, which runs an infinite loop until a shutdown signal is received.
+/// In each iteration of the loop the thread executes a view in the progress mode, and enters
+/// a sync mode if executing the view throws a [ShouldSync](ShouldSync) error.
 pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     mut app: impl App<K> + 'static,
     me: Keypair,
@@ -117,8 +120,8 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
     })
 }
 
-/// Returns an Err(ShouldSync) if we encountered a quorum certificate for a future view in the execution, which suggests that a quorum of replicas are making
-/// progress at a higher view, so we should probably sync up to them.
+/// Returns an the [ShouldSync](ShouldSync) error if we encountered a [quorum certificate](crate::types::QuorumCertificate) for a future view in the execution, 
+/// which suggests that a quorum of replicas are making progress at a higher view, so we should probably sync up to them.
 fn execute_view<K: KVStore, N: Network>(
     me: &Keypair,
     chain_id: ChainID,
@@ -538,7 +541,7 @@ fn on_receive_vote<K: KVStore>(
     (highest_qc_updated, i_am_next_leader)
 }
 
-// returns (whether I have collected new view messages from a quorum of validators && I am the next leader)
+// Returns (whether I have collected new view messages from a quorum of validators && I am the next leader)
 fn on_receive_new_view<K: KVStore>(
     origin: &VerifyingKey,
     new_view: NewView,

@@ -1,13 +1,19 @@
-//! Event bus thread for handling events published from the algorithm and sync_server threads
+/*
+    Copyright © 2023, ParallelChain Lab
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+*/
+
+//! Event bus thread for handling events published from the [algorithm](crate::algorithm) and [sync_server](crate::sync_server) threads.
 //! 
-//! When the thread receives a message containing an event, it fires all handlers for the event
-//! stored in EventHandlers
+//! When the thread receives a message containing an [event](crate::events::Event), it triggers the execution of all handlers defined 
+//! for the contained event type, where the handlers for each event type are stored in [EventHandlers](EventHandlers).
 //! 
-//! When no handlers are stored in a replica's instance of EventHandlers then this thread is not started
+//! When no handlers are stored in a replica's instance of [EventHandlers](EventHandlers) this thread is not started.
 //! 
-//! A replica's instance of EventHandlers contains the handlers provided upon building the replica,
-//! and if logging is enabled via replica's config its instance of EventHandlers also contains
-//! the default logging handlers defined in logging.rs
+//! A replica's instance of [EventHandlers](EventHandlers) contains:
+//! 1. The handlers provided upon building the replica via [ReplicaSpec](crate::replica::ReplicaSpec), and 
+//! 2. If logging is enabled via replica's [config](crate::replica::Configuration) then also
+//!    the default logging handlers defined in [logging](crate::logging).
 
 use crate::events::*;
 use crate::logging::Logger;
@@ -15,19 +21,25 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::thread::JoinHandle;
 
+/// Pointer to a handler closure, parametrised by the argument (for our use case, event) type. 
 pub(crate) type HandlerPtr<T> = Box<dyn Fn(&T) + Send>;
 
+/// Stores the two optional handlers enabled for an event type that implements the [Logger](crate::logging::Logger) trait,
+/// namely one logging handler, defined in [logging](crate::logging), and one user-defined handler, passed to [ReplicaSpec](crate::replica::ReplicaSpec).
+/// Note that the user-defined handler is expected to include all expected event-handling functionalities per event.
 pub(crate) struct HandlerPair<T: Logger> {
     pub(crate) user_defined_handler: Option<HandlerPtr<T>>,
     pub(crate) logging_handler: Option<HandlerPtr<T>>,
 }
 
 impl<T: Logger> HandlerPair<T> {
+    // Checks if no event handlers are defined for this event.
     pub(crate) fn is_empty(&self) -> bool {
         self.user_defined_handler.is_none()
         && self.logging_handler.is_none()
     }
 
+    /// Creates a new [HandlerPair](HandlerPair) with the user-defined handler, and the default logging handler if logging is enabled.
     pub(crate) fn new(log: bool, user_defined_handler: Option<HandlerPtr<T>>) -> HandlerPair<T> {
         HandlerPair {
             user_defined_handler,
@@ -36,6 +48,8 @@ impl<T: Logger> HandlerPair<T> {
     }
 }
 
+/// Stores the [handler pair](HandlerPair) of user-defined and optional logging handlers for each 
+/// pre-defined event type from [events](crate::events).
 pub(crate) struct EventHandlers {
     pub(crate) insert_block_handlers: HandlerPair<InsertBlockEvent>,
     pub(crate) commit_block_handlers: HandlerPair<CommitBlockEvent>,
@@ -65,6 +79,8 @@ pub(crate) struct EventHandlers {
 }
 
 impl EventHandlers {
+    /// Creates the [handler pairs](HandlerPair) for all pre-defined event types from [events](crate::events)
+    /// given the user-defined handlers, and information on whether logging is enabled.
     pub(crate) fn new(
         log: bool,
         insert_block_handler: Option<HandlerPtr<InsertBlockEvent>>,
@@ -116,6 +132,7 @@ impl EventHandlers {
 
     }
 
+    /// Checks if no handlers are defined, i.e., neither user-defined handlers were defined nor logging is enabled.
     pub(crate) fn is_empty(&self) -> bool {
         self.insert_block_handlers.is_empty()
         && self.commit_block_handlers.is_empty()
@@ -140,6 +157,8 @@ impl EventHandlers {
         && self.send_sync_response_handlers.is_empty()
     }
 
+    /// Triggers the execution of each of the two handlers - the user-defined and the logging handler, if defined - for a given
+    /// event type from [events](crate::events).
     pub(crate) fn fire_handlers(&self, event: Event) {
 
         match event {
@@ -231,7 +250,9 @@ impl EventHandlers {
     }
 }
 
-
+/// Starts the event bus thread, which runs an infinite loop until a shutdown signal is received from the parent thread.
+/// In each iteration of the loop, the thread checks if it received any event notifications, and if so, then
+/// triggers the execution of the handlers defined for the event.
 pub(crate) fn start_event_bus(
     event_handlers: EventHandlers,
     event_subscriber: Receiver<Event>,

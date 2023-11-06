@@ -5,15 +5,11 @@
 
 //! [Trait definition](Pacemaker) for pacemakers: user-provided types that determine the 'liveness' behavior of replicas.
 //!
-//! Specifically, pacemakers tell replica code four things:
+//! Specifically, pacemakers tell replica code two things:
 //! 1. [View timeout](Pacemaker::view_timeout): given the current view, and the highest view I (the replica) has seen
 //!    consensus progress, how long should I stay in the current view to wait for messages?
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
 //!    the current leader?
-//! 3. [Sync request limit](Pacemaker::sync_request_limit): when I'm syncing, how many blocks should I request my sync peer
-//!    send in a single response?
-//! 4. [Sync response timeout](Pacemaker::sync_response_timeout): how long should I wait for a response to a sync request
-//!    that I make?
 
 use crate::types::*;
 use std::cmp::min;
@@ -22,7 +18,7 @@ use std::time::Duration;
 
 /// # Safety
 ///
-/// Durations returned by [Pacemaker::view_timeout] and [Pacemaker::sync_response_timeout] must be "well below"
+/// Durations returned by [Pacemaker::view_timeout] must be "well below"
 /// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
 ///
 /// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
@@ -46,9 +42,7 @@ pub struct DefaultPacemaker {
 
 impl DefaultPacemaker {
     /// # Safety
-    ///
-    /// `minimum_view_timeout` and `sync_response_timeout` must not be larger than [u32::MAX] seconds for reasons
-    /// explained in [Pacemaker].
+    /// `minimum_view_timeout` must not be larger than [u32::MAX] seconds for reasons explained in [Pacemaker].
     pub fn new(minimum_view_timeout: Duration) -> DefaultPacemaker {
         Self {
             minimum_view_timeout,
