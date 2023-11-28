@@ -17,6 +17,8 @@
 //!    applications.
 //! 6. **Batteries included**: comes with a block-sync protocol and (coming soon) default implementations for networking,
 //!    state, and pacemaker: you write the app, we handle the replication.
+//! 7. **Support for event-driven programming**: a simple API for registering user-defined event handlers, triggered
+//!     in response to HotStuff-rs protocol event notifications.
 //!
 //! ## Terminology
 //!  
@@ -40,7 +42,9 @@
 //! To replicate your application using HotStuff-rs, you need to represent it as a type and then
 //! have the type implement the [app] trait.
 //!
-//! Then, [initialize](replica::Replica::initialize) a [replica], and then [start](replica::Replica::start) it.
+//! Then, [initialize](replica::Replica::initialize) a [replica]'s storage, 
+//! [build](replica::ReplicaSpec::builder) the replica's [specification](crate::replica::ReplicaSpec),
+//! and then [start](replica::ReplicaSpec::start) it. An example can be found [here](crate::replica).
 
 pub mod app;
 

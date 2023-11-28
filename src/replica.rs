@@ -3,13 +3,81 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions that [initialize](Replica::initialize) and [start](Replica::start) a replica, as well as [the type](Replica) which
-//! keeps the replica alive.
+//! Methods to build, run, and initialize the storage of a replica.
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, these processes are
 //! called 'replicas', and therefore the set of all replicas is called the 'replica set'. Each replica is uniquely identified
 //! by an [Ed25519 public key](ed25519_dalek::VerifyingKey).
-//!
+//! 
+//! They key components of this module are:
+//! - The builder-pattern-like interface to construct a [specification of the replica](ReplicaSpec) with:
+//!   1. `ReplicaSpec::builder` to construct a `ReplicaSpecBuilder`, 
+//!   2. The setters of the `ReplicaSpecBuilder`, and 
+//!   3. The `ReplicaSpecBuilder::build` method to construct a [ReplicaSpec],
+//! - The function to [start](ReplicaSpec::start) a [Replica] given its specification,
+//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::BlockTree), 
+//! - [The type](Replica) which keeps the replica alive.
+//! 
+//! Here is an example that demonstrates how to build and start running a replica using the builder pattern:
+//! 
+//! ```
+//! let replica =
+//!     ReplicaSpec :: builder()
+//!     .app(app)
+//!     .pacemaker(pacemaker)
+//!     .configuration(configuration)
+//!     .kv_store(kv_store)
+//!     .network(network)
+//!     .on_commit(commit_handler)
+//!     .on_nudge(nudge_handler)
+//!     .build()
+//!     .start()
+//! ```
+//! 
+//! The required setters are for providing the trait implementations required to run a replica:
+//! - `.app(...)`
+//! - `.network(...)`
+//! - `.kv_store(...)`
+//! - `.pacemaker(...)`
+//! - `.configuration(...)`
+//! 
+//! The optional setters are for registering user-defined event handlers for events from [crate::events]:
+//! - `.on_insert_block(...)`
+//! - `.on_commit_block(...)`
+//! - `.on_prune_block(...)`
+//! - `.on_update_highest_qc(...)`
+//! - `.on_update_locked_view(...)`
+//! - `.on_update_validator_set(...)`
+//! - `.on_propose(...)`
+//! - `.on_nudge(...)`
+//! - `.on_vote(...)`
+//! - `.on_new_view(...)`
+//! - `.on_receive_proposal(...)`
+//! - `.on_receive_nudge(...)`
+//! - `.on_receive_vote(...)`
+//! - `.on_receive_new_view(...)`
+//! - `.on_start_view(...)`
+//! - `.on_view_timeout(...)]`
+//! - `.on_collect_qc(...)`
+//! - `.on_start_sync(...)`
+//! - `.on_end_sync(...)`
+//! - `.on_receive_sync_request(...)`
+//! - `.on_receive_sync_response(...)`
+//! 
+//! The replica's [configuration](Configuration) can also be defined using the builder pattern, for example:
+//! 
+//! ```
+//! let configuration = 
+//!     Configuration :: builder()
+//!     .me(keypair)
+//!     .chain_id(0)
+//!     .sync_request_limit(10)
+//!     .sync_response_timeout(Duration::new(3, 0))
+//!     .progress_msg_buffer_capacity(1024)
+//!     .log_events(true)
+//!     .build()
+//! ```
+//! 
 //! ## Validators and Listeners
 //!
 //! Not every replica has to vote in consensus. Some operators may want to run replicas that merely keep up with consensus
@@ -63,7 +131,7 @@ use std::sync::mpsc::{self, Sender};
 ///
 /// ## Sync response timeout
 /// 
-/// Durations stored in [Configuration.sync_response_timeout] must be "well below"
+/// Durations stored in [Configuration::sync_response_timeout] must be "well below"
 /// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
 /// 
 /// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
@@ -75,100 +143,146 @@ use std::sync::mpsc::{self, Sender};
 /// printed onto a terminal or to a file, set up a [logging
 /// implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
 #[derive(TypedBuilder)]
-#[builder(doc)]
+#[builder(builder_method(doc = 
+    "
+    Create a builder for building a [Configuration]. On the builder call the following methods to construct a valid [Configuration].
+        
+    Required:
+    - `.me(...)`
+    - `.chain_id(...)`
+    - `.sync_request_limit(...)`
+    - `sync_response_timeout(...)`
+    - `.progress_msg_buffer_capacity(...)`
+    - `.log_events(...)`
+"
+))]
 pub struct Configuration {
-    #[builder(setter(doc = "Sets the replica's keypair, used to sign messages. Required."))]
+    #[builder(setter(doc = "Set the replica's keypair, used to sign messages. Required."))]
     pub me: SigningKey,
-    #[builder(setter(doc = "Sets the chain ID of the blockchain. Required."))]
+    #[builder(setter(doc = "Set the chain ID of the blockchain. Required."))]
     pub chain_id: ChainID,
-    #[builder(setter(doc = "Sets the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
+    #[builder(setter(doc = "Set the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
     pub sync_request_limit: u32,
-    #[builder(setter(doc = "Sets the timeout for receiving a sync response from a peer (in seconds). Required."))]
+    #[builder(setter(doc = "Set the timeout for receiving a sync response from a peer (in seconds). Required."))]
     pub sync_response_timeout: Duration,
-    #[builder(setter(doc = "Sets the maximum number of bytes that can be stored in the replica's message buffer at any given moment. Required."))]
+    #[builder(setter(doc = "Set the maximum number of bytes that can be stored in the replica's message buffer at any given moment. Required."))]
     pub progress_msg_buffer_capacity: u64,
-    #[builder(setter(doc = "Enables/disables logging. Required."))]
+    #[builder(setter(doc = "Enable logging? Required."))]
     pub log_events: bool,
 }
 
 /// Stores all necessary parameters and trait implementations required to run the [Replica].
 #[derive(TypedBuilder)]
-#[builder(doc)]
+#[builder(builder_method(doc = 
+    "
+    Create a builder for building a [ReplicaSpec]. On the builder call the following methods to construct a valid [ReplicaSpec].
+    
+    Required:
+    - `.app(...)`
+    - `.network(...)`
+    - `.kv_store(...)`
+    - `.pacemaker(...)`
+    - `.configuration(...)`
+    
+    Optional:
+    - `.on_insert_block(...)`
+    - `.on_commit_block(...)`
+    - `.on_prune_block(...)`
+    - `.on_update_highest_qc(...)`
+    - `.on_update_locked_view(...)`
+    - `.on_update_validator_set(...)`
+    - `.on_propose(...)`
+    - `.on_nudge(...)`
+    - `.on_vote(...)`
+    - `.on_new_view(...)`
+    - `.on_receive_proposal(...)`
+    - `.on_receive_nudge(...)`
+    - `.on_receive_vote(...)`
+    - `.on_receive_new_view(...)`
+    - `.on_start_view(...)`
+    - `.on_view_timeout(...)`
+    - `.on_collect_qc(...)`
+    - `.on_start_sync(...)`
+    - `.on_end_sync(...)`
+    - `.on_receive_sync_request(...)`
+    - `.on_receive_sync_response(...)`
+"
+))]
 pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> {
     // Required parameters
-    #[builder(setter(doc = "Sets the application code to be run on the blockchain. The argument must implement the App trait. This setter is required to start a replica."))]
+    #[builder(setter(doc = "Set the application code to be run on the blockchain. The argument must implement the [App](crate::app::App) trait. Required."))]
     app: A,
-    #[builder(setter(doc = "Sets the implementation of peer-to-peer networking. The argument must implement the Network trait. This setter is required to start a replica."))]
+    #[builder(setter(doc = "Set the implementation of peer-to-peer networking. The argument must implement the [Network](crate::network::Network) trait. Required."))]
     network: N,
-    #[builder(setter(doc = "Sets the implementation of the replica's Key-Value store. The argument must implement the KVStore trait. This setter is required to start a replica."))]
+    #[builder(setter(doc = "Set the implementation of the replica's Key-Value store. The argument must implement the [KVStore](crate::state::KVStore) trait. Required."))]
     kv_store: K,
-    #[builder(setter(doc = "Sets the implementation of the pacemaker. The argument must implement the Pacemaker trait. This setter is required to start a replica."))]
+    #[builder(setter(doc = "Set the implementation of the pacemaker. The argument must implement the [Pacemaker](crate::pacemaker::Pacemaker) trait. Required."))]
     pacemaker: P,
-    #[builder(setter(doc = "Sets the configuration, which contains the necessary parameters to run a replica. This setter is required to start a replica."))]
+    #[builder(setter(doc = "Set the [configuration](Configuration), which contains the necessary parameters to run a replica. Required."))]
     configuration: Configuration,
     // Optional parameters
     #[builder(default, setter(transform = |handler: impl Fn(&InsertBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<InsertBlockEvent>),
-    doc = "Registers a handler closure to be invoked after a block is inserted to the replica's BlockTree. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after a block is inserted to the replica's [Block Tree](crate::state::BlockTree). Optional."))]
     on_insert_block: Option<HandlerPtr<InsertBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&CommitBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CommitBlockEvent>),
-    doc = "Registers a handler closure to be invoked after a block is committed. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after a block is committed. Optional."))]
     on_commit_block: Option<HandlerPtr<CommitBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&PruneBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PruneBlockEvent>),
-    doc = "Registers a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's BlockTree. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's [Block Tree](crate::state::BlockTree). Optional."))]
     on_prune_block: Option<HandlerPtr<PruneBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>),
-    doc = "Registers a handler closure to be invoked after the replica updates its highest QC. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica updates its highest QC. Optional."))]
     on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedViewEvent>),
-    doc = "Registers a handler closure to be invoked after the replica updates its locked view. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica updates its locked view. Optional."))]
     on_update_locked_view: Option<HandlerPtr<UpdateLockedViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateValidatorSetEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateValidatorSetEvent>),
-    doc = "Registers a handler closure to be invoked after the replica updates its validator set. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica updates its validator set. Optional."))]
     on_update_validator_set: Option<HandlerPtr<UpdateValidatorSetEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ProposeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ProposeEvent>),
-    doc = "Registers a handler closure to be invoked after the replica broadcasts a proposal for a block. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica broadcasts a proposal for a block. Optional."))]
     on_propose: Option<HandlerPtr<ProposeEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&NudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NudgeEvent>),
-    doc = "Registers a handler closure to be invoked after the replica broadcasts a nudge for a block. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica broadcasts a nudge for a block. Optional."))]
     on_nudge: Option<HandlerPtr<NudgeEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&VoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<VoteEvent>),
-    doc = "Registers a handler closure to be invoked after the replica sends a vote. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica sends a vote. Optional."))]
     on_vote: Option<HandlerPtr<VoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&NewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NewViewEvent>),
-    doc = "Registers a handler closure to be invoked after the replica sends a new view message to the next leader. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica sends a new view message to the next leader. Optional."))]
     on_new_view: Option<HandlerPtr<NewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveProposalEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveProposalEvent>),
-    doc = "Registers a handler closure to be invoked after the replica receives a proposal for a block. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a proposal for a block. Optional."))]
     on_receive_proposal: Option<HandlerPtr<ReceiveProposalEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNudgeEvent>),
-    doc = "Registers a handler closure to be invoked after the replica receives a nudge for a block. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a nudge for a block. Optional."))]
     on_receive_nudge: Option<HandlerPtr<ReceiveNudgeEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveVoteEvent>),
-    doc = "Registers a handler closure to be invoked after the replica receives a vote. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a vote. Optional."))]
     on_receive_vote: Option<HandlerPtr<ReceiveVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNewViewEvent>),
-    doc = "Registers a handler closure to be invoked after the replica receives a new view message. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a new view message. Optional."))]
     on_receive_new_view: Option<HandlerPtr<ReceiveNewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&StartViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<StartViewEvent>),
-    doc = "Registers a handler closure to be invoked after the replica enters a new view. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica enters a new view. Optional."))]
     on_start_view: Option<HandlerPtr<StartViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ViewTimeoutEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ViewTimeoutEvent>),
-    doc = "Registers a handler closure to be invoked after the replica's view times out. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica's view times out. Optional."))]
     on_view_timeout: Option<HandlerPtr<ViewTimeoutEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&CollectQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectQCEvent>),
-    doc = "Registers a handler closure to be invoked after the replica collects a new quorum certificate. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica collects a new quorum certificate. Optional."))]
     on_collect_qc: Option<HandlerPtr<CollectQCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&StartSyncEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<StartSyncEvent>),
-    doc = "Registers a handler closure to be invoked after the replica starts syncing, exiting the progress mode. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica starts syncing, exiting the progress mode. Optional."))]
     on_start_sync: Option<HandlerPtr<StartSyncEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&EndSyncEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<EndSyncEvent>),
-    doc = "Registers a handler closure to be invoked after the replica finishes syncing, returning to progress mode. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica finishes syncing, returning to progress mode. Optional."))]
     on_end_sync: Option<HandlerPtr<EndSyncEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveSyncRequestEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveSyncRequestEvent>),
-    doc = "Registers a handler closure to be invoked after the replica receives a sync request from a peer. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a sync request from a peer. Optional."))]
     on_receive_sync_request: Option<HandlerPtr<ReceiveSyncRequestEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&SendSyncResponseEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<SendSyncResponseEvent>),
-    doc = "Registers a handler closure to be invoked after the replica sends a sync response to a peer. This setter is optional."))]
+    doc = "Register a handler closure to be invoked after the replica sends a sync response to a peer. Optional."))]
     on_send_sync_response: Option<HandlerPtr<SendSyncResponseEvent>>,
 }
 
@@ -249,8 +363,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             Some(
                 start_event_bus(
                     event_handlers,
-                    event_subscriber.unwrap(), // Safety: should be Some(...)
-                    event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...)
+                    event_subscriber.unwrap(), // Safety: should be Some(...).
+                    event_bus_shutdown_receiver.unwrap(), // Safety: should be Some(...).
                 )
             )
         } else {
