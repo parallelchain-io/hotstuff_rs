@@ -148,29 +148,28 @@ impl<N: Network> ProgressMessageStub<N> {
                         continue;
                     }
 
-                    // Inform the caller that we've received a QC from the future.
-                    let received_qc_from_future = match &msg {
-                        ProgressMessage::Proposal(Proposal { block, .. }) => {
-                            block.justify.view > cur_view
-                        }
-                        ProgressMessage::Nudge(Nudge { justify, .. }) => justify.view > cur_view,
-                        ProgressMessage::NewView(NewView { highest_qc, .. }) => {
-                            highest_qc.view > cur_view
-                        }
-                        _ => false,
-                    };
-                    if received_qc_from_future {
-                        return Err(ProgressMessageReceiveError::ReceivedQCFromFuture);
-                    }
-
                     // Return the message if its for the current view.
                     if msg.view() == cur_view {
                         return Ok((sender, msg));
                     }
+
                     // Cache the message if it is for a future view, 
                     // unless the buffer is overloaded in which case we need to make space or ignore the message.
                     else if msg.view() > cur_view {
 
+                        // Check if the message contains a QC from the future.
+                        let received_qc_from_future = match &msg {
+                            ProgressMessage::Proposal(Proposal { block, .. }) => {
+                                block.justify.view > cur_view
+                            }
+                            ProgressMessage::Nudge(Nudge { justify, .. }) => justify.view > cur_view,
+                            ProgressMessage::NewView(NewView { highest_qc, .. }) => {
+                                highest_qc.view > cur_view
+                            }
+                            _ => false,
+                        };
+                        
+                        // Try to cache the message.
                         let bytes_requested = mem::size_of::<VerifyingKey>() as u64 + msg.size();
                         let new_buffer_size = self.msg_buffer_size.checked_add(bytes_requested);
                         let overloaded_buffer = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
@@ -200,6 +199,11 @@ impl<N: Network> ProgressMessageStub<N> {
                             msg_queue.push_back((sender, msg));
 
                         };
+
+                        // Inform the caller if the received message contains a QC from the future.
+                        if received_qc_from_future {
+                            return Err(ProgressMessageReceiveError::ReceivedQCFromFuture);
+                        }
 
                     }
                 }

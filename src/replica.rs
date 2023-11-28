@@ -20,7 +20,7 @@
 //! 
 //! Here is an example that demonstrates how to build and start running a replica using the builder pattern:
 //! 
-//! ```
+//! ```rust,ignore
 //! let replica =
 //!     ReplicaSpec :: builder()
 //!     .app(app)
@@ -66,7 +66,7 @@
 //! 
 //! The replica's [configuration](Configuration) can also be defined using the builder pattern, for example:
 //! 
-//! ```
+//! ```rust, ignore
 //! let configuration = 
 //!     Configuration :: builder()
 //!     .me(keypair)
