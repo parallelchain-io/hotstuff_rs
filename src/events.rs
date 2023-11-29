@@ -3,27 +3,34 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of HotStuff-rs events.
+//! Notifications that are emitted when significant things happen in the local HotStuff-rs replica.
 //! 
-//! Events are emitted when significant steps of the protocol are executed by the replica,
-//! such as committing a block, starting a new view, or receiving a proposal.
+//! ## Event enum
 //! 
-//! Library users can register event handler closures, which are then called by the [event bus](crate::event_bus::start_event_bus)
-//! thread on receiving event notifications. Event handlers can be registered on starting a [replica](crate::replica).
-//! Default event handlers for logging can be enabled via the [replica's configuration](crate::replica::Configuration).
+//! Significant occurences in the replica include committing a block, starting a new view, broadcasting
+//! a proposal, or receiving a proposal.
 //! 
-//! Note that events are always emitted **after** the corresponding action is completed.
+//! Each of these significant occurences correspond to a variant of the [event enum](Event). Each variant
+//! tuple in turn contains an inner struct type. For example, the [insert block variant](Event::InsertBlock)
+//! contains the [InsertBlockEvent] struct type.
 //! 
-//! The [event](Event) enum is a wrapper enum for the event types defined in this module.
-//! The event types are structs, storing all necessary information about a given event. 
-//! This information always includes a timestamp corresponding to the exact time when the event happened.
+//! Each inner struct stores information that summarizes the particular kind of event. This information always
+//! includes a timestamp corresponding to the exact time when the event occured.
 //! 
-//! Event notifications are sent from the [algorithm](crate::algorithm) and [sync_server](crate::sync_server)
-//! threads and received and processed by the [event_bus](crate::event_bus) thread, according to the
-//! predefined handlers.
+//! ## Registering event handlers
 //! 
-//! Additionally, a [convenience method](Event::publish) is defined for publishing an event by sending it
-//! via an appropriate channel.
+//! Library users can register event handler closures, which are then internally called by the library's 
+//! [event bus](crate::event_bus::start_event_bus) thread when the handler's particular event variant  happens. 
+//! 
+//! Custom event handlers can be registered using the [replica builder pattern](crate::replica), while default event
+//! handlers that log out events (e.g., into the terminal, or into a log file) can be enabled in the
+//! [configuration](crate::replica::Configuration).
+//! 
+//! ## Timing
+//! 
+//! Events are always emitted **after** the corresponding occurence is "completed". So for example, the
+//! [insert block event](InsertBlockEvent) is only emitted after the insertion has been persisted into the backing
+//! storage of the block tree.
 
 use std::time::{SystemTime, Duration};
 use std::sync::mpsc::Sender;
@@ -40,20 +47,24 @@ pub enum Event {
     UpdateHighestQC(UpdateHighestQCEvent),
     UpdateLockedView(UpdateLockedViewEvent),
     UpdateValidatorSet(UpdateValidatorSetEvent),
+
     // Events that involve broadcasting or sending a Progress Message.
     Propose(ProposeEvent),
     Nudge(NudgeEvent),
     Vote(VoteEvent),
     NewView(NewViewEvent),
+
     // Events that involve receiving a Progress Message.
     ReceiveProposal(ReceiveProposalEvent),
     ReceiveNudge(ReceiveNudgeEvent),
     ReceiveVote(ReceiveVoteEvent),
     ReceiveNewView(ReceiveNewViewEvent),
-    // Progress mode events.
+
+    // Other progress mode events.
     StartView(StartViewEvent),
     ViewTimeout(ViewTimeoutEvent),
     CollectQC(CollectQCEvent),
+
     // Sync mode events.
     StartSync(StartSyncEvent),
     EndSync(EndSyncEvent),

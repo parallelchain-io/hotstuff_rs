@@ -17,8 +17,8 @@
 //!    applications.
 //! 6. **Batteries included**: comes with a block-sync protocol and (coming soon) default implementations for networking,
 //!    state, and pacemaker: you write the app, we handle the replication.
-//! 7. **Support for event-driven programming**: a simple API for registering user-defined event handlers, triggered
-//!     in response to HotStuff-rs protocol event notifications.
+//! 7. **Custom event handlers**: includes a simple API for registering user-defined event handlers, triggered in response to
+//!    HotStuff-rs protocol [event](events) notifications.
 //!
 //! ## Terminology
 //!  
@@ -44,7 +44,9 @@
 //!
 //! Then, [initialize](replica::Replica::initialize) a [replica]'s storage, 
 //! [build](replica::ReplicaSpec::builder) the replica's [specification](crate::replica::ReplicaSpec),
-//! and then [start](replica::ReplicaSpec::start) it. An example can be found [here](crate::replica).
+//! and then [start](replica::ReplicaSpec::start) it. 
+//! 
+//! An example of how to start a replica can be found [here](crate::replica).
 
 pub mod app;
 

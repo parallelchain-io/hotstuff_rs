@@ -3,14 +3,17 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Event bus thread for handling events published from the [algorithm](crate::algorithm) and [sync_server](crate::sync_server) threads.
+//! A thread that receives events emitted from the [algorithm](crate::algorithm) and [sync_server](crate::sync_server) threads and calls
+//! registered event handlers.
 //! 
 //! When the thread receives a message containing an [event](crate::events::Event), it triggers the execution of all handlers defined 
 //! for the contained event type, where the handlers for each event type are stored in [EventHandlers](EventHandlers).
 //! 
-//! When no handlers are stored in a replica's instance of [EventHandlers](EventHandlers) this thread is not started.
+//! When no handlers are present in a replica's instance of `EventHandlers` this thread is not started.
 //! 
-//! A replica's instance of [EventHandlers](EventHandlers) contains:
+//! ## Event Handlers
+//! 
+//! A replica's instance of `EventHandlers` contains:
 //! 1. The handlers provided upon building the replica via [ReplicaSpec](crate::replica::ReplicaSpec), and 
 //! 2. If logging is enabled via replica's [config](crate::replica::Configuration) then also
 //!    the default logging handlers defined in [logging](crate::logging).

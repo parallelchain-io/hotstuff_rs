@@ -3,13 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions for logging out HotStuff-rs events defined in [events](crate::events).
+//! Functions that log out events [events](crate::events).
 //!
 //! The logs defined in this module are printed if the user enabled them via replica's [config](crate::replica::Configuration).
 //! 
 //! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
 //! printed onto a terminal or to a file, set up a [logging
 //! implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
+//! 
+//! ## Log message format
 //! 
 //! The log messages follow a CSV-like formatting style, with the following information separated by commas:
 //! 1. Event name,
