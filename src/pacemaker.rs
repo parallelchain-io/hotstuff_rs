@@ -5,24 +5,21 @@
 
 //! [Trait definition](Pacemaker) for pacemakers: user-provided types that determine the 'liveness' behavior of replicas.
 //!
-//! Specifically, pacemakers tell replica code four things:
+//! Specifically, pacemakers tell replica code two things:
 //! 1. [View timeout](Pacemaker::view_timeout): given the current view, and the highest view I (the replica) has seen
 //!    consensus progress, how long should I stay in the current view to wait for messages?
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
 //!    the current leader?
-//! 3. [Sync request limit](Pacemaker::sync_request_limit): when I'm syncing, how many blocks should I request my sync peer
-//!    send in a single response?
-//! 4. [Sync response timeout](Pacemaker::sync_response_timeout): how long should I wait for a response to a sync request
-//!    that I make?
 
-use crate::types::*;
 use std::cmp::min;
 use std::convert::identity;
 use std::time::Duration;
 
+use crate::types::*;
+
 /// # Safety
 ///
-/// Durations returned by [Pacemaker::view_timeout] and [Pacemaker::sync_response_timeout] must be "well below"
+/// Durations returned by [Pacemaker::view_timeout] must be "well below"
 /// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
 ///
 /// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
@@ -35,35 +32,21 @@ pub trait Pacemaker: Send {
     ) -> Duration;
 
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
-        -> PublicKeyBytes;
-
-    fn sync_request_limit(&self) -> u32;
-
-    fn sync_response_timeout(&self) -> Duration;
+        -> VerifyingKey;
 }
 
 /// A pacemaker which selects leaders in a round-robin fashion, and prescribes exponentially increasing view timeouts to
 /// eventually bring replicas into the same view.
 pub struct DefaultPacemaker {
     minimum_view_timeout: Duration,
-    sync_request_limit: u32,
-    sync_response_timeout: Duration,
 }
 
 impl DefaultPacemaker {
     /// # Safety
-    ///
-    /// `minimum_view_timeout` and `sync_response_timeout` must not be larger than [u32::MAX] seconds for reasons
-    /// explained in [Pacemaker].
-    pub fn new(
-        minimum_view_timeout: Duration,
-        sync_request_limit: u32,
-        sync_response_timeout: Duration,
-    ) -> DefaultPacemaker {
+    /// `minimum_view_timeout` must not be larger than [u32::MAX] seconds for reasons explained in [Pacemaker].
+    pub fn new(minimum_view_timeout: Duration) -> DefaultPacemaker {
         Self {
             minimum_view_timeout,
-            sync_request_limit,
-            sync_response_timeout,
         }
     }
 }
@@ -73,7 +56,7 @@ impl Pacemaker for DefaultPacemaker {
         &mut self,
         cur_view: ViewNumber,
         validator_set: &ValidatorSet,
-    ) -> PublicKeyBytes {
+    ) -> VerifyingKey {
         let num_validators = validator_set.len();
         *validator_set
             .validators()
@@ -92,13 +75,5 @@ impl Pacemaker for DefaultPacemaker {
                 u32::checked_pow(2, exp).map_or(u32::MAX, identity) as u64,
                 0,
             )
-    }
-
-    fn sync_request_limit(&self) -> u32 {
-        self.sync_request_limit
-    }
-
-    fn sync_response_timeout(&self) -> Duration {
-        self.sync_response_timeout
     }
 }

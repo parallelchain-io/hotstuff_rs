@@ -7,8 +7,10 @@
 //!
 //! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
 
+use std::mem;
+
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{ed25519::signature::Signature, Signer, Verifier};
+use ed25519_dalek::{Signature, Signer, Verifier};
 
 use crate::types::*;
 
@@ -64,6 +66,7 @@ impl ProgressMessage {
         })
     }
 
+    /// Returns the chain ID associated with a given [ProgressMessage].
     pub fn chain_id(&self) -> ChainID {
         match self {
             ProgressMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
@@ -73,12 +76,23 @@ impl ProgressMessage {
         }
     }
 
+    /// Returns the view number associated with a given [ProgressMessage].
     pub fn view(&self) -> ViewNumber {
         match self {
             ProgressMessage::Proposal(Proposal { view, .. }) => *view,
             ProgressMessage::Nudge(Nudge { view, .. }) => *view,
             ProgressMessage::Vote(Vote { view, .. }) => *view,
             ProgressMessage::NewView(NewView { view, .. }) => *view,
+        }
+    }
+
+    /// Returns the number of bytes required to store a given instance of the [ProgressMessage] enum.
+    pub fn size(&self) -> u64 {
+        match self {
+            ProgressMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
+            ProgressMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
+            ProgressMessage:: Vote(_) => mem::size_of::<Vote>() as u64,
+            ProgressMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
     }
 }
@@ -109,20 +123,15 @@ pub struct Vote {
 impl Vote {
     /// # Panics
     /// pk must be a valid public key.
-    pub fn is_correct(&self, pk: &PublicKeyBytes) -> bool {
-        if let Ok(signature) = Signature::from_bytes(&self.signature) {
-            PublicKey::from_bytes(pk)
-                .unwrap()
-                .verify(
-                    &(self.chain_id, self.view, self.block, self.phase)
-                        .try_to_vec()
-                        .unwrap(),
-                    &signature,
-                )
-                .is_ok()
-        } else {
-            false
-        }
+    pub fn is_correct(&self, pk: &VerifyingKey) -> bool {
+        let signature = Signature::from_bytes(&self.signature);
+        pk.verify(
+        &(self.chain_id, self.view, self.block, self.phase)
+            .try_to_vec()
+            .unwrap(),
+            &signature,
+        )
+        .is_ok()
     }
 }
 
@@ -151,15 +160,16 @@ pub struct SyncResponse {
     pub highest_qc: QuorumCertificate,
 }
 
-/// A wrapper around [DalekKeypair] which implements [a convenience method](ProgressMessage::vote) for creating properly
+/// A wrapper around [SigningKey](ed25519_dalek::SigningKey) which implements a [convenience method](Keypair::vote) for creating properly
 /// signed [votes](Vote).
-pub(crate) struct Keypair(pub(crate) DalekKeypair);
+pub(crate) struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
-    pub(crate) fn new(keypair: DalekKeypair) -> Keypair {
-        Keypair(keypair)
+    pub(crate) fn new(signing_key: SigningKey) -> Keypair {
+        Keypair(signing_key)
     }
-
+    
+    /// Convenience method for creating properly signed [votes](Vote).
     pub(crate) fn vote(
         &self,
         chain_id: ChainID,
@@ -180,7 +190,7 @@ impl Keypair {
         })
     }
 
-    pub(crate) fn public(&self) -> PublicKeyBytes {
-        self.0.public.to_bytes()
+    pub(crate) fn public(&self) -> VerifyingKey {
+        self.0.verifying_key()
     }
 }

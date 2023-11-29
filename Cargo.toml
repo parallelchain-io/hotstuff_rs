@@ -1,6 +1,6 @@
 [package]
 name = "hotstuff_rs"
-version = "0.2.2"
+version = "0.3.0"
 description = "An implementation of the HotStuff consensus algorithm intended for production systems."
 homepage = "https://parallelchain.io"
 repository = "https://github.com/parallelchain-io/hotstuff_rs"
@@ -15,8 +15,10 @@ categories = ["cryptography::cryptocurrencies", "concurrency"]
 [dependencies]
 base64 = "0.21"
 borsh = "0.10"
-ed25519-dalek = "1"
+ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 fern = "0.6"
 log = "0.4" 
 rand = "0.7"
+rand_core = { version = "0.6.4", features = ["getrandom"] }
 sha2 = "0.10"
+typed-builder = "0.16.2"

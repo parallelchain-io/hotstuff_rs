@@ -26,19 +26,25 @@
 //!     - If it does contain new blocks, then the replica validates the blocks and quorum certificate and inserts them
 //!       into its block tree, and then jumps back to step 2.
 
-use crate::logging::debug;
+use std::cmp::max;
+use std::sync::mpsc::{Receiver, TryRecvError, Sender};
+use std::thread::{self, JoinHandle};
+use std::time::SystemTime;
+
+use crate::events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent};
 use crate::messages::{SyncRequest, SyncResponse};
 use crate::networking::{Network, SyncServerStub};
 use crate::state::{BlockTreeCamera, KVStore};
-use std::cmp::max;
-use std::sync::mpsc::{Receiver, TryRecvError};
-use std::thread::{self, JoinHandle};
 
+/// Starts the sync server thread, which runs an infinite loop until a shutdown signal is received.
+/// In each iteration of the loop the thread checks if it received any [sync requests](crate::messages::SyncRequest)
+/// from a peer, and proceeds accordingly to send a [sync response](crate::messages::SyncResponse).
 pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
     block_tree: BlockTreeCamera<K>,
     mut sync_stub: SyncServerStub<N>,
     shutdown_signal: Receiver<()>,
-    server_sync_request_limit: u32,
+    sync_request_limit: u32,
+    event_publisher: Option<Sender<Event>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || loop {
         match shutdown_signal.try_recv() {
@@ -57,14 +63,16 @@ pub(crate) fn start_sync_server<K: KVStore, N: Network + 'static>(
             },
         )) = sync_stub.recv_request()
         {
-            debug::received_sync_request(&origin);
+            Event::ReceiveSyncRequest(ReceiveSyncRequestEvent { timestamp: SystemTime::now(), peer: origin, start_height, limit}).publish(&event_publisher);
 
             let bt_snapshot = block_tree.snapshot();
             let blocks = bt_snapshot
-                .blocks_from_height_to_newest(start_height, max(limit, server_sync_request_limit));
+                .blocks_from_height_to_newest(start_height, max(limit, sync_request_limit));
             let highest_qc = bt_snapshot.highest_qc();
 
-            sync_stub.send_response(origin, SyncResponse { blocks, highest_qc });
+            sync_stub.send_response(origin, SyncResponse { blocks: blocks.clone(), highest_qc: highest_qc.clone() });
+
+            Event::SendSyncResponse(SendSyncResponseEvent { timestamp: SystemTime::now(), peer: origin, blocks, highest_qc}).publish(&event_publisher)
         }
         thread::yield_now();
     })
