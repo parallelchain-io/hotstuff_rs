@@ -6,7 +6,7 @@
 //! Types and methods used to access and mutate the persistent state that a replica keeps track for the operation
 //! of the protocol, and for its application.
 //!
-//! This state may be stored in a key-value store of the library user's own choosing, as long as that KV store
+//! This state may be stored in any key-value store of the library user's own choosing, as long as that KV store
 //! can provide a type that implements [KVStore]. This state can be mutated through an instance of [BlockTree],
 //! and read through an instance of [BlockTreeSnapshot], which can be created using [BlockTreeCamera].
 //!
@@ -22,18 +22,19 @@
 //!
 //! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples that sit
 //! at a particular key path or prefix in the library user's chosen KV store. These variables are:
-//! - **Blocks** ([CryptoHash] -> [Block]).
-//! - **Block at Height** ([BlockHeight] -> [CryptoHash]): a mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.
-//! - **Block to Children** ([CryptoHash] -> [ChildrenList]): a mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.
-//! - **Committed App State** ([Vec<u8>] -> [Vec<u8>]).
-//! - **Pending App State Updates** ([CryptoHash] -> [AppStateUpdates]).
-//! - **Committed Validator Set** ([ValidatorSet]).
-//! - **Pending Validator Set Updates** ([CryptoHash] -> [ValidatorSetUpdates]).
-//! - **Locked View** ([ViewNumber]): the highest view number of a quorum certificate contained in a block that has a child.
-//! - **Highest Voted View** ([ViewNumber]): the highest view that this validator has voted in.
-//! - **Highest Quorum Certificate** ([QuorumCertificate]): among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.
-//! - **Highest Committed Block** ([CryptoHash]).
-//! - **Newest Block** ([CryptoHash]): the most recent block to be inserted into the block tree.
+//! 
+//! |Variable|"Type"|Description|
+//! |---|---|---|
+//! |Blocks|[CryptoHash] -> [Block]||
+//! |Block at Height|[BlockHeight] -> [CryptoHash]|A mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
+//! |Block to Children|[CryptoHash] -> [ChildrenList]|A mapping between a block's hash and the children it has in the block tree. A block may have multiple chilren if they have not been committed.|
+//! |Committed App State|[Vec<u8>] -> [Vec<u8>]||
+//! |Pending App State Updates|[CryptoHash] -> [AppStateUpdates]||
+//! |Locked View|[ViewNumber]|The highest view number of a quorum certificate contained in a block that has a child.|
+//! |Highest Voted View|[ViewNumber]|The highest view that this validator has voted in.|
+//! |Highest Quorum Certificate|[QuorumCertificate]|Among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.|
+//! |Highest Committed Block|[CryptoHash]|The hash of the committed block that has the highest height.|
+//! |Newest BlocK|[CryptoHash]The hash of the most recent block to be inserted into the block tree.|
 //!
 //! The location of each of these variables in a KV store is defined in [paths]. Note that the fields of a
 //! block are itself stored in different tuples. This is so that user code can get a subset of a block's data
@@ -42,13 +43,15 @@
 //!
 //! ## Initial state
 //!
-//! All fields in the Block Tree start out empty except 5, which are set to initial values in
-//! [BlockTree::initialize]. These are:
-//! - **Committed App State** (initial state provided as an argument).
-//! - **Committed Validator Set** (initial state provided as an argument).
-//! - **Locked View** (initialized to 0).
-//! - **Highest View Entered** (initialized to 0).
-//! - **Highest Quorum Certificate** (initialized to [the genesis qc](QuorumCertificate::genesis_qc)).
+//! All variables in the Block Tree start out empty except five. These five variables are:
+//! 
+//! |Variable|Initial value|
+//! |---|---|
+//! |Committed App State|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |Committed Validator Set|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |Locked View|0|
+//! |Highest View Entered|0|
+//! |Highest Quorum Certificate|The [genesis QC](crate::types::QuorumCertificate::genesis_qc)|
 
 use std::iter::successors;
 use std::sync::mpsc::Sender;

@@ -34,7 +34,7 @@
 //!         - Then, if I *am not* the next leader, move to the next view.
 //!     * [On receiving a nudge](on_receive_nudge):
 //!         - Check if it is a prepare or precommit qc.
-//!         - Call the [safe_qc] function on the block tree to see if the qc can inserted.
+//!         - Call the [crate::state::BlockTree::safe_qc] function on the block tree to see if the qc can inserted.
 //!         - If yes, send a vote for it to the next leader.
 //!         - Check on the block tree if the qc can be set as the highest qc.
 //!         - If yes, set it as the highest qc.

@@ -29,12 +29,11 @@
 //! - The fifth value is the height of the proposed block.
 
 use std::time::SystemTime;
-
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use log;
+use crate::events::*;
 
-pub(crate) use crate::events::*;
-
+// Names of each event in PascalCase for printing:
 pub const INSERT_BLOCK: &str = "InsertBlock";
 pub const COMMIT_BLOCK: &str = "CommitBlock";
 pub const PRUNE_BLOCK: &str = "PruneBlock";
@@ -61,7 +60,7 @@ pub const END_SYNC: &str = "EndSync";
 pub const RECEIVE_SYNC_REQUEST: &str = "ReceiveSyncRequest";
 pub const SEND_SYNC_RESPONSE: &str = "SendSyncResponse";
 
-/// Abstraction for event types that have default logging handlers defined.
+/// Implemented by event types. Used to get a closure that logs the event.
 pub(crate) trait Logger {
     /// Returns a pointer to the default logging handler for a given event type.
     fn get_logger() -> Box<dyn Fn(&Self) + Send>;
