@@ -302,7 +302,9 @@ impl<K: KVStore> BlockTree<K> {
     /* ↓↓↓ For committing a block in insert_block ↓↓↓ */
 
     /// Commits a block and its ancestors if they have not been committed already. 
-    /// Returns the newly committed blocks, with the updates they caused to the validator set, in sequence (from oldest to newest).
+    /// 
+    /// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set, in sequence (from lowest height to 
+    /// highest height).
     pub fn commit_block(
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
@@ -380,7 +382,10 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
 
-    /// # Precondition
+    /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending app state updates). Siblings
+    /// here refer to other blocks that share the same parent as the specified block.
+    /// 
+    ///  # Precondition
     /// Block is in its parents' (or the genesis) children list.
     ///
     /// # Panics
@@ -403,7 +408,7 @@ impl<K: KVStore> BlockTree<K> {
         wb.set_children(&parent_or_genesis, &vec![*block]);
     }
 
-    /// Deletes all data of blocks in a branch starting from a given root by iterating over the blocks in the branch.
+    /// Deletes all data of blocks in a branch starting from (and including) a given root block.
     fn delete_branch(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, root: &CryptoHash) {
         for block in self.blocks_in_branch(*root) {
             wb.delete_children(&block);

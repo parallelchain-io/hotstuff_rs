@@ -10,7 +10,7 @@
 //! by an [Ed25519 public key](ed25519_dalek::VerifyingKey).
 //! 
 //! They key components of this module are:
-//! - The builder-pattern-like interface to construct a [specification of the replica](ReplicaSpec) with:
+//! - The builder-pattern interface to construct a [specification of the replica](ReplicaSpec) with:
 //!   1. `ReplicaSpec::builder` to construct a `ReplicaSpecBuilder`, 
 //!   2. The setters of the `ReplicaSpecBuilder`, and 
 //!   3. The `ReplicaSpecBuilder::build` method to construct a [ReplicaSpec],
@@ -35,9 +35,9 @@
 //! 
 //! Here is an example that demonstrates how to build and start running a replica using the builder pattern:
 //! 
-//! ```rust,ignore
+//! ```ignore
 //! let replica =
-//!     ReplicaSpec :: builder()
+//!     ReplicaSpec::builder()
 //!     .app(app)
 //!     .pacemaker(pacemaker)
 //!     .configuration(configuration)
@@ -85,9 +85,9 @@
 //! 
 //! The replica's [configuration](Configuration) can also be defined using the builder pattern, for example:
 //! 
-//! ```rust, ignore
+//! ```ignore
 //! let configuration = 
-//!     Configuration :: builder()
+//!     Configuration::builder()
 //!     .me(keypair)
 //!     .chain_id(0)
 //!     .sync_request_limit(10)
@@ -391,7 +391,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
     }
 }
 
-/// Stores the handles to the running threads and the sender ends of the channels used to communicate with them.
+/// A handle to the background threads of a HotStuff-rs replica. When this value is dropped, all background threads are
+/// gracefully shut down.
 pub struct Replica<K: KVStore> {
     block_tree_camera: BlockTreeCamera<K>,
     poller: Option<JoinHandle<()>>,

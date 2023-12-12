@@ -402,6 +402,9 @@ impl ValidatorSet {
 }
 
 /// Intermediate representation of [ValidatorSet] for safe serialization and deserialization.
+/// 
+/// To serialize an instance of `ValidatorSet`, convert it a `ValidatorSetBytes` using this type's implementation of
+/// `Into`, then, serialize the `ValidatorSetBytes` using Borsh. Reverse the steps to deserialize a `ValidatorSet`.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub(crate) struct ValidatorSetBytes {
     // The verifying keys of validators are included here in ascending order.

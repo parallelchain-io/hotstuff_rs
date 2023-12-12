@@ -88,14 +88,12 @@ pub(crate) fn start_polling<N: Network + 'static>(
 
 /// A sending and receiving end for progress messages.
 ///
-/// This type's recv method only returns messages from the specified
-/// current view, and caches messages from future views for later consumption.
-///
-/// This helps prevents interruptions to progress when replicas' views are mostly synchronized but they
-/// enter views at slightly different times.
+/// This type's recv method only returns messages from the specified current view, and caches messages from
+/// future views for later consumption. This helps prevents interruptions to progress when replicas' views
+/// are mostly synchronized but they enter views at slightly different times.
 /// 
-/// If the message buffer grows beyond its maximum capacity, some highest-viewed messages might
-/// be removed from the buffer to make space for the new message.
+/// If the message buffer grows beyond its maximum capacity, some highest-viewed messages might be removed 
+/// from the buffer to make space for the new message.
 pub(crate) struct ProgressMessageStub<N: Network> {
     network: N,
     receiver: Receiver<(VerifyingKey, ProgressMessage)>,
@@ -120,8 +118,9 @@ impl<N: Network> ProgressMessageStub<N> {
     }
 
     /// Receive a message matching the given chain id and current view. Messages from cur_view + 1 are cached for future
-    /// consumption, while messages from other views are dropped immediately. In case caching the message makes the buffer
-    /// grow beyond its capacity either:
+    /// consumption, while messages from other views are dropped immediately. 
+    /// 
+    /// In case caching the message makes the buffer grow beyond its capacity, this function either:
     /// 1. If the message has the highest view among the views of messages currently in the buffer, then the message is dropped, or
     /// 2. Otherwise, just enough highest-viewed messages are removed from the buffer to make space for the new message.
     pub(crate) fn recv(
@@ -172,21 +171,21 @@ impl<N: Network> ProgressMessageStub<N> {
                         // Try to cache the message.
                         let bytes_requested = mem::size_of::<VerifyingKey>() as u64 + msg.size();
                         let new_buffer_size = self.msg_buffer_size.checked_add(bytes_requested);
-                        let overloaded_buffer = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
-                        let cache_message_if_overloaded_buffer = self.msg_buffer.keys().max().is_none() || self.msg_buffer.keys().max().is_some_and(|max_view| msg.view() < *max_view);
+                        let buffer_will_be_overloaded = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.msg_buffer_capacity;
+                        let cache_message_if_buffer_will_be_overloaded = self.msg_buffer.keys().max().is_none() || self.msg_buffer.keys().max().is_some_and(|max_view| msg.view() < *max_view);
                 
                         // We only need to make space in the buffer if:
-                        // (1) It will be overloaded after stroing the message, and 
+                        // (1) It will be overloaded after storing the message, and 
                         // (2) We want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed message stored in the buffer
                         // (otherwise we ignore the message to avoid overloading the buffer).
-                        if overloaded_buffer && cache_message_if_overloaded_buffer {
+                        if buffer_will_be_overloaded && cache_message_if_buffer_will_be_overloaded {
                             self.remove_from_overloaded_buffer(bytes_requested);
                         };
 
                         // We only store the message in the buffer if either:
                         // (1) There is no risk of overloading the buffer upon storing this message, or
                         // (2) The buffer might be overloaded, but we have already made space for the new message.
-                        if !overloaded_buffer || (overloaded_buffer && cache_message_if_overloaded_buffer) {
+                        if !buffer_will_be_overloaded || (buffer_will_be_overloaded && cache_message_if_buffer_will_be_overloaded) {
                             let msg_queue = if let Some(msg_queue) = self.msg_buffer.get_mut(&msg.view())
                             {
                                 msg_queue

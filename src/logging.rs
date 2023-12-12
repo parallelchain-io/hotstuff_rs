@@ -13,13 +13,13 @@
 //! ## Log message format
 //! 
 //! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are always:
-//! 1. The name of the event in PascalCase.
+//! 1. The name of the event in PascalCase (defined in this module as constants).
 //! 2. The time the event was emitted (as number of seconds since the Unix Epoch).
 //! 
 //! The rest of the values differ depending on the kind of event. For example, the following snippet is how a 
 //! [ReceiveProposal](crate::events::ReceiveProposalEvent) is printed:
 //! 
-//! ```
+//! ```text
 //! ReceiveProposal, 1701329264, Id5u7f6, fNGCJyk, 0
 //! ```
 //! 
