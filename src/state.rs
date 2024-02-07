@@ -299,6 +299,12 @@ impl<K: KVStore> BlockTree<K> {
         self.write(wb);
     }
 
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_tc(tc);
+        self.write(wb);
+    }
+
     /* ↓↓↓ For committing a block in insert_block ↓↓↓ */
 
     /// Commits a block and its ancestors if they have not been committed already. 
@@ -762,6 +768,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub fn set_newest_block(&mut self, block: &CryptoHash) {
         self.0.set(&NEWEST_BLOCK, &block.try_to_vec().unwrap())
     }
+
+    /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        self.0.set(&HIGHEST_TC, &tc.try_to_vec().unwrap())
+    }
 }
 
 #[derive(Clone)]
@@ -1050,6 +1062,12 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn newest_block(&self) -> Option<CryptoHash> {
             Some(CryptoHash::deserialize(&mut &*self.get(&NEWEST_BLOCK)?).unwrap())
         }
+
+        /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+
+        fn highest_tc(&self) -> TimeoutCertificate {
+            TimeoutCertificate::deserialize(&mut &*self.get(&HIGHEST_TC).unwrap()).unwrap()
+        }
     }
 );
 
@@ -1067,6 +1085,7 @@ mod paths {
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
     pub(super) const HIGHEST_COMMITTED_BLOCK: [u8; 1] = [10];
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];
+    pub(super) const HIGHEST_TC: [u8; 1] = [12];
 
     // Fields of Block
     pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];

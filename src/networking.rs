@@ -17,7 +17,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use crate::messages::*;
-use crate::types::{ChainID, VerifyingKey, ValidatorSet, ValidatorSetUpdates, ViewNumber};
+use crate::types::{ChainID, QuorumCertificate, ValidatorSet, ValidatorSetUpdates, VerifyingKey, ViewNumber};
 
 pub trait Network: Clone + Send {
     /// Informs the network provider the validator set on wake-up.
@@ -277,6 +277,7 @@ impl<N: Network> ProgressMessageStub<N> {
 pub(crate) enum ProgressMessageReceiveError {
     Timeout,
     ReceivedQCFromFuture,
+    ShouldAdvanceView{qc: QuorumCertificate, sender: VerifyingKey}
 }
 
 pub(crate) struct SyncClientStub<N: Network> {

@@ -32,7 +32,7 @@
 //! [insert block event](InsertBlockEvent) is only emitted after the insertion has been persisted into the backing
 //! storage of the block tree.
 
-use std::time::{SystemTime, Duration};
+use std::time::{Instant, SystemTime};
 use std::sync::mpsc::Sender;
 
 use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, VerifyingKey};
@@ -197,7 +197,7 @@ pub struct StartViewEvent {
 pub struct ViewTimeoutEvent {
     pub timestamp: SystemTime,
     pub view: ViewNumber,
-    pub timeout: Duration,
+    pub view_timeout: Instant,
 }
 
 /// The replica collected a new [Quorum Certificate](crate::types::QuorumCertificate)

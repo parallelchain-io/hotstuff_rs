@@ -18,7 +18,7 @@ use sha2::Digest;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
-use crate::messages::Vote;
+use crate::messages::{AdvanceView, Vote};
 
 pub type ChainID = u64;
 pub type BlockHeight = u64;
@@ -194,6 +194,89 @@ impl Phase {
 
     pub fn is_commit(self) -> bool {
         matches!(self, Phase::Commit(_))
+    }
+}
+
+#[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub struct TimeoutCertificate {
+    pub chain_id: ChainID,
+    pub view: ViewNumber,
+    pub signatures: SignatureSet,
+}
+
+impl TimeoutCertificate {
+    /// Checks if all of the signatures in the certificate are correct, and if there's a set of signatures that forms a quorum.
+    pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+        // Check whether the size of the signature set is the same as the size of the validator set.
+        if self.signatures.len() != validator_set.len() {
+            return false;
+        }
+
+        // Check whether every signature is correct and tally up their powers.
+        let mut total_power: TotalPower = 0;
+        for (signature, (signer, power)) in self
+            .signatures
+            .iter()
+            .zip(validator_set.validators_and_powers())
+        {
+            if let Some(signature) = signature {
+                if let Ok(signature) = Signature::from_slice(signature) {
+                    if signer
+                        .verify(
+                            &(self.chain_id, self.view)
+                                .try_to_vec()
+                                .unwrap(),
+                            &signature,
+                        )
+                        .is_ok()
+                    {
+                        total_power += power as u128;
+                    } else {
+                        // tc contains incorrect signature.
+                        return false;
+                    }
+                } else {
+                    // tc contains incorrect signature.
+                    return false;
+                }
+            }
+        }
+
+        // Check if the signatures form a quorum.
+        let quorum = Self::quorum(validator_set.total_power());
+        total_power >= quorum
+    }
+
+    pub fn quorum(validator_set_power: TotalPower) -> TotalPower {
+        const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
+
+        (validator_set_power
+            .checked_mul(2)
+            .expect(TOTAL_POWER_OVERFLOW)
+            / 3)
+            + 1
+    }
+}
+
+#[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub enum Certificate {
+    TimeoutCertificate(TimeoutCertificate),
+    QuorumCertificate(QuorumCertificate),
+}
+
+impl Certificate {
+    pub fn chain_id(&self) -> ChainID {
+        match self {
+            Certificate::TimeoutCertificate(tc) => tc.chain_id,
+            Certificate::QuorumCertificate(qc) => qc.chain_id,
+        }
+    }
+
+    pub fn view(&self) -> ViewNumber {
+        match self {
+            Certificate::TimeoutCertificate(tc) => tc.view,
+            Certificate::QuorumCertificate(qc) => qc.view,
+        }
     }
 }
 
@@ -536,36 +619,72 @@ impl VoteCollector {
     }
 }
 
-pub(crate) struct NewViewCollector {
+/// Helps leaders incrementally form [TimeoutCertificate]s by combining votes for a given chain_id and view by replicas
+/// in a given [validator set](ValidatorSet).
+pub(crate) struct AdvanceViewCollector {
+    chain_id: ChainID,
+    view: ViewNumber,
     validator_set: ValidatorSet,
-    total_power: TotalPower,
-    collected_from: HashSet<VerifyingKey>,
-    accumulated_power: TotalPower,
+    validator_set_total_power: TotalPower,
+    signature_set: (SignatureSet, TotalPower),
 }
 
-impl NewViewCollector {
-    pub(crate) fn new(validator_set: ValidatorSet) -> NewViewCollector {
+impl AdvanceViewCollector {
+    pub(crate) fn new(
+        chain_id: ChainID,
+        view: ViewNumber,
+        validator_set: ValidatorSet,
+    ) -> AdvanceViewCollector {
+        let signature_set_len = validator_set.len();
         Self {
-            total_power: validator_set.total_power(),
+            chain_id,
+            view,
+            validator_set_total_power: validator_set.total_power(),
             validator_set,
-            collected_from: HashSet::new(),
-            accumulated_power: 0,
+            signature_set: (vec![None; signature_set_len], 0),
         }
     }
 
-    /// Notes that we have collected a new view message from the specified replica in the given view. Then, returns whether
-    /// by collecting this message we have collected new view messages from a quorum of validators in this view. If the sender
-    /// is not part of the validator set, then this function does nothing and returns false.
-    pub(crate) fn collect(&mut self, sender: &VerifyingKey) -> bool {
-        if !self.validator_set.contains(sender) {
-            return false;
+    /// Adds the advance-view message to a signature set if it is for the given chain id and view, otherwise ignores it. 
+    /// Returning a timeout certificate if adding the advance-view allows for one to be created.
+    ///
+    /// If the advance-view message is not signed correctly, or doesn't match the collector's view, or the signer is not part
+    /// of its validator set, then this is a no-op.
+    ///
+    /// # Preconditions
+    /// advance_view.is_correct(signer)
+    pub(crate) fn collect(
+        &mut self,
+        signer: &VerifyingKey,
+        advance_view: AdvanceView,
+    ) -> Option<TimeoutCertificate> {
+        if self.chain_id != advance_view.chain_id || self.view != advance_view.view {
+            return None
         }
 
-        if !self.collected_from.contains(sender) {
-            self.collected_from.insert(*sender);
-            self.accumulated_power += *self.validator_set.power(sender).unwrap() as u128;
+        // Check if the signer is actually in the validator set.
+        if let Some(pos) = self.validator_set.position(signer) {
+
+            let (ref mut signature_set, ref mut signature_set_power) = self.signature_set;
+
+            // If the advance-view has not been collected before, insert it into the signature set.
+            if signature_set[pos].is_none() {
+                signature_set[pos] = Some(advance_view.signature);
+                *signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
+
+                // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
+                if *signature_set_power >= TimeoutCertificate::quorum(self.validator_set_total_power) {
+                    let collected_tc = TimeoutCertificate {
+                        chain_id: self.chain_id,
+                        view: self.view,
+                        signatures: signature_set.clone(),
+                    };
+
+                    return Some(collected_tc);
+                }
+            }
         }
 
-        self.accumulated_power >= QuorumCertificate::quorum(self.total_power)
+        None
     }
 }

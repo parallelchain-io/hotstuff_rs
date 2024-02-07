@@ -9,6 +9,9 @@
 //! 1. [View timeout](Pacemaker::view_timeout): given the current view, how long should I stay in the current view to wait for messages?
 //! 2. [View leader](Pacemaker::view_leader): given the current view, and the current validator set, who should I consider
 //!    the current leader?
+//! 3. [Should sync](Pacemaker::should_sync): given the current view, should I sync with other validators to make sure that
+//!    future views timeout at the same time for all validators? This method is optional, a default implementation is to always
+//!    return false.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -23,6 +26,9 @@ pub trait Pacemaker: Send {
 
     fn view_leader(&mut self, cur_view: ViewNumber, validator_set: &ValidatorSet)
         -> VerifyingKey;
+
+    fn should_sync(&self, cur_view: ViewNumber)
+        -> bool;
 }
 
 /// A pacemaker which selects leaders in a weighted round-robin fashion, and sets view timeouts for an epoch upon entering the epoch.
@@ -82,18 +88,18 @@ impl Pacemaker for DefaultPacemaker {
         let total_power = validator_set.total_power();
         let n = validator_set.len();
         let index = cur_view % total_power as u64;
-        let max_power = validator_set.validators_and_powers().iter()
+        let max_power = validator_set.validators_and_powers().into_iter()
             .map(|(_, power)| power).max().expect("The validator set is empty!");
         
         let mut counter = 0;
 
         // Search for a validator with a given index in the abstract array of leaders.
-        for threshold in 1..=max_power.clone() {
+        for threshold in 1..=max_power {
             for validator_no in 0..n {
                 let validator = validator_set.validators().nth(validator_no).unwrap();
                 if validator_set.power(validator).unwrap() >= &threshold {
                     if counter == index {
-                        self.last_view_and_leader = Some((cur_view, validator.clone()));
+                        self.last_view_and_leader = Some((cur_view, *validator));
                         return *validator
                     }
                     counter += 1
@@ -145,5 +151,13 @@ impl Pacemaker for DefaultPacemaker {
         // Get the timeout for the current view.
         *self.timeouts.get(&cur_view).expect("The timeout for view no. {cur_view} has not been set.")
 
+    }
+
+    fn should_sync(
+        &self, 
+        cur_view: ViewNumber
+    ) -> bool {
+        
+        cur_view % (self.epoch_length as u64) == 0
     }
 }

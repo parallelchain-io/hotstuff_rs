@@ -295,7 +295,7 @@ impl Logger for ViewTimeoutEvent {
                 VIEW_TIMEOUT,
                 secs_since_unix_epoch(view_timeout_event.timestamp),
                 view_timeout_event.view,
-                view_timeout_event.timeout,
+                view_timeout_event.view_timeout,
             )
         };
         Box::new(logger)
