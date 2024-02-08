@@ -157,7 +157,7 @@ pub struct AdvanceView {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub signature: SignatureBytes,
-    pub highest_tc: TimeoutCertificate,
+    pub highest_c: Certificate,
 }
 
 impl AdvanceView {
@@ -226,7 +226,7 @@ impl Keypair {
         &self,
         chain_id: ChainID,
         view: ViewNumber,
-        highest_tc: TimeoutCertificate,
+        highest_c: Certificate,
     ) -> ProgressMessage {
         let signature = self
             .0
@@ -236,7 +236,7 @@ impl Keypair {
             chain_id,
             view,
             signature,
-            highest_tc
+            highest_c
         })
     }
 

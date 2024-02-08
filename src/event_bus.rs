@@ -59,6 +59,7 @@ pub(crate) struct EventHandlers {
     pub(crate) commit_block_handlers: HandlerPair<CommitBlockEvent>,
     pub(crate) prune_block_handlers: HandlerPair<PruneBlockEvent>,
     pub(crate) update_highest_qc_handlers: HandlerPair<UpdateHighestQCEvent>,
+    pub(crate) update_highest_tc_handlers: HandlerPair<UpdateHighestTCEvent>,
     pub(crate) update_locked_view_handlers: HandlerPair<UpdateLockedViewEvent>,
     pub(crate) update_validator_set_handlers: HandlerPair<UpdateValidatorSetEvent>,
 
@@ -91,6 +92,7 @@ impl EventHandlers {
         commit_block_handler: Option<HandlerPtr<CommitBlockEvent>>,
         prune_block_handler: Option<HandlerPtr<PruneBlockEvent>>,
         update_highest_qc_handler: Option<HandlerPtr<UpdateHighestQCEvent>>,
+        update_highest_tc_handler: Option<HandlerPtr<UpdateHighestTCEvent>>,
         update_locked_view_handler: Option<HandlerPtr<UpdateLockedViewEvent>>,
         update_validator_set_handler: Option<HandlerPtr<UpdateValidatorSetEvent>>,
         propose_handler: Option<HandlerPtr<ProposeEvent>>,
@@ -115,6 +117,7 @@ impl EventHandlers {
             commit_block_handlers: HandlerPair::new(log, commit_block_handler),
             prune_block_handlers: HandlerPair::new(log, prune_block_handler),
             update_highest_qc_handlers: HandlerPair::new(log, update_highest_qc_handler),
+            update_highest_tc_handlers: HandlerPair::new(log, update_highest_tc_handler),
             update_locked_view_handlers: HandlerPair::new(log, update_locked_view_handler),
             update_validator_set_handlers: HandlerPair::new(log, update_validator_set_handler),
             propose_handlers: HandlerPair::new(log, propose_handler),
@@ -142,6 +145,7 @@ impl EventHandlers {
         && self.commit_block_handlers.is_empty()
         && self.prune_block_handlers.is_empty()
         && self.update_highest_qc_handlers.is_empty()
+        && self.update_highest_tc_handlers.is_empty()
         && self.update_locked_view_handlers.is_empty()
         && self.update_validator_set_handlers.is_empty()
         && self.propose_handlers.is_empty()
@@ -181,6 +185,10 @@ impl EventHandlers {
             Event::UpdateHighestQC(update_highest_qc_event) => {
                 self.update_highest_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
                 self.update_highest_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
+            }
+            Event::UpdateHighestTC(update_highest_tc_event) => {
+                self.update_highest_tc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
+                self.update_highest_tc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
             }
             Event::UpdateLockedView(update_locked_view_event) => {
                 self.update_locked_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_locked_view_event));

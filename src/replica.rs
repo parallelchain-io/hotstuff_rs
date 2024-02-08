@@ -239,6 +239,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P:
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest QC. Optional."))]
     on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestTCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its highest TC. Optional."))]
+    on_update_highest_tc: Option<HandlerPtr<UpdateHighestTCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedViewEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its locked view. Optional."))]
     on_update_locked_view: Option<HandlerPtr<UpdateLockedViewEvent>>,
@@ -312,6 +315,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
             self.on_commit_block,
             self.on_prune_block,
             self.on_update_highest_qc,
+            self.on_update_highest_tc,
             self.on_update_locked_view,
             self.on_update_validator_set,
             self.on_propose,

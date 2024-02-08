@@ -38,6 +38,7 @@ pub const INSERT_BLOCK: &str = "InsertBlock";
 pub const COMMIT_BLOCK: &str = "CommitBlock";
 pub const PRUNE_BLOCK: &str = "PruneBlock";
 pub const UPDATE_HIGHEST_QC: &str = "UpdateHighestQC";
+pub const UPDATE_HIGHEST_TC: &str = "UpdateHighestTC";
 pub const UPDATE_LOCKED_VIEW: &str = "UpdateLockedView";
 pub const UPDATE_VALIDATOR_SET: &str = "UpdateValidatorSet";
 
@@ -109,6 +110,20 @@ impl Logger for UpdateHighestQCEvent {
                 first_seven_base64_chars(&update_highest_qc_event.highest_qc.block),
                 update_highest_qc_event.highest_qc.view,
                 update_highest_qc_event.highest_qc.phase
+            )
+        };
+        Box::new(logger)
+    }
+}
+
+impl Logger for UpdateHighestTCEvent {
+    fn get_logger() -> Box<dyn Fn(&Self) + Send> {
+        let logger = |update_highest_tc_event: &UpdateHighestTCEvent| {
+            log::info!(
+                "{}, {}, {}",
+                UPDATE_HIGHEST_TC,
+                secs_since_unix_epoch(update_highest_tc_event.timestamp),
+                update_highest_tc_event.highest_tc.view,
             )
         };
         Box::new(logger)

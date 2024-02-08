@@ -52,7 +52,7 @@
 //!    send a new view message containing my highest qc to the next leader.
 
 use std::cmp::max;
-use std::sync::mpsc::{Sender, Receiver, TryRecvError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::time::{Instant, SystemTime};
@@ -104,6 +104,8 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
             ) + 1;
             block_tree.set_highest_view_entered(cur_view);
 
+            let mut advance_view_collector = AdvanceViewCollector::new(chain_id, cur_view, block_tree.committed_validator_set());
+
             let view_result = execute_view(
                 &me,
                 chain_id,
@@ -112,10 +114,14 @@ pub(crate) fn start_algorithm<K: KVStore, N: Network + 'static>(
                 &mut block_tree,
                 &mut pm_stub,
                 &mut app,
+                &mut advance_view_collector,
                 &event_publisher,
+                &mut sync_stub,
+                sync_request_limit,
+                sync_response_timeout,
             );
             if let Err(ShouldSync) = view_result {
-                sync(&mut block_tree, &mut sync_stub, &mut app, chain_id, &event_publisher, sync_request_limit, sync_response_timeout)
+                //sync(&mut block_tree, &mut sync_stub, &mut app, chain_id, &event_publisher, sync_request_limit, sync_response_timeout)
             }
         }
     })
@@ -131,7 +137,11 @@ fn execute_view<K: KVStore, N: Network>(
     block_tree: &mut BlockTree<K>,
     pm_stub: &mut ProgressMessageStub<N>,
     app: &mut impl App<K>,
+    advance_view_collector: &mut AdvanceViewCollector,
     event_publisher: &Option<Sender<Event>>,
+    sync_stub: &mut SyncClientStub<N>,
+    sync_request_limit: u32,
+    sync_response_timeout: Duration,
 ) -> Result<(), ShouldSync> {
 
     let view_timeout = pacemaker.view_timeout(view);
@@ -150,7 +160,6 @@ fn execute_view<K: KVStore, N: Network>(
 
     // 2. If I am a voter or the next leader, receive and progress messages until view timeout.
     let mut vote_collector = VoteCollector::new(chain_id, view, cur_validators.clone());
-    let mut advance_view_collector = AdvanceViewCollector::new(chain_id, view, cur_validators.clone());
     while Instant::now() < view_timeout {
         match pm_stub.recv(chain_id, view, view_timeout) {
             Ok((origin, msg)) => match msg {
@@ -167,7 +176,7 @@ fn execute_view<K: KVStore, N: Network>(
                             pacemaker,
                             pm_stub,
                             &mut vote_collector,
-                            &mut advance_view_collector,
+                            advance_view_collector,
                             &event_publisher,
                         );
                     }
@@ -203,25 +212,38 @@ fn execute_view<K: KVStore, N: Network>(
                     );
                 },
                 ProgressMessage::AdvanceView(advance_view) => {
-
+                    on_receive_advance_view(
+                        &origin, 
+                        advance_view,
+                        advance_view_collector,
+                        block_tree,
+                        chain_id,
+                        pm_stub,
+                        event_publisher
+                    );
                 }
                 _ => continue
             },
             Err(ProgressMessageReceiveError::ReceivedQCFromFuture) => continue, // TODO: remove this case
             Err(ProgressMessageReceiveError::Timeout) => continue,
-            Err(ProgressMessageReceiveError::ShouldAdvanceView { qc, sender }) => { //should be certificate
-                if !qc.is_correct(&cur_validators) {
-                    continue
-                }
-                if pacemaker.should_sync(qc.view) {
-                    // broadcast the QC
-                }
-                if block_tree.safe_qc(&qc, chain_id) {
+            Err(ProgressMessageReceiveError::ShouldAdvanceView {c, sender }) => { //should be certificate
+                let should_advance_view = on_receive_should_advance_view_error(
+                    c,
+                    &sender, 
+                    block_tree, 
+                    app,
+                    chain_id,
+                    view,
+                    pm_stub, 
+                    pacemaker,
+                    event_publisher,
+                    sync_stub,
+                    sync_request_limit,
+                    sync_response_timeout,
+                );
+                if should_advance_view {
                     return Ok(())
-                } else if !block_tree.contains(&qc.block) {
-                    //sync with the sender and then check the qc again if its is safe_qc
-                    return Ok(())
-                } else {continue}
+                }     
             },
         };
     }
@@ -233,6 +255,7 @@ fn execute_view<K: KVStore, N: Network>(
 
     // If the view has timed out and the Pacemaker calls for sync, return an error signaling a need to sync views with others.
     if pacemaker.should_sync(view) {
+        // TODO: move to view sync
         return Err(ShouldSync)
     }
 
@@ -584,17 +607,167 @@ fn on_receive_new_view<K: KVStore>(
 
 }
 
-// Returns whether I have updated my highest_tc.
 fn on_receive_advance_view<K: KVStore, N: Network>(
     origin: &VerifyingKey,
     advance_view: AdvanceView,
     advance_view_collector: &mut AdvanceViewCollector,
+    block_tree: &mut BlockTree<K>,
+    chain_id: ChainID,
     pm_stub: &mut ProgressMessageStub<N>,
     event_publisher: &Option<Sender<Event>>,
 ) {
-    if let Some(tc) = advance_view_collector.collect(origin, advance_view) {
-        pm_stub.broadcast(ProgressMessage::certificate(Certificate::TimeoutCertificate(tc)))
+    if advance_view.is_correct(origin) {
+        let mut wb = BlockTreeWriteBatch::new();
+        let mut update_highest_tc: Option<TimeoutCertificate> = None;
+        let mut update_highest_qc: Option<QuorumCertificate> = None;
+        let mut update_locked_view: Option<ViewNumber> = None;
+
+        let validators = &block_tree.committed_validator_set();
+        match &advance_view.highest_c {
+            Certificate::TimeoutCertificate(tc) => {
+                if tc.is_correct(validators) && tc.view > block_tree.highest_tc().view {
+                    wb.set_highest_tc(&tc);
+                    update_highest_tc = Some(tc.clone())
+                };
+            },
+            Certificate::QuorumCertificate(qc) => {
+                if qc.is_correct(&validators) && block_tree.safe_qc(&qc, chain_id) {
+                    if Phase::Prepare == qc.phase {
+                        let current_block_justify_view = block_tree.block_justify(&qc.block).unwrap().view;
+                        if current_block_justify_view > block_tree.locked_view() {
+                            wb.set_locked_view(current_block_justify_view);
+                            update_locked_view = Some(current_block_justify_view);
+                        }
+                    }
+            
+                    if let Phase::Precommit(prepare_qc_view) = qc.phase {
+                        if prepare_qc_view > block_tree.locked_view() {
+                            wb.set_locked_view(prepare_qc_view);
+                            update_locked_view = Some(prepare_qc_view);
+                        }
+                    }
+            
+                    if qc.view > block_tree.highest_qc().view {
+                        wb.set_highest_qc(&qc);
+                        update_highest_qc = Some(qc.clone());
+                    };
+                }
+            }
+        }
+        if let Some(tc) = advance_view_collector.collect(origin, advance_view) {
+            if tc.view > block_tree.highest_tc().view {
+                wb.set_highest_tc(&tc)
+            };
+            pm_stub.broadcast(ProgressMessage::certificate(Certificate::TimeoutCertificate(tc)));
+        }
+
+        block_tree.write(wb);
+
+        if let Some(highest_tc) = update_highest_tc {
+            Event::UpdateHighestTC(UpdateHighestTCEvent { timestamp: SystemTime::now(), highest_tc}).publish(event_publisher)
+        }
+
+        if let Some(highest_qc) = update_highest_qc {
+            Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}).publish(event_publisher)
+        }
+        if let Some(locked_view) = update_locked_view {
+            Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}).publish(event_publisher)
+        }
     }
+}
+
+// Returns whether the view should be advanced.
+// Safety: the received certificate is for current view or a higher view.
+fn on_receive_should_advance_view_error<K: KVStore, N: Network>(
+    certificate: Certificate,
+    origin: &VerifyingKey,
+    block_tree: &mut BlockTree<K>,
+    app: &mut impl App<K>,
+    chain_id: ChainID,
+    cur_view: ViewNumber,
+    pm_stub: &mut ProgressMessageStub<N>,
+    pacemaker: &mut impl Pacemaker,
+    event_publisher: &Option<Sender<Event>>,
+    sync_stub: &mut SyncClientStub<N>,
+    sync_request_limit: u32,
+    sync_response_timeout: Duration,
+) -> bool {
+
+    let validators = &block_tree.committed_validator_set();
+
+    match certificate {
+        Certificate::TimeoutCertificate(tc) => {
+            if !tc.is_correct(validators) {
+                return false
+            }
+            block_tree.set_highest_tc(&tc);
+            Event::UpdateHighestTC(UpdateHighestTCEvent { timestamp: SystemTime::now(), highest_tc: tc.clone()}).publish(event_publisher);
+            if pacemaker.should_sync(tc.view) {
+                pm_stub.broadcast(ProgressMessage::Certificate(Certificate::TimeoutCertificate(tc)))
+            }
+            return true
+        },
+        Certificate::QuorumCertificate(qc) => {
+            if !qc.is_correct(validators) {
+                return false
+            }
+
+            let mut wb = BlockTreeWriteBatch::new();
+            let mut update_highest_qc: Option<QuorumCertificate> = None;
+            let mut update_locked_view: Option<ViewNumber> = None;
+            
+            if block_tree.safe_qc(&qc, chain_id) {
+
+                if Phase::Prepare == qc.phase {
+                    let current_block_justify_view = block_tree.block_justify(&qc.block).unwrap().view;
+                    if current_block_justify_view > block_tree.locked_view() {
+                        wb.set_locked_view(current_block_justify_view);
+                        update_locked_view = Some(current_block_justify_view);
+                    }
+                }
+        
+                if let Phase::Precommit(prepare_qc_view) = qc.phase {
+                    if prepare_qc_view > block_tree.locked_view() {
+                        wb.set_locked_view(prepare_qc_view);
+                        update_locked_view = Some(prepare_qc_view);
+                    }
+                }
+        
+                if qc.view > block_tree.highest_qc().view {
+                    wb.set_highest_qc(&qc);
+                    update_highest_qc = Some(qc.clone());
+                };
+                block_tree.write(wb);
+        
+                if let Some(highest_qc) = update_highest_qc {
+                    Event::UpdateHighestQC(UpdateHighestQCEvent { timestamp: SystemTime::now(), highest_qc}).publish(event_publisher)
+                }
+                if let Some(locked_view) = update_locked_view {
+                    Event::UpdateLockedView(UpdateLockedViewEvent { timestamp: SystemTime::now(), locked_view}).publish(event_publisher)
+                }
+
+                if pacemaker.should_sync(cur_view) {
+                    pm_stub.broadcast(ProgressMessage::Certificate(Certificate::QuorumCertificate(qc)))
+                } else if !block_tree.contains(&qc.block) {
+                    sync_with(
+                        origin,
+                        block_tree, 
+                        sync_stub, 
+                        app, 
+                        chain_id, 
+                        event_publisher, 
+                        sync_request_limit, 
+                        sync_response_timeout);
+                    return false
+                }
+
+                return true
+            }
+            false
+        }
+    }
+
+
 }
 
 fn on_view_timeout<K: KVStore, N: Network>(
@@ -721,4 +894,59 @@ fn sync_with<K: KVStore, N: Network>(
             }
         }
     }
+}
+
+fn view_sync<K: KVStore, N: Network>(
+    me: &Keypair,
+    chain_id: ChainID,
+    view: ViewNumber,
+    pacemaker: &mut impl Pacemaker,
+    block_tree: &mut BlockTree<K>,
+    pm_stub: &mut ProgressMessageStub<N>,
+    advance_view_collector: &mut AdvanceViewCollector,
+    event_publisher: &Option<Sender<Event>>,
+) {
+
+    let highest_c = if block_tree.highest_qc().view >= block_tree.highest_tc().view {
+        Certificate::QuorumCertificate(block_tree.highest_qc())
+    } else {
+        Certificate::TimeoutCertificate(block_tree.highest_tc())
+    };
+
+    pm_stub.broadcast(me.advance_view(chain_id, view, highest_c));
+
+    loop {
+        match pm_stub.recv(chain_id, view, pacemaker.view_timeout(view)) {
+            Ok((origin, msg)) => {
+                match msg {
+                    ProgressMessage::NewView(new_view) => {
+                        on_receive_new_view(
+                            &origin,
+                            new_view,
+                            block_tree,
+                            chain_id,
+                            event_publisher,
+                        );
+                    },
+                    ProgressMessage::AdvanceView(advance_view) => {
+                        on_receive_advance_view(
+                            &origin, 
+                            advance_view,
+                            advance_view_collector,
+                            block_tree,
+                            chain_id,
+                            pm_stub,
+                            event_publisher
+                        );
+                    }
+                    _ => continue
+                }
+            },
+            Err(RecvTimeoutError) => continue,
+            Err(_) => {}
+
+        }
+        // break
+    }
+
 }
