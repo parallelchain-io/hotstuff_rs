@@ -100,20 +100,23 @@
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ed25519_dalek::VerifyingKey;
+use sha2::digest::core_api::AlgorithmName;
 use typed_builder::TypedBuilder;
 
-use crate::algorithm::start_algorithm;
+use crate::algorithm::Algorithm;
 use crate::app::App;
 use crate::event_bus::*;
 use crate::events::*;
 use crate::messages;
+use crate::networking::BlockSyncClientStub;
+use crate::networking::BlockSyncServerStub;
 use crate::networking::{
-    start_polling, Network, ProgressMessageStub, SyncClientStub, SyncServerStub,
+    start_polling, Network, ProgressMessageStub
 };
-use crate::pacemaker::Pacemaker;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
-use crate::sync_server::start_sync_server;
-use crate::types::{AppStateUpdates, ValidatorSetUpdates, SigningKey, ChainID};
+use crate::types::basic::ChainID;
+use crate::types::keypair::Keypair;
 use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:
@@ -164,7 +167,7 @@ use std::sync::mpsc::{self, Sender};
 ))]
 pub struct Configuration {
     #[builder(setter(doc = "Set the replica's keypair, used to sign messages. Required."))]
-    pub me: SigningKey,
+    pub me: VerifyingKey,
     #[builder(setter(doc = "Set the chain ID of the blockchain. Required."))]
     pub chain_id: ChainID,
     #[builder(setter(doc = "Set the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
@@ -187,7 +190,6 @@ pub struct Configuration {
     - `.app(...)`
     - `.network(...)`
     - `.kv_store(...)`
-    - `.pacemaker(...)`
     - `.configuration(...)`
     
     Optional:
@@ -214,7 +216,7 @@ pub struct Configuration {
     - `.on_receive_sync_response(...)`
 "
 ))]
-pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> {
+pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     // Required parameters
     #[builder(setter(doc = "Set the application code to be run on the blockchain. The argument must implement the [App](crate::app::App) trait. Required."))]
     app: A,
@@ -222,8 +224,6 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P:
     network: N,
     #[builder(setter(doc = "Set the implementation of the replica's Key-Value store. The argument must implement the [KVStore](crate::state::KVStore) trait. Required."))]
     kv_store: K,
-    #[builder(setter(doc = "Set the implementation of the pacemaker. The argument must implement the [Pacemaker](crate::pacemaker::Pacemaker) trait. Required."))]
-    pacemaker: P,
     #[builder(setter(doc = "Set the [configuration](Configuration), which contains the necessary parameters to run a replica. Required."))]
     configuration: Configuration,
     // Optional parameters
@@ -292,7 +292,7 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static, P:
     on_send_sync_response: Option<HandlerPtr<SendSyncResponseEvent>>,
 }
 
-impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'static> ReplicaSpec<K, A, N, P> {
+impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N> {
 
     /// Starts all threads and channels associated with running a replica, and returns the handles to them in a [Replica] struct.
     pub fn start(mut self) -> Replica<K> {
@@ -303,8 +303,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
         let (poller, progress_msgs, sync_requests, sync_responses) =
             start_polling(self.network.clone(), poller_shutdown_receiver);
         let pm_stub = ProgressMessageStub::new(self.network.clone(), progress_msgs, self.configuration.progress_msg_buffer_capacity);
-        let sync_server_stub = SyncServerStub::new(sync_requests, self.network.clone());
-        let sync_client_stub = SyncClientStub::new(self.network, sync_responses);
+        let sync_server_stub = BlockSyncServerStub::new(self.network.clone(), sync_requests);
+        let sync_client_stub = BlockSyncClientStub::new(self.network, sync_responses);
 
         let event_handlers = EventHandlers::new(
             self.configuration.log_events,
@@ -336,29 +336,33 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static, P: Pacemaker + 'stat
                 Some(mpsc::channel()).unzip()
             } else { (None, None) };
 
-        let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
-        let sync_server = start_sync_server(
-            BlockTreeCamera::new(self.kv_store.clone()),
-            sync_server_stub,
-            sync_server_shutdown_receiver,
-            self.configuration.sync_request_limit,
-            event_publisher.clone(),
-        );
+        // let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
+        // let sync_server = start_sync_server(
+        //     BlockTreeCamera::new(self.kv_store.clone()),
+        //     sync_server_stub,
+        //     sync_server_shutdown_receiver,
+        //     self.configuration.sync_request_limit,
+        //     event_publisher.clone(),
+        // );
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
-        let algorithm = start_algorithm(
-            self.app,
-            messages::Keypair::new(self.configuration.me),
-            self.configuration.chain_id,
-            block_tree,
-            self.pacemaker,
-            pm_stub,
-            sync_client_stub,
-            algorithm_shutdown_receiver,
-            event_publisher,
-            self.configuration.sync_request_limit,
-            self.configuration.sync_response_timeout,
+        let algorithm = Algorithm::new(
+            Keypair::new(self.configuration.me), 
+            self.configuration.chain_id, 
+            block_tree, 
+            self.network.clone(), 
+            progress_msgs, 
+            sync_responses, 
+            algorithm_shutdown_receiver, 
+            event_publisher, 
+            self.configuration.msg_buffer_capacity, 
+            self.configuration.block_sync_request_limit, 
+            self.configuration.block_sync_response_timeout, 
+            self.configuration.epoch_length, 
+            self.configuration.view_time
         );
+
+        
 
         let (event_bus_shutdown, event_bus_shutdown_receiver) =
             if !event_handlers.is_empty() {

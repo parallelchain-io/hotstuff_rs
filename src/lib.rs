@@ -60,11 +60,13 @@ pub mod messages;
 
 pub mod pacemaker;
 
+pub mod hotstuff;
+
 pub mod state;
 
 pub mod networking;
 
-pub mod sync_server;
+pub mod block_sync;
 
 pub mod replica;
 

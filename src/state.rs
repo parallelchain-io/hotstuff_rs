@@ -589,6 +589,10 @@ impl<'a, K: KVStore> AppBlockTreeView<'a, K> {
 pub struct BlockTreeWriteBatch<W: WriteBatch>(W);
 
 use paths::*;
+
+use self::basic::AppStateUpdates;
+use self::certificates::QuorumCertificate;
+use self::validators::{ValidatorSet, ValidatorSetUpdates};
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {
         BlockTreeWriteBatch(W::new())
