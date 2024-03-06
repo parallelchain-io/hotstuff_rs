@@ -9,7 +9,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncTriggerMessage};
+use crate::block_sync::messages::{BlockSyncMessage, BlockSyncTriggerMessage};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::pacemaker::messages::PacemakerMessage;
 
@@ -25,12 +25,3 @@ pub enum ProgressMessage {
     PacemakerMessage(PacemakerMessage),
     BlockSyncTriggerMessage(BlockSyncTriggerMessage),
 }
-
-// This trait generalizes message types that have their own [Sender].
-pub trait Sendable {}
-
-impl Sendable for PacemakerMessage {}
-impl Sendable for HotStuffMessage {}
-impl Sendable for BlockSyncRequest {}
-impl Sendable for BlockSyncResponse {}
-impl Sendable for AdvertiseBlock {}

@@ -3,22 +3,27 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [HotStuff] protocol.
+//! Definitions for structured messages that are sent between replicas as part of the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
 
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{ed25519::SignatureBytes, Signer};
+use ed25519_dalek::{ed25519::SignatureBytes, Verifier};
 
-use crate::{messages::{Message, ProgressMessage}, types::{
-    basic::*, block::*, certificates::*, keypair::*, voting::*
-}};
+use crate::messages::{Message, ProgressMessage};
+use crate::types::{
+    basic::*, 
+    block::*, 
+    certificates::*, 
+    keypair::*, 
+    collectors::*
+};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum HotStuffMessage {
     Proposal(Proposal),
     Nudge(Nudge),
-    BlockVote(BlockVote),
+    Vote(Vote),
     NewView(NewView),
 }
 
@@ -60,19 +65,19 @@ impl HotStuffMessage {
         })
     }
 
-    fn block_vote(
+    pub(crate) fn vote(
         me: Keypair,
         chain_id: ChainID,
         view: ViewNumber,
         block: CryptoHash,
         phase: Phase,
     ) -> HotStuffMessage {
-        let message = &(chain_id, view, block, phase)
+        let message_bytes = &(chain_id, view, block, phase)
             .try_to_vec()
             .unwrap();
-        let signature = me.sign(message);
+        let signature = me.sign(message_bytes);
 
-        HotStuffMessage::BlockVote(BlockVote {
+        HotStuffMessage::Vote(Vote {
             chain_id,
             view,
             block,
@@ -86,7 +91,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
             HotStuffMessage::Nudge(Nudge { chain_id, .. }) => *chain_id,
-            HotStuffMessage::BlockVote(BlockVote { chain_id, .. }) => *chain_id,
+            HotStuffMessage::Vote(Vote { chain_id, .. }) => *chain_id,
             HotStuffMessage::NewView(NewView { chain_id, .. }) => *chain_id,
         }
     }
@@ -96,7 +101,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(Proposal { view, .. }) => *view,
             HotStuffMessage::Nudge(Nudge { view, .. }) => *view,
-            HotStuffMessage::BlockVote(BlockVote { view, .. }) => *view,
+            HotStuffMessage::Vote(Vote { view, .. }) => *view,
             HotStuffMessage::NewView(NewView { view, .. }) => *view,
         }
     }
@@ -106,7 +111,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
             HotStuffMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
-            HotStuffMessage::BlockVote(_) => mem::size_of::<BlockVote>() as u64,
+            HotStuffMessage::Vote(_) => mem::size_of::<Vote>() as u64,
             HotStuffMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
     }
@@ -133,7 +138,7 @@ pub struct Nudge {
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub struct BlockVote {
+pub struct Vote {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: CryptoHash,
@@ -141,14 +146,14 @@ pub struct BlockVote {
     pub signature: SignatureBytes,
 }
 
-impl Vote for BlockVote {
-    fn to_message_bytes(&self) -> Option<Vec<u8>> {
-        &(self.chain_id, self.view, self.block, self.phase)
+impl SignedMessage for Vote {
+    fn message_bytes(&self) -> Vec<u8> {
+        (self.chain_id, self.view, self.block, self.phase)
             .try_to_vec()
             .unwrap()
     }
     
-    fn signature(&self) -> SignatureBytes {
+    fn signature_bytes(&self) -> SignatureBytes {
         self.signature
     }
 }

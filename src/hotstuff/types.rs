@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the [HotStuff] protocol.
+//! Definitions of types specific to the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,13 +11,13 @@ use crate::types::{
     basic::*,
     validators::*,
     certificates::*,
-    voting::*,
+    collectors::*,
 };
-use super::messages::BlockVote;
+use super::messages::Vote;
 
-/// Helps leaders incrementally form [QuorumCertificate]s by combining votes for the same chain_id, view, block, and phase by replicas
-/// in a given [validator set](ValidatorSet).
-pub(crate) struct BlockVoteCollector {
+/// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view, block, and phase by replicas
+/// from a given [validator set](ValidatorSet).
+pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
@@ -25,7 +25,7 @@ pub(crate) struct BlockVoteCollector {
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 
-impl VoteCollector<BlockVote, QuorumCertificate> for BlockVoteCollector {
+impl Collector<Vote, QuorumCertificate> for VoteCollector {
     fn new(
         chain_id: ChainID,
         view: ViewNumber,
@@ -48,16 +48,13 @@ impl VoteCollector<BlockVote, QuorumCertificate> for BlockVoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    ///
-    /// # Panics
-    /// vote.chain_id and vote.view must be the same as the chain_id and the view used to create this VoteCollector.
     fn collect(
         &mut self,
         signer: &VerifyingKey,
-        vote: BlockVote,
+        vote: Vote,
     ) -> Option<QuorumCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
-            panic!()
+            return None
         }
 
         // Check if the signer is actually in the validator set.
@@ -102,6 +99,8 @@ impl VoteCollector<BlockVote, QuorumCertificate> for BlockVoteCollector {
     }
 }
 
+/// Keeps track of the validators that have sent a [NewView][crate::hotstuff::messages::NewView]
+/// message for a given view.
 pub(crate) struct NewViewCollector {
     validator_set: ValidatorSet,
     total_power: TotalPower,

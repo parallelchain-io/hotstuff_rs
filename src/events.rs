@@ -35,8 +35,13 @@
 use std::time::{SystemTime, Duration};
 use std::sync::mpsc::Sender;
 
-use crate::types::{Block, QuorumCertificate, CryptoHash, ViewNumber, ValidatorSetUpdates, VerifyingKey};
-use crate::messages::{Proposal, Nudge, Vote, NewView};
+use ed25519_dalek::VerifyingKey;
+
+use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
+use crate::types::basic::{CryptoHash, ViewNumber};
+use crate::types::block::Block;
+use crate::types::certificates::QuorumCertificate;
+use crate::types::validators::ValidatorSetUpdates;
 
 /// Enumerates all events defined for HotStuff-rs.
 pub enum Event {

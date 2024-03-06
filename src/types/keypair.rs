@@ -5,11 +5,12 @@
 
 //! Definitions for the [Keypair] type as an object used to sign messages and access the public key.
 
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 
 use super::basic::SignatureBytes;
 
 /// A wrapper around [SigningKey](ed25519_dalek::SigningKey) which implements a [convenience method](Keypair::sign) for creating signatures.
+#[derive(Clone)]
 pub(crate) struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
@@ -18,7 +19,7 @@ impl Keypair {
     }
     
     /// Convenience method for creating signatures over values or messages represented as vectors of bytes.
-    pub(crate) fn sign(&self, message: Vec<u8>) -> SignatureBytes {
+    pub(crate) fn sign(&self, message: &Vec<u8>) -> SignatureBytes {
         self.0.sign(message).to_bytes()
     }
 

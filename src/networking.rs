@@ -21,7 +21,7 @@ use crate::block_sync::messages::{BlockSyncRequest, BlockSyncResponse};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::messages::*;
 use crate::pacemaker::messages::PacemakerMessage;
-use crate::types::basic::{ChainID, ViewNumber};
+use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
 
 pub trait Network: Clone + Send {
@@ -41,10 +41,10 @@ pub trait Network: Clone + Send {
     fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
 }
 
-/// Spawn the poller thread, which polls the Network for messages and distributes them into receivers for:
-/// 1. Progress messages (processed by the [Algorithm]), 
-/// 2. Block sync requests (processed by [BlockSyncServer]), and 
-/// 3. Block sync responses (processed by [BlockSyncClient]).
+/// Spawn the poller thread, which polls the [Network] for messages and distributes them into receivers for:
+/// 1. Progress messages (processed by the [Algorithm][crate::algorithm::Algorithm]), and
+/// 2. Block sync requests (processed by [BlockSyncServer][crate::block_sync::server::BlockSyncServer]), and 
+/// 3. Block sync responses (processed by [BlockSyncClient][crate::block_sync::client::BlockSyncClient]).
 pub(crate) fn start_polling<N: Network + 'static>(
     mut network: N,
     shutdown_signal: Receiver<()>,
@@ -57,28 +57,30 @@ pub(crate) fn start_polling<N: Network + 'static>(
     todo!()
 }
 
-/// Handle for sending and broadcasting messages to the Network.
-/// Can be instantiated for message types that implement the [Into<Message>] trait.
-/// Each type that implements the trait encapsulates all types of messages that can be sent from a paricular object. 
-pub(crate) struct SenderHandle<N: Network, S: Into<Message>> {
+/// Handle for sending and broadcasting messages to the [Network].
+/// Can be used to send or broadcast messages of message types that 
+/// implement the [Into<Message>] trait. 
+#[derive(Clone)]
+pub(crate) struct SenderHandle<N: Network> {
     network: N,
 }
 
-impl<N: Network, S: Into<Message>> SenderHandle<N, S> {
+impl<N: Network> SenderHandle<N> {
     pub(crate) fn new(network: N) -> Self {
         Self { network }
     }
 
-    pub(crate) fn send(&mut self, peer: VerifyingKey, msg: S) {
-        self.network.send(peer, Message::msg.into())
+    pub(crate) fn send<S: Into<Message>>(&mut self, peer: VerifyingKey, msg: S) {
+        self.network.send(peer, msg.into())
     }
 
-    pub(crate) fn broadcast(&mut self, msg: ProgressMessage) {
-        self.network.broadcast(Message::ProgressMessage(msg))
+    pub(crate) fn broadcast<S: Into<Message>>(&mut self, msg: S) {
+        self.network.broadcast(msg.into())
     }
 }
 
 /// Handle for informing the network provider about the validator set updates.
+#[derive(Clone)]
 pub(crate) struct ValidatorSetUpdateHandle<N: Network> {
     network: N
 }
@@ -99,13 +101,13 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
 /// All messages must match the chain id to be accepted.
 ///
 /// ### HotStuff Messages
-/// This type's recv method only returns hotstuff messages from the specified current view, and caches messages from
-/// future views for later consumption. This helps prevents interruptions to progress when replicas' views
+/// This type's recv method only returns hotstuff messages for the current view, and caches messages from
+/// future views for future consumption. This helps prevent interruptions to progress when replicas' views
 /// are mostly synchronized but they enter views at slightly different times.
 /// 
 /// ### Pacemaker Messages
 /// This type's recv method returns pacemaker messages for any view greater or equal to the current view.
-/// It also caches messages for view greater than the current view, for processing in the appropriate view
+/// It also caches all messages for view greater than the current view, for processing in the appropriate view
 /// in case immediate processing is not possible.
 ///
 /// ### BlockSyncTrigger Messages
@@ -125,7 +127,7 @@ impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn new(
         network: N,
         receiver: Receiver<(VerifyingKey, ProgressMessage)>,
-        msg_buffer_capacity: u64,
+        msg_buffer_capacity: BufferSize,
     ) -> ProgressMessageStub<N> {
         let hotstuff_msg_buffer: MessageBuffer<HotStuffMessage> = MessageBuffer::new(msg_buffer_capacity);
         let pacemaker_msg_buffer: MessageBuffer<PacemakerMessage> = MessageBuffer::new(msg_buffer_capacity);
@@ -140,7 +142,8 @@ impl<N: Network> ProgressMessageStub<N> {
     /// Receive a message matching the given chain id, and view >= current view.
     /// Cache and/or return immediately, depending on the message type.
     /// Messages older than current view are dropped immediately.
-    /// [BlockSyncTriggerMessage] messages are an exception since they do not have a view,
+    /// [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage] 
+    /// messages are an exception since they do not have a view,
     /// and they are returned immediately, as long as the chain id is correct.
     pub(crate) fn recv(
         &mut self,
@@ -157,20 +160,16 @@ pub(crate) enum ProgressMessageReceiveError {
     Timeout,
 }
 
-pub(crate) trait Cacheable {}
-impl Cacheable for HotStuffMessage {}
-impl Cacheable for PacemakerMessage {}
+struct FailedToInsert;
 
-pub(crate) struct FailedToInsertError {}
-
-pub(crate) struct MessageBuffer<C: Cacheable> {
-    buffer_capacity: u64,
-    buffer: BTreeMap<ViewNumber, VecDeque<(VerifyingKey, HotStuffMessage)>>,
-    buffer_size: u64,
+struct MessageBuffer<M> {
+    buffer_capacity: BufferSize,
+    buffer: BTreeMap<ViewNumber, VecDeque<(VerifyingKey, M)>>,
+    buffer_size: BufferSize,
 }
 
-impl<C: Cacheable> MessageBuffer<C> {
-    fn new(buffer_capacity: u64) {
+impl<M> MessageBuffer<M> {
+    fn new(buffer_capacity: BufferSize) -> Self {
         Self {
             buffer_capacity,
             buffer: BTreeMap::new(),
@@ -182,17 +181,19 @@ impl<C: Cacheable> MessageBuffer<C> {
     /// In case caching the message makes the buffer grow beyond its capacity, this function either:
     /// 1. If the message has the highest view among the views of messages currently in the buffer, then the message is dropped, or
     /// 2. Otherwise, just enough highest-viewed messages are removed from the buffer to make space for the new message.
-    fn insert_to_buffer(msg: HotStuffMessage, origin: VerifyingKey) -> Result<(), FailedToInsertError> {
+    fn insert(msg: M, origin: VerifyingKey) -> Result<(), FailedToInsert> {
         todo!()
     }
 
     /// Given the number of bytes that need to be removed, removes just enough highest-viewed messages
     /// to free up (at least) the required number of bytes in the buffer.
-    fn remove_from_overloaded_buffer(&mut self, bytes_to_remove: u64) {
+    fn remove_highest_viewed_msgs(&mut self, bytes_to_remove: u64) {
         todo!()
     }
 }
 
+/// A receiving end for sync responses.
+/// The [BlockSyncClientStub::recv_response] method returns the received response.
 pub(crate) struct BlockSyncClientStub<N: Network> {
     network: N,
     responses: Receiver<(VerifyingKey, BlockSyncResponse)>,
@@ -228,13 +229,13 @@ impl<N: Network> BlockSyncClientStub<N> {
 
 }
 
+/// A receiving end for sync requests. 
+/// The [BlockSyncServerStub::recv_request] method returns the received request.
 pub(crate) struct BlockSyncServerStub<N: Network> {
     network: N,
     requests: Receiver<(VerifyingKey, BlockSyncRequest)>,
 }
 
-/// A sending and receiving end for sync messages. 
-/// The [SyncServerStub::recv_request] method returns the received request.
 impl<N: Network> BlockSyncServerStub<N> {
     pub(crate) fn new(
         network: N,

@@ -100,37 +100,44 @@
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use ed25519_dalek::VerifyingKey;
-use sha2::digest::core_api::AlgorithmName;
+use ed25519_dalek::SigningKey;
 use typed_builder::TypedBuilder;
 
 use crate::algorithm::Algorithm;
 use crate::app::App;
+use crate::block_sync::client::BlockSyncClientConfiguration;
+use crate::block_sync::server::BlockSyncServer;
+use crate::block_sync::server::BlockSyncServerConfiguration;
 use crate::event_bus::*;
 use crate::events::*;
-use crate::messages;
-use crate::networking::BlockSyncClientStub;
-use crate::networking::BlockSyncServerStub;
-use crate::networking::{
-    start_polling, Network, ProgressMessageStub
-};
+use crate::hotstuff::protocol::HotStuffConfiguration;
+use crate::networking::{start_polling, Network};
+use crate::pacemaker::protocol::PacemakerConfiguration;
 use crate::state::{BlockTree, BlockTreeCamera, KVStore};
+use crate::types::basic::AppStateUpdates;
+use crate::types::basic::BufferSize;
 use crate::types::basic::ChainID;
+use crate::types::basic::EpochLength;
 use crate::types::keypair::Keypair;
+use crate::types::validators::ValidatorSetUpdates;
 use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:
 /// 1. The replica's [keypair](ed25519_dalek::SigningKey).
-/// 2. The [chain ID](crate::types::ChainID) of the target blockchain.
+/// 2. The [chain ID](crate::types::basic::ChainID) of the target blockchain.
 /// 3. The sync request limit, which determines how many blocks should the replica request from its peer when syncing.
 /// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the replica should wait for a sync response.
 /// 5. The progress message buffer capacity, which defines the maximum allowed capacity of the progress message buffer. If this capacity
 ///    is about to be exceeded, some messages might be removed to make space for new messages.
-/// 6. The "Log Events" flag, if set to "true" then logs should be printed. 
+/// 6. The length of an "epoch", i.e., a sequence of views such that at the end of every such sequence replica should try to synchronise views with others
+///    via an all-to-all broadcast.
+/// 7. The maximum view time, which defines the duration after which the replica should timeout in the current view and move to the next view 
+///    (unless the replica is synchronising views with other replicas at the end of an epoch).
+/// 8. The "Log Events" flag, if set to "true" then logs should be printed. 
 /// 
 /// ## Chain ID
 /// 
-/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::ChainID). This
+/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::basic::ChainID). This
 /// is included in votes and other messages so that replicas don't mistake messages and blocks for
 /// one HotStuff-rs blockchain does not get mistaken for those for another blockchain.
 /// In most cases, having a chain ID that collides with another blockchain is harmless. But
@@ -140,7 +147,7 @@ use std::sync::mpsc::{self, Sender};
 ///
 /// ## Sync response timeout
 /// 
-/// Durations stored in [Configuration::sync_response_timeout] must be "well below"
+/// Durations stored in [Configuration::block_sync_response_timeout] must be "well below"
 /// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
 /// 
 /// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
@@ -160,24 +167,63 @@ use std::sync::mpsc::{self, Sender};
     - `.me(...)`
     - `.chain_id(...)`
     - `.sync_request_limit(...)`
-    - `sync_response_timeout(...)`
+    - `.sync_response_timeout(...)`
     - `.progress_msg_buffer_capacity(...)`
+    - `.epoch_length(...)`
+    - `.max_view_time(...)`
     - `.log_events(...)`
 "
 ))]
 pub struct Configuration {
     #[builder(setter(doc = "Set the replica's keypair, used to sign messages. Required."))]
-    pub me: VerifyingKey,
+    pub me: SigningKey,
     #[builder(setter(doc = "Set the chain ID of the blockchain. Required."))]
     pub chain_id: ChainID,
     #[builder(setter(doc = "Set the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
-    pub sync_request_limit: u32,
+    pub block_sync_request_limit: u32,
     #[builder(setter(doc = "Set the timeout for receiving a sync response from a peer (in seconds). Required."))]
-    pub sync_response_timeout: Duration,
+    pub block_sync_response_timeout: Duration,
     #[builder(setter(doc = "Set the maximum number of bytes that can be stored in the replica's message buffer at any given moment. Required."))]
-    pub progress_msg_buffer_capacity: u64,
+    pub progress_msg_buffer_capacity: BufferSize,
+    #[builder(setter(doc = "Set the epoch length i.e., if epoch length is n, then replicas synchronize views via all-to-all broadcast 
+    every n views. Required."))]
+    pub epoch_length: EpochLength,
+    #[builder(setter(doc = "Set the maximum duration that should be allocated to each view. Required."))]
+    pub max_view_time: Duration,
     #[builder(setter(doc = "Enable logging? Required."))]
     pub log_events: bool,
+}
+
+impl Into<(HotStuffConfiguration, PacemakerConfiguration, BlockSyncClientConfiguration, BlockSyncServerConfiguration)> for Configuration {
+    fn into(self) -> (HotStuffConfiguration, PacemakerConfiguration, BlockSyncClientConfiguration, BlockSyncServerConfiguration) {
+        let keypair = Keypair::new(self.me);
+        let hotstuff_config = HotStuffConfiguration {
+            chain_id: self.chain_id,
+            keypair: keypair.clone(),
+        };
+        let pacemaker_config = PacemakerConfiguration {
+            chain_id: self.chain_id,
+            keypair: keypair.clone(),
+            epoch_length: self.epoch_length,
+            max_view_time: self.max_view_time,
+        };
+        let block_sync_client_config = BlockSyncClientConfiguration {
+            chain_id: self.chain_id,
+            request_limit: self.block_sync_request_limit,
+            response_timeout: self.block_sync_response_timeout,
+        };
+        let block_sync_server_config = BlockSyncServerConfiguration {
+            chain_id: self.chain_id,
+            keypair: keypair.clone(),
+            request_limit: self.block_sync_request_limit,
+        };
+        (
+            hotstuff_config,
+            pacemaker_config,
+            block_sync_client_config,
+            block_sync_server_config
+        )
+    }
 }
 
 /// Stores all necessary parameters and trait implementations required to run the [Replica].
@@ -297,17 +343,23 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
     /// Starts all threads and channels associated with running a replica, and returns the handles to them in a [Replica] struct.
     pub fn start(mut self) -> Replica<K> {
         let block_tree = BlockTree::new(self.kv_store.clone());
+        self.network.init_validator_set(block_tree.committed_validator_set().clone());
 
-        self.network.init_validator_set(block_tree.committed_validator_set());
+        let chain_id = self.configuration.chain_id;
+        let progress_msg_buffer_capacity = self.configuration.progress_msg_buffer_capacity;
+        let log_events = self.configuration.log_events;
+        let (hotstuff_config,
+            pacemaker_config, 
+            block_sync_client_config, 
+            block_sync_server_config
+        ) = self.configuration.into();
+
         let (poller_shutdown, poller_shutdown_receiver) = mpsc::channel();
-        let (poller, progress_msgs, sync_requests, sync_responses) =
+        let (poller, progress_msgs, block_sync_requests, block_sync_responses) =
             start_polling(self.network.clone(), poller_shutdown_receiver);
-        let pm_stub = ProgressMessageStub::new(self.network.clone(), progress_msgs, self.configuration.progress_msg_buffer_capacity);
-        let sync_server_stub = BlockSyncServerStub::new(self.network.clone(), sync_requests);
-        let sync_client_stub = BlockSyncClientStub::new(self.network, sync_responses);
 
         let event_handlers = EventHandlers::new(
-            self.configuration.log_events,
+            log_events,
             self.on_insert_block,
             self.on_commit_block,
             self.on_prune_block,
@@ -336,34 +388,34 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
                 Some(mpsc::channel()).unzip()
             } else { (None, None) };
 
-        // let (sync_server_shutdown, sync_server_shutdown_receiver) = mpsc::channel();
-        // let sync_server = start_sync_server(
-        //     BlockTreeCamera::new(self.kv_store.clone()),
-        //     sync_server_stub,
-        //     sync_server_shutdown_receiver,
-        //     self.configuration.sync_request_limit,
-        //     event_publisher.clone(),
-        // );
+        let (block_sync_server_shutdown, block_sync_server_shutdown_receiver) = mpsc::channel();
+        let mut block_sync_server = BlockSyncServer::new(
+            block_sync_server_config, 
+            BlockTreeCamera::new(self.kv_store.clone()), 
+            block_sync_requests, 
+            self.network.clone(),
+            block_sync_server_shutdown_receiver,
+            event_publisher.clone()
+        );
+        let block_sync_server = block_sync_server.start();
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
-        let algorithm = Algorithm::new(
-            Keypair::new(self.configuration.me), 
-            self.configuration.chain_id, 
-            block_tree, 
+        let mut algorithm = Algorithm::new(
+            chain_id,
+            hotstuff_config,
+            pacemaker_config,
+            block_sync_client_config,
+            block_tree,
+            self.app,
             self.network.clone(), 
             progress_msgs, 
-            sync_responses, 
+            block_sync_responses, 
             algorithm_shutdown_receiver, 
             event_publisher, 
-            self.configuration.msg_buffer_capacity, 
-            self.configuration.block_sync_request_limit, 
-            self.configuration.block_sync_response_timeout, 
-            self.configuration.epoch_length, 
-            self.configuration.view_time
+            progress_msg_buffer_capacity, 
         );
-
+        let algorithm = algorithm.start();
         
-
         let (event_bus_shutdown, event_bus_shutdown_receiver) =
             if !event_handlers.is_empty() {
                 Some(mpsc::channel()).unzip()
@@ -387,8 +439,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             poller_shutdown,
             algorithm: Some(algorithm),
             algorithm_shutdown,
-            sync_server: Some(sync_server),
-            sync_server_shutdown,
+            block_sync_server: Some(block_sync_server),
+            block_sync_server_shutdown,
             event_bus,
             event_bus_shutdown,
         }
@@ -403,15 +455,15 @@ pub struct Replica<K: KVStore> {
     poller_shutdown: Sender<()>,
     algorithm: Option<JoinHandle<()>>,
     algorithm_shutdown: Sender<()>,
-    sync_server: Option<JoinHandle<()>>,
-    sync_server_shutdown: Sender<()>,
+    block_sync_server: Option<JoinHandle<()>>,
+    block_sync_server_shutdown: Sender<()>,
     event_bus: Option<JoinHandle<()>>,
     event_bus_shutdown: Option<Sender<()>>,
 }
 
 impl<K: KVStore> Replica<K> {
     /// Initializes the replica's [Block Tree](crate::state::BlockTree) with the intial
-    /// [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates).
+    /// [app state updates](crate::types::basic::AppStateUpdates) and [validator set updates](crate::types::validators::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
@@ -442,8 +494,8 @@ impl<K: KVStore> Drop for Replica<K> {
         self.algorithm_shutdown.send(()).unwrap();
         self.algorithm.take().unwrap().join().unwrap();
 
-        self.sync_server_shutdown.send(()).unwrap();
-        self.sync_server.take().unwrap().join().unwrap();
+        self.block_sync_server_shutdown.send(()).unwrap();
+        self.block_sync_server.take().unwrap().join().unwrap();
 
         self.poller_shutdown.send(()).unwrap();
         self.poller.take().unwrap().join().unwrap();

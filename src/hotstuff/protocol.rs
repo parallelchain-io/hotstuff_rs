@@ -3,7 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the HotStuff protocol, adapted for dynamic validator sets.
+//! Implementation of the HotStuff protocol for Byzantine Fault Tolerant State Machine Replication,
+//! adapted for dynamic validator sets.
+//! TODO: describe how it works for dynamic validator sets.
 
 use std::sync::mpsc::Sender;
 
@@ -13,62 +15,75 @@ use crate::app::App;
 use crate::events::Event;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::state::{BlockTree, KVStore};
+use crate::types::collectors::Collector;
+use crate::types::validators::ValidatorSet;
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
     keypair::Keypair
 };
+use crate::hotstuff::messages::{Vote, HotStuffMessage, NewView, Nudge, Proposal};
+use crate::hotstuff::types::{NewViewCollector, VoteCollector};
 
-use crate::hotstuff::messages::{BlockVote, HotStuffMessage, NewView, Nudge, Proposal};
-
-pub struct HotStuff<N: Network, K: KVStore> {
-    chain_id: ChainID,
-    keypair: Keypair,
-    sender_handle: SenderHandle<N, HotStuffMessage>,
-    cur_view: ViewNumber,
-    cur_leader: VerifyingKey,
+/// An implementation of the HotStuff protocol (https://arxiv.org/abs/1803.05069),
+/// adapted to enable dynamic validator sets. The protocol operates on a per-view
+/// basis, where in each view the validator exchanges messages with other validators,
+/// and updates the [block tree][BlockTree]. The [HotStuffState] reflects the view-specific
+/// parameters that define how the validator communicates.
+pub(crate) struct HotStuff<N: Network> {
+    config: HotStuffConfiguration,
+    state: HotStuffState,
+    sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     event_publisher: Option<Sender<Event>>,
 }
 
-impl<N: Network, K: KVStore> HotStuff<N, K> {
+impl<N: Network> HotStuff<N> {
 
     pub(crate) fn new(
-        chain_id: ChainID,
-        keypair: Keypair,
-        sender_handle: SenderHandle<N, HotStuffMessage>,
+        config: HotStuffConfiguration,
+        sender_handle: SenderHandle<N>,
         validator_set_update_handle: ValidatorSetUpdateHandle<N>,
         init_view: ViewNumber,
         init_leader: VerifyingKey,
+        next_leader: VerifyingKey,
+        init_validator_set: ValidatorSet,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
+        let state = HotStuffState::new(
+            config.clone(), 
+            init_view, 
+            init_leader, 
+            next_leader, 
+            init_validator_set
+        );
         Self { 
-            chain_id,
-            keypair,
+            config,
+            state,
             sender_handle, 
-            cur_view: init_view,
-            cur_leader: init_leader,
             validator_set_update_handle, 
             event_publisher,
         }
     }
 
-    pub(crate) fn on_enter_view(
-        &mut self, view: u64, 
+    pub(crate) fn on_enter_view<K: KVStore>(
+        &mut self, 
+        view: u64, 
         leader: VerifyingKey,
+        next_leader: VerifyingKey,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
     ) {
 
-        // 1. Broadcast a NewView message for self.cur_view to leader
+        // 1. Broadcast a NewView message for self.cur_view to leader.
 
-        // 2. Update cur_view and cur_leader to view and leader
+        // 2. Update cur_view and cur_leader to view and leader, next_leader tp next_leader.
 
-        // 3. If I am cur_leader then broadcast a nudge or a proposal
+        // 3. If I am cur_leader then broadcast a nudge or a proposal.
 
         todo!()
     }
 
-    pub(crate) fn on_receive_msg(
+    pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: HotStuffMessage,
         origin: VerifyingKey,
@@ -78,7 +93,7 @@ impl<N: Network, K: KVStore> HotStuff<N, K> {
         todo!()
     }
 
-    pub(crate) fn on_receive_proposal(
+    fn on_receive_proposal<K: KVStore>(
         &mut self, 
         proposal: Proposal, 
         origin: VerifyingKey,
@@ -88,7 +103,7 @@ impl<N: Network, K: KVStore> HotStuff<N, K> {
         todo!()
     }
 
-    pub(crate) fn on_receive_nudge(
+    fn on_receive_nudge<K: KVStore>(
         &mut self, 
         nudge: Nudge, 
         origin: VerifyingKey,
@@ -97,16 +112,16 @@ impl<N: Network, K: KVStore> HotStuff<N, K> {
         todo!()
     }
 
-    pub(crate) fn on_receive_vote(
+    fn on_receive_vote<K: KVStore>(
         &mut self, 
-        vote: BlockVote, 
+        vote: Vote, 
         origin: VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) {
         todo!()
     }
 
-    pub(crate) fn on_receive_new_view(
+    fn on_receive_new_view<K: KVStore>(
         &mut self, 
         new_view: NewView, 
         origin: VerifyingKey,
@@ -114,6 +129,42 @@ impl<N: Network, K: KVStore> HotStuff<N, K> {
     ) {
         todo!()
     }
+
 }
 
+/// Immutable parameters that define the behaviour of the [HotStuff] protocol and should never change.
+#[derive(Clone)]
+pub(crate) struct HotStuffConfiguration {
+    pub(crate) chain_id: ChainID,
+    pub(crate) keypair: Keypair,
+}
 
+/// Internal state of the [HotStuff] protocol. Stores the current view and the current leader,
+/// for which the protocol should execute, as well as the [Vote] and [NewView] messages collected
+/// in the current view. This state should always be updated on entering a view.
+struct HotStuffState {
+    cur_view: ViewNumber,
+    cur_leader: VerifyingKey,
+    next_leader: VerifyingKey,
+    vote_collector: VoteCollector,
+    new_view_collector: NewViewCollector,
+}
+
+impl HotStuffState {
+    /// Returns a fresh [HotStuffState] for a given view, leader, and validator set.
+    fn new(
+        config: HotStuffConfiguration,
+        view: ViewNumber,
+        leader: VerifyingKey,
+        next_leader: VerifyingKey,
+        validator_set: ValidatorSet,
+    ) -> Self {
+        Self {
+            cur_view: view,
+            cur_leader: leader,
+            next_leader,
+            vote_collector: VoteCollector::new(config.chain_id, view, validator_set.clone()),
+            new_view_collector: NewViewCollector::new(validator_set),
+        }
+    }
+}

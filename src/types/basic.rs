@@ -4,6 +4,9 @@
 */
 
 //! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
+//! The types and traits defined in [crate::types] are either common across the sub-protocols or
+//! required for the signature of the [block tree][crate::state::BlockTree]. Other types and traits, specific to 
+//! the components of the hotstuff-rs protocol, can be found in the respetive directories.
 
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet},
@@ -25,6 +28,8 @@ pub type TotalPower = u128;
 pub type SignatureBytes = [u8; 64];
 pub type SignatureSet = Vec<Option<SignatureBytes>>;
 pub type ViewNumber = u64;
+pub type EpochLength = u32;
+pub type BufferSize = u64;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {
@@ -61,12 +66,12 @@ where
         self.deletes.contains(key)
     }
 
-    /// Get an iterator over all of the key-value pairs inserted by this ChangeSet.
+    /// Get an iterator over all of the key-value pairs inserted by this [UpdateSet].
     pub fn inserts(&self) -> hash_map::Iter<K, V> {
         self.inserts.iter()
     }
 
-    /// Get an iterator over all of the keys that are deleted by this ChangeSet.
+    /// Get an iterator over all of the keys that are deleted by this [UpdateSet].
     pub fn deletions(&self) -> hash_set::Iter<K> {
         self.deletes.iter()
     }

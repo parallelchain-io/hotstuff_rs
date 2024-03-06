@@ -6,6 +6,6 @@ pub mod certificates;
 
 pub mod validators;
 
-pub mod voting;
+pub mod collectors;
 
 pub mod keypair;

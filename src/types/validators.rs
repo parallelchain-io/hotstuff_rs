@@ -12,7 +12,6 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
 use rand::seq::SliceRandom;
-use sha2::Digest;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 

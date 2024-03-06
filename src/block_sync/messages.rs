@@ -12,7 +12,7 @@ use crate::{messages::{Message, ProgressMessage}, types::{
     basic::*,
     block::*,
     certificates::*,
-    voting::*,
+    collectors::*,
 }};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -64,8 +64,8 @@ pub enum BlockSyncTriggerMessage {
 }
 
 impl BlockSyncTriggerMessage {
-    pub fn advertise_block(chain_id: ChainID, block: CryptoHash, block_height: BlockHeight, block_highest_qc: QuorumCertificate) -> BlockSyncMessage {
-        BlockSyncTriggerMessage::AdvertiseBlock(AdvertiseBlock{chain_id, block, block_height, block_highest_qc})
+    pub fn advertise_block(chain_id: ChainID, block: CryptoHash, block_qc: QuorumCertificate) -> Self {
+        BlockSyncTriggerMessage::AdvertiseBlock(AdvertiseBlock{chain_id, block, block_qc})
     }
 }
 
@@ -73,8 +73,8 @@ impl BlockSyncTriggerMessage {
 pub struct AdvertiseBlock {
     pub chain_id: ChainID,
     pub block: CryptoHash,
-    pub block_height: BlockHeight,
-    pub block_highest_qc: QuorumCertificate,
+    pub block_qc: QuorumCertificate, // highest known qc for the block
+    //TODO: pub signature: SignatureBytes, // necessary to authenticate the sender of this message!
 }
 
 impl Into<Message> for AdvertiseBlock {

@@ -60,6 +60,8 @@ use std::time::SystemTime;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
+use crate::state::basic::{ChildrenList, CryptoHash, ViewNumber};
+use crate::state::certificates::Phase;
 use crate::types::*;
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
@@ -590,9 +592,10 @@ pub struct BlockTreeWriteBatch<W: WriteBatch>(W);
 
 use paths::*;
 
-use self::basic::AppStateUpdates;
+use self::basic::{AppStateUpdates, BlockHeight, ChainID, Data, DataLen, Datum};
+use self::block::Block;
 use self::certificates::QuorumCertificate;
-use self::validators::{ValidatorSet, ValidatorSetUpdates};
+use self::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {
         BlockTreeWriteBatch(W::new())
