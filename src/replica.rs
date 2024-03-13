@@ -463,7 +463,7 @@ pub struct Replica<K: KVStore> {
 
 impl<K: KVStore> Replica<K> {
     /// Initializes the replica's [Block Tree](crate::state::BlockTree) with the intial
-    /// [app state updates](crate::types::basic::AppStateUpdates) and [validator set updates](crate::types::validators::ValidatorSetUpdates).
+    /// [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,

@@ -61,8 +61,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
 use crate::state::basic::{ChildrenList, CryptoHash, ViewNumber};
-use crate::state::certificates::Phase;
 use crate::types::*;
+use crate::hotstuff::types::{QuorumCertificate, Phase};
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
 pub struct BlockTree<K: KVStore>(K);
@@ -594,7 +594,6 @@ use paths::*;
 
 use self::basic::{AppStateUpdates, BlockHeight, ChainID, Data, DataLen, Datum};
 use self::block::Block;
-use self::certificates::QuorumCertificate;
 use self::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {

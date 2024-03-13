@@ -7,13 +7,131 @@
 
 use std::collections::{HashMap, HashSet};
 
+use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::Verifier;
+
 use crate::types::{
     basic::*,
     validators::*,
-    certificates::*,
-    collectors::*,
 };
 use super::messages::Vote;
+
+/// Proof that at least a quorum of validators have voted for a given [proposal][crate::hotstuff::messages::Proposal] or [nudge][crate::hotstuff::messages::Nudge].
+/// Required for extending a block in the [HotStuff][crate::hotstuff::protocol::HotStuff], and for optimistic advance to a new view as part of the 
+/// [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+#[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub struct QuorumCertificate {
+    pub chain_id: ChainID,
+    pub view: ViewNumber,
+    pub block: CryptoHash,
+    pub phase: Phase,
+    pub signatures: SignatureSet,
+}
+
+impl QuorumCertificate {
+    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms a quorum.
+    ///
+    /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
+    pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+        if self.is_genesis_qc() {
+            true
+        } else {
+            // Check whether the size of the signature set is the same as the size of the validator set.
+            if self.signatures.len() != validator_set.len() {
+                return false;
+            }
+
+            // Check whether every signature is correct and tally up their powers.
+            let mut total_power: TotalPower = 0;
+            for (signature, (signer, power)) in self
+                .signatures
+                .iter()
+                .zip(validator_set.validators_and_powers())
+            {
+                if let Some(signature) = signature {
+                    if let Ok(signature) = Signature::from_slice(signature) {
+                        if signer
+                            .verify(
+                                &(self.chain_id, self.view, self.block, self.phase)
+                                    .try_to_vec()
+                                    .unwrap(),
+                                &signature,
+                            )
+                            .is_ok()
+                        {
+                            total_power += power as u128;
+                        } else {
+                            // qc contains incorrect signature.
+                            return false;
+                        }
+                    } else {
+                        // qc contains incorrect signature.
+                        return false;
+                    }
+                }
+            }
+
+            // Check if the signatures form a quorum.
+            total_power >= validator_set.quorum()
+        }
+    }
+
+    pub const fn genesis_qc() -> QuorumCertificate {
+        QuorumCertificate {
+            chain_id: 0,
+            view: 0,
+            block: [0u8; 32],
+            phase: Phase::Generic,
+            signatures: SignatureSet::new(),
+        }
+    }
+
+    pub fn is_genesis_qc(&self) -> bool {
+        *self == Self::genesis_qc()
+    }
+
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
+pub enum Phase {
+    // ↓↓↓ For pipelined flow ↓↓↓ //
+    Generic,
+
+    // ↓↓↓ For phased flow ↓↓↓ //
+    Prepare,
+
+    // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered the
+    // vote containing this phase.
+    Precommit(ViewNumber),
+
+    // The inner view number is the view number of the *precommit* qc contained in the nudge which triggered the
+    // vote containing this phase.
+    Commit(ViewNumber),
+
+    //TODO
+    //Decide(ViewNumber)
+}
+
+impl Phase {
+    pub fn is_generic(self) -> bool {
+        self == Phase::Generic
+    }
+
+    pub fn is_prepare(self) -> bool {
+        self == Phase::Prepare
+    }
+
+    pub fn is_precommit(self) -> bool {
+        matches!(self, Phase::Precommit(_))
+    }
+
+    pub fn is_commit(self) -> bool {
+        matches!(self, Phase::Commit(_))
+    }
+
+    //TODO
+    //is_decide
+}
 
 /// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view, block, and phase by replicas
 /// from a given [validator set](ValidatorSet).
@@ -25,8 +143,8 @@ pub(crate) struct VoteCollector {
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 
-impl Collector<Vote, QuorumCertificate> for VoteCollector {
-    fn new(
+impl VoteCollector {
+    pub(crate) fn new(
         chain_id: ChainID,
         view: ViewNumber,
         validator_set: ValidatorSet,
@@ -48,7 +166,7 @@ impl Collector<Vote, QuorumCertificate> for VoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    fn collect(
+    pub(crate) fn collect(
         &mut self,
         signer: &VerifyingKey,
         vote: Vote,
@@ -77,7 +195,7 @@ impl Collector<Vote, QuorumCertificate> for VoteCollector {
                 *signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
-                if *signature_set_power >= QuorumCertificate::quorum(self.validator_set_total_power) {
+                if *signature_set_power >= self.validator_set.quorum() {
                     let (signatures, _) = self
                         .signature_sets
                         .remove(&(vote.block, vote.phase))
@@ -131,6 +249,6 @@ impl NewViewCollector {
             self.accumulated_power += *self.validator_set.power(sender).unwrap() as u128;
         }
 
-        self.accumulated_power >= QuorumCertificate::quorum(self.total_power)
+        self.accumulated_power >= self.validator_set.quorum()
     }
 }

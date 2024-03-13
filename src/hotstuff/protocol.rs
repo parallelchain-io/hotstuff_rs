@@ -15,7 +15,6 @@ use crate::app::App;
 use crate::events::Event;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::state::{BlockTree, KVStore};
-use crate::types::collectors::Collector;
 use crate::types::validators::ValidatorSet;
 use crate::types::{
     basic::{ChainID, ViewNumber}, 

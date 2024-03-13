@@ -38,9 +38,9 @@ use std::sync::mpsc::Sender;
 use ed25519_dalek::VerifyingKey;
 
 use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
+use crate::hotstuff::types::QuorumCertificate;
 use crate::types::basic::{CryptoHash, ViewNumber};
 use crate::types::block::Block;
-use crate::types::certificates::QuorumCertificate;
 use crate::types::validators::ValidatorSetUpdates;
 
 /// Enumerates all events defined for HotStuff-rs.

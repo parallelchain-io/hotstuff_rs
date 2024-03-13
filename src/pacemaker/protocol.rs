@@ -15,7 +15,6 @@ use crate::events::Event;
 use crate::networking::{Network, SenderHandle};
 use crate::state::{BlockTree, KVStore};
 use crate::types::basic::EpochLength;
-use crate::types::collectors::Collector;
 use crate::types::validators::ValidatorSet;
 use crate::types::{
     basic::{ChainID, ViewNumber}, 

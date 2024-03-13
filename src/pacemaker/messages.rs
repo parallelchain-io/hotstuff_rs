@@ -9,13 +9,14 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::SignatureBytes;
 
-use crate::messages::{Message, ProgressMessage};
+use crate::hotstuff::types::QuorumCertificate;
+use crate::messages::{Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
-    certificates::*, 
-    keypair::*, 
-    collectors::*
+    keypair::*,
 };
+
+use super::types::TimeoutCertificate;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum PacemakerMessage {

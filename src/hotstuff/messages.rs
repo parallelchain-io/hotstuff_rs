@@ -10,14 +10,14 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{ed25519::SignatureBytes, Verifier};
 
-use crate::messages::{Message, ProgressMessage};
+use crate::messages::{Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     block::*, 
-    certificates::*, 
-    keypair::*, 
-    collectors::*
+    keypair::*,
 };
+
+use super::types::{Phase, QuorumCertificate};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum HotStuffMessage {

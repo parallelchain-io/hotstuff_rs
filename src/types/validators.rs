@@ -125,6 +125,16 @@ impl ValidatorSet {
     pub(crate) fn random(&self) -> Option<&VerifyingKey> {
         self.validators.choose(&mut rand::thread_rng())
     }
+
+    pub(crate) fn quorum(&self) -> TotalPower {
+        const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
+
+        (self.total_power()
+            .checked_mul(2)
+            .expect(TOTAL_POWER_OVERFLOW)
+            / 3)
+            + 1
+    }
 }
 
 /// Intermediate representation of [ValidatorSet] for safe serialization and deserialization.

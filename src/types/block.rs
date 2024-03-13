@@ -9,8 +9,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use sha2::Sha256 as CryptoHasher;
 use sha2::Digest;
 
+use crate::hotstuff::types::QuorumCertificate;
 use crate::types::basic::*;
-use crate::types::certificates::{Certificate, QuorumCertificate};
 use crate::types::validators::ValidatorSet;
 
 

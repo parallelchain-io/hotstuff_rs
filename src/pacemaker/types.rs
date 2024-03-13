@@ -7,13 +7,70 @@
 
 use std::collections::{HashMap, HashSet};
 
+use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::Verifier;
+
 use crate::types::{
     basic::*,
     validators::*,
-    certificates::*,
-    collectors::*,
 };
 use crate::pacemaker::messages::TimeoutVote;
+
+/// Proof that at least a quorum of validators have sent a [TimeoutVote][crate::pacemaker::messages::TimeoutVote] for the same view.
+/// Required for advancing to a new epoch as part of the [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+#[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub struct TimeoutCertificate {
+    pub chain_id: ChainID,
+    pub view: ViewNumber,
+    pub signatures: SignatureSet,
+}
+
+impl TimeoutCertificate {
+
+    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms a quorum.
+    pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+
+            // Check whether the size of the signature set is the same as the size of the validator set.
+            if self.signatures.len() != validator_set.len() {
+                return false;
+            }
+
+            // Check whether every signature is correct and tally up their powers.
+            let mut total_power: TotalPower = 0;
+            for (signature, (signer, power)) in self
+                .signatures
+                .iter()
+                .zip(validator_set.validators_and_powers())
+            {
+                if let Some(signature) = signature {
+                    if let Ok(signature) = Signature::from_slice(signature) {
+                        if signer
+                            .verify(
+                                &(self.chain_id, self.view)
+                                    .try_to_vec()
+                                    .unwrap(),
+                                &signature,
+                            )
+                            .is_ok()
+                        {
+                            total_power += power as u128;
+                        } else {
+                            // tc contains incorrect signature.
+                            return false;
+                        }
+                    } else {
+                        // tc contains incorrect signature.
+                        return false;
+                    }
+                }
+            }
+
+            // Check if the signatures form a quorum.
+            total_power >= validator_set.quorum()
+    
+    }
+
+}
 
 /// Helps leaders incrementally form [TimeoutCertificate]s by combining votes for the same chain_id and view by replicas
 /// in a given [validator set](ValidatorSet).
@@ -26,9 +83,9 @@ pub(crate) struct TimeoutVoteCollector {
     signature_set: SignatureSet,
 }
 
-impl Collector<TimeoutVote, TimeoutCertificate> for TimeoutVoteCollector {
+impl TimeoutVoteCollector {
     
-    fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
+    pub(crate) fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         let n = validator_set.len();
         Self { 
             chain_id, 
@@ -48,7 +105,7 @@ impl Collector<TimeoutVote, TimeoutCertificate> for TimeoutVoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
+    pub(crate) fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
         
         if self.chain_id != vote.chain_id || self.view != vote.view {
             return None
@@ -63,7 +120,7 @@ impl Collector<TimeoutVote, TimeoutCertificate> for TimeoutVoteCollector {
                 self.signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
-                if self.signature_set_power >= TimeoutCertificate::quorum(self.validator_set_total_power) {
+                if self.signature_set_power >= self.validator_set.quorum() {
                     let collected_tc = TimeoutCertificate {
                         chain_id: self.chain_id,
                         view: self.view,

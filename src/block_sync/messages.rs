@@ -8,11 +8,9 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{messages::{Message, ProgressMessage}, types::{
+use crate::{hotstuff::types::QuorumCertificate, messages::{Message, ProgressMessage}, types::{
     basic::*,
     block::*,
-    certificates::*,
-    collectors::*,
 }};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
