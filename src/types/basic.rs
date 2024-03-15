@@ -18,6 +18,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
+/// Id of the blockchain, used to identify the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct ChainID(u64);
 
@@ -27,6 +28,7 @@ impl ChainID {
     }
 }
 
+/// Height of an existing block in the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct BlockHeight(u64);
 
@@ -52,6 +54,7 @@ impl AddAssign<u64> for BlockHeight {
     }
 }
 
+/// Set of blocks which represents the children of an existing block in the blockchain.
 #[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize, Default)]
 pub struct ChildrenList(Vec<CryptoHash>);
 
@@ -69,6 +72,8 @@ impl ChildrenList {
     }
 }
 
+/// The hash of a block. Given a [block][crate::types::block::Block] 
+/// the hash is obtained [like this][crate::types::block::Block::hash].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct CryptoHash([u8; 32]);
 
@@ -82,6 +87,7 @@ impl CryptoHash {
     }
 }
 
+/// Data stored in a [block][crate::types::block::Block].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Data(Vec<Datum>);
 
@@ -99,6 +105,7 @@ impl Data {
     }
 }
 
+/// Number of [Datum] stored in a block's [Data].
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct DataLen(u32);
 
@@ -108,6 +115,7 @@ impl DataLen {
     }
 }
 
+/// Single datum stored in a block's [Data].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Datum(Vec<u8>);
 
@@ -121,9 +129,11 @@ impl Datum {
     }
 }
 
+/// Power of a validator.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Power(u64);
 
+/// Total power obtained via summing up the [Power]s of a set of validators.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct TotalPower(u128);
 
@@ -143,6 +153,7 @@ impl AddAssign<Power> for TotalPower {
     }
 }
 
+/// Signature represented in bytes.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct SignatureBytes([u8; 64]);
 
@@ -156,6 +167,10 @@ impl SignatureBytes {
     }
 }
 
+/// Set of signatures, represented as a vector with the size of a given validator set.
+/// The value at a particular position is either:
+/// 1. None: if the a valid signature from the validator at the given position has not been obtained, or
+/// 2. Some(signature_bytes): if signature_bytes has been obtained from the validator at the given position.
 #[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct SignatureSet(Vec<Option<SignatureBytes>>);
 
@@ -186,6 +201,7 @@ impl SignatureSet {
     }
 }
 
+/// HotStuff view number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize)]
 pub struct ViewNumber(u64);
 
@@ -209,6 +225,7 @@ impl Add<u64> for ViewNumber {
     }
 }
 
+/// Length of a [Pacemaker][crate::pacemaker] epoch.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct EpochLength(u32);
 
@@ -218,6 +235,7 @@ impl EpochLength {
     }
 }
 
+/// Size of a buffer (in bytes).
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct BufferSize(u64);
 
@@ -227,6 +245,7 @@ impl BufferSize {
     }
 }
 
+/// Stores the updates associated with committing a given block.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {
     pub inserts: HashMap<K, V>,
