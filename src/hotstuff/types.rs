@@ -42,14 +42,14 @@ impl QuorumCertificate {
             }
 
             // Check whether every signature is correct and tally up their powers.
-            let mut total_power: TotalPower = 0;
+            let mut total_power: TotalPower = TotalPower::new(0);
             for (signature, (signer, power)) in self
                 .signatures
                 .iter()
                 .zip(validator_set.validators_and_powers())
             {
                 if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(signature) {
+                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
                         if signer
                             .verify(
                                 &(self.chain_id, self.view, self.block, self.phase)
@@ -59,7 +59,7 @@ impl QuorumCertificate {
                             )
                             .is_ok()
                         {
-                            total_power += power as u128;
+                            total_power += power;
                         } else {
                             // qc contains incorrect signature.
                             return false;
@@ -78,11 +78,11 @@ impl QuorumCertificate {
 
     pub const fn genesis_qc() -> QuorumCertificate {
         QuorumCertificate {
-            chain_id: 0,
-            view: 0,
-            block: [0u8; 32],
+            chain_id: ChainID::new(0),
+            view: ViewNumber::init(),
+            block: CryptoHash::new([0u8; 32]),
             phase: Phase::Generic,
-            signatures: SignatureSet::new(),
+            signatures: SignatureSet::init(),
         }
     }
 
@@ -181,7 +181,7 @@ impl VoteCollector {
             if let std::collections::hash_map::Entry::Vacant(e) =
                 self.signature_sets.entry((vote.block, vote.phase))
             {
-                e.insert((vec![None; self.validator_set.len()], 0));
+                e.insert((SignatureSet::new(self.validator_set.len()), TotalPower::new(0)));
             }
 
             let (signature_set, signature_set_power) = self
@@ -190,9 +190,9 @@ impl VoteCollector {
                 .unwrap();
 
             // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
-            if signature_set[pos].is_none() {
-                signature_set[pos] = Some(vote.signature);
-                *signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
+            if signature_set.get(pos).is_none() {
+                signature_set.set(pos, Some(vote.signature));
+                *signature_set_power += *self.validator_set.power(signer).unwrap();
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
                 if *signature_set_power >= self.validator_set.quorum() {
@@ -232,7 +232,7 @@ impl NewViewCollector {
             total_power: validator_set.total_power(),
             validator_set,
             collected_from: HashSet::new(),
-            accumulated_power: 0,
+            accumulated_power: TotalPower::new(0),
         }
     }
 
@@ -246,7 +246,7 @@ impl NewViewCollector {
 
         if !self.collected_from.contains(sender) {
             self.collected_from.insert(*sender);
-            self.accumulated_power += *self.validator_set.power(sender).unwrap() as u128;
+            self.accumulated_power += *self.validator_set.power(sender).unwrap();
         }
 
         self.accumulated_power >= self.validator_set.quorum()

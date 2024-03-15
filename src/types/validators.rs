@@ -73,9 +73,9 @@ impl ValidatorSet {
     }
 
     pub fn total_power(&self) -> TotalPower {
-        let mut total_power = 0; 
+        let mut total_power = TotalPower::new(0); 
         for power in self.powers.values() {
-            total_power += *power as TotalPower
+            total_power += *power
         }
         total_power
     }
@@ -100,7 +100,7 @@ impl ValidatorSet {
     }
 
     /// Get a vector containing each validator and its power, in ascending order of the validators' verifying keys.
-    pub fn validators_and_powers(&self) -> Vec<(VerifyingKey, u64)> {
+    pub fn validators_and_powers(&self) -> Vec<(VerifyingKey, Power)> {
         self.validators()
             .map(|v| (*v, *self.power(v).unwrap()))
             .collect()
@@ -129,11 +129,15 @@ impl ValidatorSet {
     pub(crate) fn quorum(&self) -> TotalPower {
         const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
 
+        TotalPower::new(
         (self.total_power()
+            .int()
             .checked_mul(2)
             .expect(TOTAL_POWER_OVERFLOW)
-            / 3)
+            / 3
+            )
             + 1
+        )
     }
 }
 
@@ -155,7 +159,7 @@ impl TryFrom<ValidatorSetBytes> for ValidatorSet {
         let new_validators = value.validators.iter().flat_map(|pk_bytes| VerifyingKey::from_bytes(pk_bytes)).collect();
 
         let mut new_powers = <HashMap<VerifyingKey, Power>> :: new();
-        let convert_and_insert = |(k, v): (&[u8; 32], &u64)| -> Result<(), Error> {
+        let convert_and_insert = |(k, v): (&[u8; 32], &Power)| -> Result<(), Error> {
             let pk = VerifyingKey::from_bytes(k)?;
             new_powers.insert(pk, *v);
             Ok(())
@@ -195,7 +199,7 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
 
     fn try_from(value: ValidatorSetUpdatesBytes) -> Result<Self, Self::Error> {
         let mut new_inserts = <HashMap<VerifyingKey, Power>> :: new();
-        let convert_and_insert_inserts = |(k, v): (&[u8; 32], &u64)| -> Result<(), Error> {
+        let convert_and_insert_inserts = |(k, v): (&[u8; 32], &Power)| -> Result<(), Error> {
             let pk = VerifyingKey::from_bytes(k)?;
             new_inserts.insert(pk, *v); // Safety: Insert should always return None.
             Ok(())

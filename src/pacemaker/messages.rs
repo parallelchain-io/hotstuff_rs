@@ -7,7 +7,6 @@
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::ed25519::SignatureBytes;
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::messages::{Message, ProgressMessage, SignedMessage};
@@ -93,7 +92,7 @@ impl SignedMessage for TimeoutVote {
             .unwrap()
     }
 
-    fn signature_bytes(&self) -> crate::types::basic::SignatureBytes {
+    fn signature_bytes(&self) -> SignatureBytes {
         self.signature
     }
 }

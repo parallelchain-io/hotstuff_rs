@@ -173,7 +173,7 @@ impl<M> MessageBuffer<M> {
         Self {
             buffer_capacity,
             buffer: BTreeMap::new(),
-            buffer_size: 0,
+            buffer_size: BufferSize::new(0),
         }
     }
 

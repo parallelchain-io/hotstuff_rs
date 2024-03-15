@@ -23,7 +23,7 @@ use crate::hotstuff::protocol::{HotStuff, HotStuffConfiguration};
 use crate::networking::*;
 use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration, PacemakerUpdates};
 use crate::state::*;
-use crate::types::basic::{ChainID, ViewNumber};
+use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,
@@ -52,13 +52,13 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         block_sync_response_receiver: Receiver<(VerifyingKey, BlockSyncResponse)>,
         shutdown_signal: Receiver<()>,
         event_publisher: Option<Sender<Event>>,
-        progress_msg_buffer_capacity: u64,
+        progress_msg_buffer_capacity: BufferSize,
     ) -> Self {
 
         let highest_view_with_progress = max(block_tree.highest_view_entered(), block_tree.highest_qc().view);
         let init_view = 
-            if highest_view_with_progress == 0 {
-                0
+            if highest_view_with_progress == ViewNumber::init() {
+                ViewNumber::init()
             } else {
                 highest_view_with_progress + 1
             };

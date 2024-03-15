@@ -8,7 +8,7 @@
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{ed25519::SignatureBytes, Verifier};
+use ed25519_dalek::{Verifier};
 
 use crate::messages::{Message, ProgressMessage, SignedMessage};
 use crate::types::{

@@ -9,27 +9,223 @@
 //! the components of the hotstuff-rs protocol, can be found in the respetive directories.
 
 use std::{
-    collections::{hash_map, hash_set, HashMap, HashSet},
+    collections::{hash_map, hash_set, HashMap, HashSet}, 
+    fmt::{self, Display, Formatter}, 
     hash::Hash,
+    ops::{Add, AddAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
-pub type ChainID = u64;
-pub type BlockHeight = u64;
-pub type ChildrenList = Vec<CryptoHash>;
-pub type CryptoHash = [u8; 32];
-pub type Data = Vec<Datum>;
-pub type DataLen = u32;
-pub type Datum = Vec<u8>;
-pub type Power = u64;
-pub type TotalPower = u128;
-pub type SignatureBytes = [u8; 64];
-pub type SignatureSet = Vec<Option<SignatureBytes>>;
-pub type ViewNumber = u64;
-pub type EpochLength = u32;
-pub type BufferSize = u64;
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct ChainID(u64);
+
+impl ChainID {
+    pub const fn new(int: u64) -> Self {
+        Self(int)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
+pub struct BlockHeight(u64);
+
+impl BlockHeight {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 8] {
+        self.0.to_le_bytes()
+    }
+}
+
+impl Display for BlockHeight {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AddAssign<u64> for BlockHeight {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0.add_assign(rhs)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize, Default)]
+pub struct ChildrenList(Vec<CryptoHash>);
+
+impl ChildrenList {
+    pub(crate) fn new(blocks: Vec<CryptoHash>) -> Self {
+        Self(blocks)
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, CryptoHash> {
+        self.0.iter()
+    }
+
+    pub(crate) fn push(&mut self, value: CryptoHash) {
+        self.0.push(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+pub struct CryptoHash([u8; 32]);
+
+impl CryptoHash {
+    pub(crate) const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn bytes(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+pub struct Data(Vec<Datum>);
+
+impl Data {
+    pub(crate) fn new(datum_vec: Vec<Datum>) -> Self {
+        Self(datum_vec)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Datum> {
+        self.0.iter()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct DataLen(u32);
+
+impl DataLen {
+    pub fn int(&self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+pub struct Datum(Vec<u8>);
+
+impl Datum {
+    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn bytes(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+pub struct Power(u64);
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
+pub struct TotalPower(u128);
+
+impl TotalPower {
+    pub(crate) fn new(int: u128) -> Self {
+        Self(int)
+    }
+
+    pub fn int(&self) -> u128 {
+        self.0
+    }
+}
+
+impl AddAssign<Power> for TotalPower {
+    fn add_assign(&mut self, rhs: Power) {
+        self.0.add_assign(rhs.0 as u128)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct SignatureBytes([u8; 64]);
+
+impl SignatureBytes {
+    pub(crate) fn new(bytes: [u8; 64]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn bytes(&self) -> [u8; 64] {
+        self.0
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct SignatureSet(Vec<Option<SignatureBytes>>);
+
+impl SignatureSet {
+    pub const fn init() -> Self {
+        Self(Vec::new())
+    }
+
+    pub(crate) fn new(len: usize) -> Self {
+        Self(vec![None; len])
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Option<SignatureBytes>> {
+        self.0.iter()
+    }
+
+    pub fn get(&self, pos: usize) -> &Option<SignatureBytes> {
+        &self.0[pos]
+    }
+
+    pub(crate) fn set(&mut self, pos: usize, value: Option<SignatureBytes>) {
+        let signature_vec: &mut Vec<Option<SignatureBytes>> = self.0.as_mut();
+        signature_vec[pos] = value
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize)]
+pub struct ViewNumber(u64);
+
+impl ViewNumber {
+    pub const fn init() -> Self {
+        Self(0)
+    }
+}
+
+impl fmt::Display for ViewNumber {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Add<u64> for ViewNumber {
+    type Output = ViewNumber;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        ViewNumber(self.0.add(rhs))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct EpochLength(u32);
+
+impl EpochLength {
+    pub fn new(int: u32) -> Self {
+        Self(int)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct BufferSize(u64);
+
+impl BufferSize {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+}
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {

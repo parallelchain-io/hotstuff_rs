@@ -5,8 +5,6 @@
 
 //! Definitions of types specific to the [HotStuff] protocol.
 
-use std::collections::{HashMap, HashSet};
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
@@ -36,14 +34,14 @@ impl TimeoutCertificate {
             }
 
             // Check whether every signature is correct and tally up their powers.
-            let mut total_power: TotalPower = 0;
+            let mut total_power: TotalPower = TotalPower::new(0);
             for (signature, (signer, power)) in self
                 .signatures
                 .iter()
                 .zip(validator_set.validators_and_powers())
             {
                 if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(signature) {
+                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
                         if signer
                             .verify(
                                 &(self.chain_id, self.view)
@@ -53,7 +51,7 @@ impl TimeoutCertificate {
                             )
                             .is_ok()
                         {
-                            total_power += power as u128;
+                            total_power += power;
                         } else {
                             // tc contains incorrect signature.
                             return false;
@@ -92,8 +90,8 @@ impl TimeoutVoteCollector {
             view, 
             validator_set_total_power: validator_set.total_power(), 
             validator_set, 
-            signature_set_power: 0,
-            signature_set: vec![None; n], 
+            signature_set_power: TotalPower::new(0),
+            signature_set: SignatureSet::new(n), 
         }
     }
 
@@ -115,9 +113,9 @@ impl TimeoutVoteCollector {
         if let Some(pos) = self.validator_set.position(signer) {
 
             // If the vote has not been collected before, insert its signature into the signature set.
-            if self.signature_set[pos].is_none() {
-                self.signature_set[pos] = Some(vote.signature);
-                self.signature_set_power += *self.validator_set.power(signer).unwrap() as u128;
+            if self.signature_set.get(pos).is_none() {
+                self.signature_set.set(pos, Some(vote.signature));
+                self.signature_set_power += *self.validator_set.power(signer).unwrap();
 
                 // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
                 if self.signature_set_power >= self.validator_set.quorum() {

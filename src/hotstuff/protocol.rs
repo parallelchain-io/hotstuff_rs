@@ -66,7 +66,7 @@ impl<N: Network> HotStuff<N> {
 
     pub(crate) fn on_enter_view<K: KVStore>(
         &mut self, 
-        view: u64, 
+        view: ViewNumber, 
         leader: VerifyingKey,
         next_leader: VerifyingKey,
         block_tree: &mut BlockTree<K>,

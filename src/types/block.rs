@@ -48,7 +48,7 @@ impl Block {
         hasher.update(&height.try_to_vec().unwrap());
         hasher.update(&justify.try_to_vec().unwrap());
         hasher.update(&data_hash.try_to_vec().unwrap());
-        hasher.finalize().into()
+        CryptoHash::new(hasher.finalize().into())
     }
 
     /// Checks if hash and justify are cryptographically correct.
