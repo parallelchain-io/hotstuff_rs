@@ -25,7 +25,11 @@
 //!    that executing the block causes.
 
 use crate::state::{AppBlockTreeView, KVStore};
-use crate::types::*;
+use crate::types::{
+    basic::{AppStateUpdates, CryptoHash, Data, ViewNumber},
+    block::Block,
+    validators::ValidatorSetUpdates,
+};
 
 pub trait App<K: KVStore>: Send {
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;

@@ -60,7 +60,9 @@ use std::time::SystemTime;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
+use crate::state::basic::{ChildrenList, CryptoHash, ViewNumber};
 use crate::types::*;
+use crate::hotstuff::types::{QuorumCertificate, Phase};
 
 /// A read and write handle into the block tree exclusively owned by the algorithm thread.
 pub struct BlockTree<K: KVStore>(K);
@@ -89,9 +91,9 @@ impl<K: KVStore> BlockTree<K> {
         validator_set.apply_updates(initial_validator_set);
         wb.set_committed_validator_set(&validator_set);
 
-        wb.set_locked_view(0);
+        wb.set_locked_view(ViewNumber::init());
 
-        wb.set_highest_view_entered(0);
+        wb.set_highest_view_entered(ViewNumber::init());
 
         wb.set_highest_qc(&QuorumCertificate::genesis_qc());
 
@@ -169,7 +171,7 @@ impl<K: KVStore> BlockTree<K> {
 
         let mut siblings = self
             .children(&block.justify.block)
-            .unwrap_or(ChildrenList::new());
+            .unwrap_or(ChildrenList::default());
         siblings.push(block.hash);
         wb.set_children(&block.justify.block, &siblings);
 
@@ -405,7 +407,7 @@ impl<K: KVStore> BlockTree<K> {
             self.delete_branch(wb, sibling);
         }
 
-        wb.set_children(&parent_or_genesis, &vec![*block]);
+        wb.set_children(&parent_or_genesis, &ChildrenList::new(vec![*block]));
     }
 
     /// Deletes all data of blocks in a branch starting from (and including) a given root block.
@@ -428,8 +430,8 @@ impl<K: KVStore> BlockTree<K> {
 
         while let Some(block) = stack.pop() {
             if let Some(children) = self.children(&block) {
-                for child in children {
-                    stack.push(child)
+                for child in children.iter() {
+                    stack.push(*child)
                 }
             };
             branch.push(block)
@@ -589,6 +591,10 @@ impl<'a, K: KVStore> AppBlockTreeView<'a, K> {
 pub struct BlockTreeWriteBatch<W: WriteBatch>(W);
 
 use paths::*;
+
+use self::basic::{AppStateUpdates, BlockHeight, ChainID, Data, DataLen, Datum};
+use self::block::Block;
+use self::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {
         BlockTreeWriteBatch(W::new())
@@ -601,7 +607,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Block ↓↓↓  */
 
     pub fn set_block(&mut self, block: &Block) {
-        let block_prefix = combine(&BLOCKS, &block.hash);
+        let block_prefix = combine(&BLOCKS, &block.hash.get_bytes());
 
         self.0.set(
             &combine(&block_prefix, &BLOCK_HEIGHT),
@@ -624,12 +630,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
         for (i, datum) in block.data.iter().enumerate() {
             let datum_key = combine(&block_data_prefix, &(i as u32).try_to_vec().unwrap());
-            self.0.set(&datum_key, datum);
+            self.0.set(&datum_key, datum.get_bytes());
         }
     }
 
     pub fn delete_block(&mut self, block: &CryptoHash, data_len: DataLen) {
-        let block_prefix = combine(&BLOCKS, block);
+        let block_prefix = combine(&BLOCKS, &block.get_bytes());
 
         self.0.delete(&combine(&block_prefix, &BLOCK_HEIGHT));
         self.0.delete(&combine(&block_prefix, &BLOCK_JUSTIFY));
@@ -637,7 +643,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         self.0.delete(&combine(&block_prefix, &BLOCK_DATA_LEN));
 
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
-        for i in 0..data_len {
+        for i in 0..data_len.get_int() {
             let datum_key = combine(&block_data_prefix, &i.try_to_vec().unwrap());
             self.0.delete(&datum_key);
         }
@@ -656,13 +662,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_children(&mut self, block: &CryptoHash, children: &ChildrenList) {
         self.0.set(
-            &combine(&BLOCK_TO_CHILDREN, block),
+            &combine(&BLOCK_TO_CHILDREN, &block.get_bytes()),
             &children.try_to_vec().unwrap(),
         );
     }
 
     pub fn delete_children(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(&BLOCK_TO_CHILDREN, block));
+        self.0.delete(&combine(&BLOCK_TO_CHILDREN, &block.get_bytes()));
     }
 
     /* ↓↓↓ Committed App State ↓↓↓ */
@@ -683,7 +689,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         app_state_updates: &AppStateUpdates,
     ) {
         self.0.set(
-            &combine(&PENDING_APP_STATE_UPDATES, block),
+            &combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()),
             &app_state_updates.try_to_vec().unwrap(),
         );
     }
@@ -699,7 +705,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     }
 
     pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(&PENDING_APP_STATE_UPDATES, block));
+        self.0.delete(&combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()));
     }
 
     /* ↓↓↓ Commmitted Validator Set */
@@ -721,14 +727,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     ) {
         let validator_set_updates_bytes: ValidatorSetUpdatesBytes = validator_set_updates.into();
         self.0.set(
-            &combine(&PENDING_VALIDATOR_SET_UPDATES, block),
+            &combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()),
             &validator_set_updates_bytes.try_to_vec().unwrap(),
         )
     }
 
     pub fn delete_pending_validator_set_updates(&mut self, block: &CryptoHash) {
         self.0
-            .delete(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))
+            .delete(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()))
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */
@@ -916,7 +922,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         }
 
         fn block_height(&self, block: &CryptoHash) -> Option<BlockHeight> {
-            let block_key = combine(&BLOCKS, block);
+            let block_key = combine(&BLOCKS, &block.get_bytes());
             let block_height_key = combine(&block_key, &BLOCK_HEIGHT);
             let block_height = {
                 let bs = self.get(&block_height_key)?;
@@ -928,7 +934,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_justify(&self, block: &CryptoHash) -> Option<QuorumCertificate> {
             Some(
                 QuorumCertificate::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(block, &BLOCK_JUSTIFY)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_JUSTIFY)))?,
                 )
                 .unwrap(),
             )
@@ -937,7 +943,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_data_hash(&self, block: &CryptoHash) -> Option<CryptoHash> {
             Some(
                 CryptoHash::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(block, &BLOCK_DATA_HASH)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA_HASH)))?,
                 )
                 .unwrap(),
             )
@@ -946,7 +952,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_data_len(&self, block: &CryptoHash) -> Option<DataLen> {
             Some(
                 DataLen::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(block, &BLOCK_DATA_LEN)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA_LEN)))?,
                 )
                 .unwrap(),
             )
@@ -954,19 +960,20 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
 
         fn block_data(&self, block: &CryptoHash) -> Option<Data> {
             let data_len = self.block_data_len(block)?;
-            let data = (0..data_len)
+            let data = (0..data_len.get_int())
                 .map(|i| self.block_datum(block, i).unwrap())
                 .collect();
 
-            Some(data)
+            Some(Data::new(data))
         }
 
         fn block_datum(&self, block: &CryptoHash, datum_index: u32) -> Option<Datum> {
-            let block_data_prefix = combine(&BLOCKS, &combine(block, &BLOCK_DATA));
+            let block_data_prefix = combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA));
             self.get(&combine(
                 &block_data_prefix,
                 &datum_index.try_to_vec().unwrap(),
             ))
+            .map(|bytes| Datum::new(bytes))
         }
 
         /* ↓↓↓ Block Height to Block ↓↓↓ */
@@ -985,7 +992,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
 
         fn children(&self, block: &CryptoHash) -> Option<ChildrenList> {
             Some(
-                ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_TO_CHILDREN, block))?)
+                ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_TO_CHILDREN, &block.get_bytes()))?)
                     .unwrap(),
             )
         }
@@ -1001,7 +1008,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn pending_app_state_updates(&self, block: &CryptoHash) -> Option<AppStateUpdates> {
             Some(
                 AppStateUpdates::deserialize(
-                    &mut &*self.get(&combine(&PENDING_APP_STATE_UPDATES, block))?,
+                    &mut &*self.get(&combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()))?,
                 )
                 .unwrap(),
             )
@@ -1017,7 +1024,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         /* ↓↓↓ Pending Validator Set Updates */
 
         fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, block))?,).unwrap();
+            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()))?,).unwrap();
             Some(ValidatorSetUpdates::try_from(validator_set_updates_bytes).unwrap())
         }
 
