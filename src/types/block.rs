@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the 'block' type and its associated methods.
+//! Definitions for the 'block' type and its methods.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use sha2::Sha256 as CryptoHasher;

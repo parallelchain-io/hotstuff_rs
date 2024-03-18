@@ -3,10 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for 'inert' types, i.e., those that are sent around and inspected, but have no active behavior.
-//! The types and traits defined in [crate::types] are either common across the sub-protocols or
-//! required for the signature of the [block tree][crate::state::BlockTree]. Other types and traits, specific to 
-//! the components of the hotstuff-rs protocol, can be found in the respetive directories.
+//! The types and traits defined in [crate::types] are either common across the sub-protocols used by hotstuff-rs. 
+//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in the respetive directories.
+//! 
+//! The types defined in [crate::types::basic] include:
+//! 1. Inert' types, i.e., those that are sent around and inspected, but have no active behavior. These types follow
+//!    the newtype pattern and the API for using these types is defined in this module.
+//! 2. The [UpdateSet] type, which represents generic-type state updates associated with committing a block.
 
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
@@ -15,8 +18,6 @@ use std::{
     ops::{Add, AddAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
-pub use sha2::Sha256 as CryptoHasher;
 
 /// Id of the blockchain, used to identify the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
@@ -25,6 +26,10 @@ pub struct ChainID(u64);
 impl ChainID {
     pub const fn new(int: u64) -> Self {
         Self(int)
+    }
+
+    pub const fn get_int(&self) -> u64 {
+        self.0
     }
 }
 
@@ -35,6 +40,10 @@ pub struct BlockHeight(u64);
 impl BlockHeight {
     pub fn new(int: u64) -> Self {
         Self(int)
+    }
+
+    pub const fn get_int(&self) -> u64 {
+        self.0
     }
 
     pub fn to_le_bytes(&self) -> [u8; 8] {
@@ -63,6 +72,10 @@ impl ChildrenList {
         Self(blocks)
     }
 
+    pub const fn get_vec(&self) -> &Vec<CryptoHash> {
+        &self.0
+    }
+
     pub fn iter(&self) -> std::slice::Iter<'_, CryptoHash> {
         self.0.iter()
     }
@@ -82,7 +95,7 @@ impl CryptoHash {
         Self(bytes)
     }
 
-    pub fn bytes(&self) -> [u8; 32] {
+    pub const fn get_bytes(&self) -> [u8; 32] {
         self.0
     }
 }
@@ -94,6 +107,10 @@ pub struct Data(Vec<Datum>);
 impl Data {
     pub(crate) fn new(datum_vec: Vec<Datum>) -> Self {
         Self(datum_vec)
+    }
+
+    pub const fn get_vec(&self) -> &Vec<Datum> {
+        &self.0
     }
 
     pub fn len(&self) -> usize {
@@ -110,7 +127,7 @@ impl Data {
 pub struct DataLen(u32);
 
 impl DataLen {
-    pub fn int(&self) -> u32 {
+    pub const fn get_int(&self) -> u32 {
         self.0
     }
 }
@@ -124,7 +141,7 @@ impl Datum {
         Self(bytes)
     }
 
-    pub fn bytes(&self) -> &Vec<u8> {
+    pub const fn get_bytes(&self) -> &Vec<u8> {
         &self.0
     }
 }
@@ -132,6 +149,12 @@ impl Datum {
 /// Power of a validator.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Power(u64);
+
+impl Power {
+    pub const fn get_int(&self) -> u64 {
+        self.0
+    }
+}
 
 /// Total power obtained via summing up the [Power]s of a set of validators.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
@@ -142,7 +165,7 @@ impl TotalPower {
         Self(int)
     }
 
-    pub fn int(&self) -> u128 {
+    pub const fn get_int(&self) -> u128 {
         self.0
     }
 }
@@ -162,7 +185,7 @@ impl SignatureBytes {
         Self(bytes)
     }
 
-    pub fn bytes(&self) -> [u8; 64] {
+    pub const fn get_bytes(&self) -> [u8; 64] {
         self.0
     }
 }
@@ -181,6 +204,10 @@ impl SignatureSet {
 
     pub(crate) fn new(len: usize) -> Self {
         Self(vec![None; len])
+    }
+
+    pub const fn get_vec(&self) -> &Vec<Option<SignatureBytes>> {
+        &self.0
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Option<SignatureBytes>> {
@@ -209,6 +236,10 @@ impl ViewNumber {
     pub const fn init() -> Self {
         Self(0)
     }
+
+    pub const fn get_int(&self) -> u64 {
+        self.0
+    }
 }
 
 impl fmt::Display for ViewNumber {
@@ -233,6 +264,10 @@ impl EpochLength {
     pub fn new(int: u32) -> Self {
         Self(int)
     }
+
+    pub const fn get_int(&self) -> u32 {
+        self.0
+    }
 }
 
 /// Size of a buffer (in bytes).
@@ -242,6 +277,10 @@ pub struct BufferSize(u64);
 impl BufferSize {
     pub fn new(int: u64) -> Self {
         Self(int)
+    }
+
+    pub const fn get_int(&self) -> u64 {
+        self.0
     }
 }
 

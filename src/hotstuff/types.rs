@@ -49,7 +49,7 @@ impl QuorumCertificate {
                 .zip(validator_set.validators_and_powers())
             {
                 if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
+                    if let Ok(signature) = Signature::from_slice(&signature.get_bytes()) {
                         if signer
                             .verify(
                                 &(self.chain_id, self.view, self.block, self.phase)
@@ -88,6 +88,14 @@ impl QuorumCertificate {
 
     pub fn is_genesis_qc(&self) -> bool {
         *self == Self::genesis_qc()
+    }
+
+    pub fn is_block_justify(&self) -> bool {
+        self.phase.is_generic() || self.phase.is_commit()
+    }
+
+    pub fn is_nudge_justify(&self) -> bool {
+        self.phase.is_prepare() || self.phase.is_precommit()
     }
 
 }

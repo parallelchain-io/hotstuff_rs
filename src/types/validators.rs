@@ -13,10 +13,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
 use rand::seq::SliceRandom;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
-pub use sha2::Sha256 as CryptoHasher;
 
 use super::basic::{Power, TotalPower, UpdateSet};
 
+/// Internal type used for serializing and deserializing values of type [VerifyingKey].
 type VerifyingKeyBytes = [u8; 32];
 
 /// Identities of validators and their voting powers.
@@ -131,7 +131,7 @@ impl ValidatorSet {
 
         TotalPower::new(
         (self.total_power()
-            .int()
+            .get_int()
             .checked_mul(2)
             .expect(TOTAL_POWER_OVERFLOW)
             / 3
