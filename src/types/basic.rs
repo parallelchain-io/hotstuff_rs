@@ -14,8 +14,7 @@
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
     fmt::{self, Display, Formatter}, 
-    hash::Hash,
-    ops::{Add, AddAssign}
+    hash::Hash, ops::{Add, AddAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -233,6 +232,10 @@ impl SignatureSet {
 pub struct ViewNumber(u64);
 
 impl ViewNumber {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+    
     pub const fn init() -> Self {
         Self(0)
     }

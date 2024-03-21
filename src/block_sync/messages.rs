@@ -8,10 +8,11 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{hotstuff::types::QuorumCertificate, messages::{Message, ProgressMessage}, types::{
-    basic::*,
-    block::*,
-}};
+use crate::{
+    hotstuff::types::QuorumCertificate, 
+    messages::{Message, ProgressMessage}, 
+    types::{basic::*,block::*}
+};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum BlockSyncMessage {
@@ -37,22 +38,10 @@ pub struct BlockSyncRequest {
     pub limit: u32,
 }
 
-impl Into<Message> for BlockSyncRequest {
-    fn into(self) -> Message {
-        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncRequest(self))
-    }
-}
-
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockSyncResponse {
     pub blocks: Vec<Block>,
     pub highest_qc: QuorumCertificate,
-}
-
-impl Into<Message> for BlockSyncResponse {
-    fn into(self) -> Message {
-        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncResponse(self))
-    }
 }
 
 // Messages that may trigger sync, exchanged as part of the normal progress protocol.
@@ -73,14 +62,4 @@ pub struct AdvertiseBlock {
     pub block: CryptoHash,
     pub block_qc: QuorumCertificate, // highest known qc for the block
     //TODO: pub signature: SignatureBytes, // necessary to authenticate the sender of this message!
-}
-
-impl Into<Message> for AdvertiseBlock {
-    fn into(self) -> Message {
-        Message::ProgressMessage(ProgressMessage::
-            BlockSyncTriggerMessage(BlockSyncTriggerMessage::
-                AdvertiseBlock(self)
-            )
-        )
-    }
 }

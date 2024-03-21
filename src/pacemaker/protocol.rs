@@ -12,8 +12,9 @@ use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
 use ed25519_dalek::VerifyingKey;
 
 use crate::events::Event;
+use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
-use crate::state::{BlockTree, KVStore};
+use crate::state::{BlockTree, BlockTreeWriteBatch, KVStore};
 use crate::types::basic::EpochLength;
 use crate::types::validators::ValidatorSet;
 use crate::types::{
@@ -23,22 +24,26 @@ use crate::types::{
 use crate::pacemaker::messages::{AdvanceView, PacemakerMessage, TimeoutVote};
 use crate::pacemaker::types::TimeoutVoteCollector;
 
+use super::messages::ProgressCertificate;
+
 /// A pluggable Pacemaker protocol for Byzantine View Synchronization inspired by 
 /// the Lewis-Pye View Synchronization protocol (https://arxiv.org/pdf/2201.01107.pdf).
 /// Its [PacemakerState] is an authoritative source of information regarding the current view
 /// and its leader, and [Algorithm][crate::algorithm::Algorithm] should regularly query the 
-/// [Pacemaker] for this information, and propagate the information to 
+/// [Pacemaker] for this information ([ViewInfo]), and propagate the information to 
 /// [HotStuff](crate::hotstuff::protocol::HotStuff).
 ///
-/// The [Pacemaker] exposes the following API for use in the [Algorithm]:
+/// The [Pacemaker] exposes the following API for use in the [Algorithm][crate::algorithm::Algorithm]:
 /// 1. [Pacemaker::new]: creates a fresh instance of the [Pacemaker],
-/// 2. [Pacemaker::updates]: queries the [Pacemaker] to determine whether the view should be updated,
+/// 2. [Pacemaker::view_info]: queries the [Pacemaker] for [ViewInfo], which can be used to determine whether 
+///    the view should be updated,
 /// 3. [Pacemaker::tick]: measures the time and updates the internal state of the [Pacemaker] if needed,
 /// 4. [Pacemaker::on_receive_msg]: updates the [PacemakerState] and possibly the [BlockTree] in response
 ///    to a received [PacemakerMessage].
 pub(crate) struct Pacemaker<N: Network> {
     config: PacemakerConfiguration,
     state: PacemakerState,
+    view_info: ViewInfo,
     sender: SenderHandle<N>,
     event_publisher: Option<Sender<Event>>,
 }
@@ -49,41 +54,54 @@ impl<N: Network> Pacemaker<N> {
         config: PacemakerConfiguration,
         sender: SenderHandle<N>,
         init_view: ViewNumber,
-        init_validator_set: ValidatorSet,
+        init_validator_set: &ValidatorSet,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let init_leader = select_leader(init_view, &init_validator_set);
-        let state = PacemakerState::initialize(config.clone(), init_view, init_leader, init_validator_set);
+        let state = PacemakerState::initialize(&config, init_view, init_validator_set.clone());
+        let view_info = ViewInfo::new(init_view, state.timeouts.get(&init_view).unwrap().clone(), &init_validator_set);
         Self {
             config,
             state,
+            view_info,
             sender,
             event_publisher,
         }
     }
 
-    /// Query the pacemaker for updates to the current view.
-    /// This method reads the internal state of the pacemaker ([PacemakerState]),
-    /// and returns updates relative to the given view.
-    pub(crate) fn updates(&self, view: ViewNumber) -> PacemakerUpdates {
-        todo!()
+    /// Query the pacemaker for [ViewInfo].
+    pub(crate) fn view_info(&self) -> &ViewInfo {
+        &self.view_info
     }
 
-    /// Check the current time ('clock tick'), and
-    /// possibly update the [internal state of the pacemaker][PacemakerState] 
-    /// in response to the 'clock tick'.
-    pub(crate) fn tick(&mut self) {
-        todo!()
-    }
+    /// Check the current time ('clock tick'), and possibly update the 
+    /// [internal state of the pacemaker][PacemakerState] in response to the 'clock tick'.
+    /// The state can be updated in two ways, in response to a clock tick indicating a view timeout:
+    /// 1. If it is an epoch view, then its deadline should be extended, and a timeout vote should be broadcasted.
+    /// 2. If it is a non-epoch view, then the view should be updated to the subsequent view.
+    /// Additionally, tick should check if there is a QC for the current view (epoch or non-epoch view) 
+    /// in the block tree, and if so it should broadcast the QC in an advance view message.
+    pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) {
 
-    /// Returns the deadline associated with the view stored in [PacemakerState::timeouts], if any.
-    pub(crate) fn view_deadline(&self, view: ViewNumber) -> Option<Instant> {
-        todo!()
-    }
+        let cur_view = self.view_info.view;
 
-    // Returns the leader of a given view and given validator set.
-    pub(crate) fn view_leader(&self, view: ViewNumber, validator_set: &ValidatorSet) -> VerifyingKey {
-        todo!()
+        // 1. Check if the current view has timed out, and proceed accordingly.
+        if Instant::now() > self.view_info.deadline {
+            if is_epoch_view(cur_view, self.config.epoch_length) {
+                let pacemaker_message = PacemakerMessage::timeout_vote(&self.config.keypair, self.config.chain_id, cur_view, block_tree.highest_tc());
+                self.sender.broadcast(Message::from(pacemaker_message));
+                self.state.extend_epoch_view_timeout(cur_view, &self.config).unwrap()
+
+            } else {
+                self.update_view(cur_view, cur_view + 1 , block_tree).unwrap()
+            }
+        }
+
+        // 2. Check if a QC for the current view is available, and if so broadcast an advance view message.
+        if block_tree.highest_qc().view == cur_view {
+            let pacemaker_message = PacemakerMessage::advance_view(ProgressCertificate::QuorumCertificate(block_tree.highest_qc()));
+            self.sender.broadcast(Message::from(pacemaker_message))
+        }
+
     }
 
     /// Update the internal state of the pacemaker and possibly the block tree 
@@ -91,32 +109,112 @@ impl<N: Network> Pacemaker<N> {
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: PacemakerMessage,
-        origin: VerifyingKey,
+        origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) {
-        todo!()
+        match msg {
+            PacemakerMessage::TimeoutVote(timeout_vote) => self.on_receive_timeout_vote(timeout_vote, origin, block_tree),
+            PacemakerMessage::AdvanceView(advance_view) => self.on_receive_advance_view(advance_view, origin, block_tree),
+        }
     }
 
-    /// Update the [internal state of the pacemaker][PacemakerState]
-    /// in response to receiving a [TimeoutVote].
+    /// Update the [internal state of the pacemaker][PacemakerState] in response to receiving a [TimeoutVote].
+    /// If a TC is collected, the replica should try to update its highest_tc and broadcast the collected TC.
+    /// The vote may be rejected if a replica is lagging behind the quorum from which the vote is sent. In such
+    /// case the replica can use the sender's highest_tc attached tp the vote to enter the epoch where the quorum 
+    /// is waiting.
     fn on_receive_timeout_vote<K: KVStore>(
         &mut self, 
-        msg: TimeoutVote,
-        origin: VerifyingKey,
-        block_tree: &BlockTree<K>,
+        timeout_vote: TimeoutVote,
+        signer: &VerifyingKey,
+        block_tree: &mut BlockTree<K>,
     ) {
-        todo!()
+        if timeout_vote.is_correct(signer) && is_epoch_view(timeout_vote.view, self.config.epoch_length) {
+            let fallback_tc = 
+                timeout_vote.highest_tc.clone().filter(|tc| tc.is_correct(&block_tree.committed_validator_set()));
+
+            if let Some(new_tc) = self.state.timeout_vote_collector.collect(signer, timeout_vote) {
+
+                // If a new TC for the current view is collected the replica should (possibly) update its highest_tc and broadcast the collected TC.
+                if block_tree.highest_tc().is_none() || new_tc.view > block_tree.highest_tc().unwrap().view {
+                    let mut wb = BlockTreeWriteBatch::new();
+                    wb.set_highest_tc(&new_tc);
+                    block_tree.write(wb);
+                    let pacemaker_msg = PacemakerMessage::advance_view(ProgressCertificate::TimeoutCertificate(new_tc));
+                    self.sender.broadcast(Message::from(pacemaker_msg))
+                }   
+            } else if let Some(tc) = fallback_tc {
+
+                // In case the replica is behind, the "fallback tc" contained in the timeout vote message
+                // serves to prove to it that a quorum is ahead and lets the replica catch up.
+                if block_tree.highest_tc().is_none() || tc.view > block_tree.highest_tc().unwrap().view {
+                    let mut wb = BlockTreeWriteBatch::new();
+                    wb.set_highest_tc(&tc);
+                    block_tree.write(wb);
+                    
+                    // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
+                    let cur_view = self.view_info.view;
+                    let next_view = tc.view + 1;
+                    self.update_view(cur_view, next_view, block_tree).unwrap()
+                }
+            }
+        } 
     }
 
     /// Update the [internal state of the pacemaker][PacemakerState]
     /// and possibly the block tree in response to receiving an [AdvanceView].
     fn on_receive_advance_view<K: KVStore>(
         &mut self, 
-        msg: AdvanceView,
-        origin: VerifyingKey,
+        advance_view: AdvanceView,
+        signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) {
-        todo!()
+    ) { 
+        let progress_certificate = advance_view.progress_certificate.clone();
+        let valid = match &progress_certificate {
+            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(&block_tree.committed_validator_set()),
+            ProgressCertificate::TimeoutCertificate(tc) => 
+                tc.is_correct(&block_tree.committed_validator_set()) && is_epoch_view(tc.view, self.config.epoch_length) 
+        };
+
+        if valid {
+            // Re-broadcast the received advance view message.
+            self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view)));
+
+            // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
+            let cur_view = self.view_info.view;
+            let next_view = progress_certificate.view() + 1;
+            self.update_view(cur_view, next_view, block_tree).unwrap()
+        }
+    }
+
+    /// Update the current view to the given next view. This may involve setting timeouts for the views
+    /// of a new epoch, in case the next view is in a future epoch.
+    /// Note: this method, by being the unique method used to update the pacemaker [ViewInfo],
+    /// and checking if the next view is greater than the current view, guarantees monotonicity.
+    fn update_view<K: KVStore>(
+        &mut self, 
+        cur_view: ViewNumber, 
+        next_view: ViewNumber, 
+        block_tree: &BlockTree<K>) 
+        -> Result<(), UpdateViewError>{
+
+        if next_view <= cur_view {
+            return Err(UpdateViewError::NonIncreasingView{cur_view, next_view})
+        }
+
+        // If about to enter a new epoch, set timeouts for the new epoch.
+        if epoch(cur_view, self.config.epoch_length) != epoch(next_view, self.config.epoch_length) {
+            self.state.set_timeouts(next_view, &self.config)?
+        }
+
+        // Update the view.
+        self.view_info = ViewInfo::new(
+            next_view, 
+            *self.state.timeouts.get(&next_view).unwrap(), 
+            &block_tree.committed_validator_set()
+        );
+
+        Ok(())
     }
 
 }
@@ -130,12 +228,9 @@ pub(crate) struct PacemakerConfiguration {
     pub(crate) max_view_time: Duration,
 }
 
-/// Internal state of the [Pacemaker]. Keeps track of the current
-/// view and leader, the timeouts allocated to current and future views (if any),
-/// and the [timeout votes][TimeoutVote] collected for the current view.
+/// Internal state of the [Pacemaker]. Keeps track of the timeouts allocated to current 
+/// and future views (if any), and the [timeout votes][TimeoutVote] collected for the current view.
 struct PacemakerState {
-    cur_view: ViewNumber,
-    cur_leader: VerifyingKey,
     timeouts: BTreeMap<ViewNumber, Instant>,
     timeout_vote_collector: TimeoutVoteCollector,
 }
@@ -144,46 +239,96 @@ impl PacemakerState {
 
     /// Initializes the [PacemakerState] on starting the protocol.
     fn initialize(
-        config: PacemakerConfiguration,
+        config: &PacemakerConfiguration,
         init_view: ViewNumber,
-        init_leader: VerifyingKey,
         validator_set: ValidatorSet,
     ) -> Self {
-        // TODO: set timeout for init_view/init-epoch.
-        Self { 
-            cur_view: init_view, 
-            cur_leader: init_leader,
+        let mut state = Self {
             timeouts: BTreeMap::new(),
             timeout_vote_collector: TimeoutVoteCollector::new(config.chain_id, init_view, validator_set),
-        }
+        };
+        // Safety: this should not throw an error since on initializing no timeouts have been set.
+        state.set_timeouts(init_view, config).unwrap();
+        state
     }
 
     /// Set the timeout for each view in the epoch starting from a given view.
-    fn set_timeouts(&mut self, start_view: ViewNumber, config: PacemakerConfiguration) {
-        todo!()
+    fn set_timeouts(&mut self, start_view: ViewNumber, config: &PacemakerConfiguration) -> Result<(), SetTimeoutError> {
+
+        // Remove the timeouts for expired views.
+        self.timeouts = self.timeouts.split_off(&start_view);
+
+        let epoch = epoch(start_view, config.epoch_length);
+        let epoch_view = epoch * config.epoch_length.get_int() as u64;
+
+        let start_time = Instant::now();
+
+        // Add timeouts for all remaining views in the epoch of start_view.
+        for view in start_view.get_int()..=epoch_view {
+
+            let time_to_view_deadline = Duration::from_secs(config.max_view_time.as_secs()*(view - start_view.get_int() + 1));
+
+            // Return an error if the timeout for this view has already been set. This should never happen.
+            if let Some(_) = self.timeouts.insert(ViewNumber::new(view), start_time + time_to_view_deadline) {
+                return Err(SetTimeoutError::TimeoutOverwrite {view: ViewNumber::new(view)})
+            }
+        }
+
+        return Ok(());
     }
 
-    /// Unique API for changing [PacemakerState]'s [cur_view](PacemakerState::cur_view) 
-    /// and [cur_leader][PacemakerState::cur_leader] fields.
-    /// Guarantess that over the course of the protocol execution the value of this
-    /// field is monotonically increasing. If the view and leader were updated,
-    /// it returns the old view and the new view respectively, else returns None.
-    fn update_view<K: KVStore>(
-        &mut self, 
-        block_tree: &BlockTree<K>, 
-        config: PacemakerConfiguration) 
-        -> Option<(ViewNumber, ViewNumber)> {
+    /// Extend the timeout of the epoch view by another max_view_time.
+    fn extend_epoch_view_timeout(&mut self, epoch_view: ViewNumber, config: &PacemakerConfiguration) -> Result<(), SetTimeoutError>  {
+        if !is_epoch_view(epoch_view, config.epoch_length) {
+            return Err(SetTimeoutError::TriedToExtendTimeoutOfNonEpochView {view: epoch_view})
+        }
+        match self.timeouts.get(&epoch_view) {
+            None => return Err(SetTimeoutError::TimeoutOfEpochViewNotSet{view: epoch_view}),
+            Some(v) => {self.timeouts.insert(epoch_view, *v + config.max_view_time);}
+        }
 
-        // Get the max of self.cur_view, highest_qc().view, highested_entered_view, highest_tc().view,
-        // and add 1
-        todo!()
+        Ok(())
+
     }
 
 }
 
-pub(crate) enum PacemakerUpdates {
-    RemainInView,
-    EnterView{view: ViewNumber, leader: VerifyingKey, next_leader: VerifyingKey},
+#[derive(Debug)]
+pub enum UpdateViewError {
+    NonIncreasingView{cur_view: ViewNumber, next_view: ViewNumber},
+    UnableToSetTimeout(SetTimeoutError)
+}
+
+impl From<SetTimeoutError> for UpdateViewError {
+    fn from(value: SetTimeoutError) -> Self {
+        UpdateViewError::UnableToSetTimeout(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum SetTimeoutError {
+    TimeoutOverwrite{view: ViewNumber},
+    TriedToExtendTimeoutOfNonEpochView{view: ViewNumber},
+    TimeoutOfEpochViewNotSet{view: ViewNumber},
+}
+
+#[derive(PartialEq, Eq, Clone)]
+pub(crate) struct ViewInfo {
+    pub(crate) view: ViewNumber,
+    pub(crate) deadline: Instant,
+    pub(crate) leader: VerifyingKey,
+    pub(crate) next_leader: VerifyingKey,
+}
+
+impl ViewInfo {
+    pub(crate) fn new(view: ViewNumber, deadline: Instant, validator_set: &ValidatorSet) -> Self {
+        Self {
+            view, 
+            deadline, 
+            leader: select_leader(view, validator_set), 
+            next_leader: select_leader(view+1, validator_set), 
+        }
+    }
 }
 
 /// Implements the Interleaved Weighted Round Robin algorithm for selecting a view leader.
@@ -192,5 +337,40 @@ fn select_leader(
     view: ViewNumber,
     validator_set: &ValidatorSet,
 ) -> VerifyingKey {
-    todo!()
+
+    // Length of the abstract array.
+    let p_total = validator_set.total_power();
+    // Total number of validators.
+    let n = validator_set.len();
+    // Index in the abstract array.
+    let index = view.get_int() % (p_total.get_int() as u64);
+    // Max. power among the validators.
+    let p_max = 
+        validator_set.validators_and_powers().iter().map(|(_, power)| power.get_int()).max().expect("The validator set cannot be empty!").clone();
+
+    let mut counter = 0;
+
+    // Search for a validator at given index in the abstract array of leaders.
+    for threshold in 1..p_max {
+        for k in 0..(n-1) {
+            let validator = validator_set.validators().nth(k).unwrap();
+            if validator_set.power(validator).unwrap().get_int() >= threshold {
+                if counter == index {
+                    return *validator;
+                }
+                counter += 1
+            }
+        }
+    }
+
+    // If index not found, panic. This should never happen.
+    panic!("Index not found!")
+}
+
+fn is_epoch_view(view: ViewNumber, epoch_length: EpochLength) -> bool {
+    view.get_int() % (epoch_length.get_int() as u64) == 0
+}
+
+fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
+    view.get_int().div_ceil(epoch_length.get_int() as u64)
 }

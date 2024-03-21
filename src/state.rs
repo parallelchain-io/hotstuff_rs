@@ -53,6 +53,7 @@
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [genesis QC](crate::types::QuorumCertificate::genesis_qc)|
 
+use std::cmp::max;
 use std::iter::successors;
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
@@ -60,6 +61,7 @@ use std::time::SystemTime;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
+use crate::pacemaker::types::TimeoutCertificate;
 use crate::state::basic::{ChildrenList, CryptoHash, ViewNumber};
 use crate::types::*;
 use crate::hotstuff::types::{QuorumCertificate, Phase};
@@ -295,6 +297,12 @@ impl<K: KVStore> BlockTree<K> {
         self.write(wb);
     }
 
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_tc(tc);
+        self.write(wb);
+    }
+
     pub fn set_highest_view_entered(&mut self, view: ViewNumber) {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_entered(view);
@@ -443,6 +451,16 @@ impl<K: KVStore> BlockTree<K> {
 
     pub fn contains(&self, block: &CryptoHash) -> bool {
         self.block_height(block).is_some()
+    }
+
+    pub(crate) fn highest_view_with_progress(&self) -> ViewNumber {
+        max(
+            self.highest_view_entered(),
+            max(
+                self.highest_qc().view,
+                self.highest_tc().map(|tc| tc.view).unwrap_or(ViewNumber::init()),
+            )
+        )
     }
 
     pub(crate) fn highest_committed_block_height(&self) -> Option<BlockHeight> {
@@ -768,6 +786,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub fn set_newest_block(&mut self, block: &CryptoHash) {
         self.0.set(&NEWEST_BLOCK, &block.try_to_vec().unwrap())
     }
+
+    /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        self.0.set(&HIGHEST_TC, &tc.try_to_vec().unwrap())
+    }
+
 }
 
 #[derive(Clone)]
@@ -1057,6 +1082,11 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn newest_block(&self) -> Option<CryptoHash> {
             Some(CryptoHash::deserialize(&mut &*self.get(&NEWEST_BLOCK)?).unwrap())
         }
+
+        /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+        fn highest_tc(&self) -> Option<TimeoutCertificate> {
+            TimeoutCertificate::deserialize(&mut &*self.get(&HIGHEST_TC)?).ok()
+        }
     }
 );
 
@@ -1074,6 +1104,7 @@ mod paths {
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
     pub(super) const HIGHEST_COMMITTED_BLOCK: [u8; 1] = [10];
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];
+    pub(super) const HIGHEST_TC: [u8; 1] = [12];
 
     // Fields of Block
     pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];

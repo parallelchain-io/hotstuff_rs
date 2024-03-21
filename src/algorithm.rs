@@ -21,13 +21,12 @@ use crate::messages::ProgressMessage;
 use crate::events::*;
 use crate::hotstuff::protocol::{HotStuff, HotStuffConfiguration};
 use crate::networking::*;
-use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration, PacemakerUpdates};
+use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration, ViewInfo};
 use crate::state::*;
 use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,
-    cur_view: ViewNumber,
     pm_stub: ProgressMessageStub<N>,
     block_tree: BlockTree<K>,
     app: A,
@@ -55,37 +54,32 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         progress_msg_buffer_capacity: BufferSize,
     ) -> Self {
 
-        let highest_view_with_progress = max(block_tree.highest_view_entered(), block_tree.highest_qc().view);
-        let init_view = 
-            if highest_view_with_progress == ViewNumber::init() {
-                ViewNumber::init()
-            } else {
-                highest_view_with_progress + 1
-            };
-
         let pm_stub = ProgressMessageStub::new(network.clone(), progress_msg_receiver, progress_msg_buffer_capacity);
         let block_sync_client_stub = BlockSyncClientStub::new(network.clone(), block_sync_response_receiver);
         let msg_sender: SenderHandle<N> = SenderHandle::new(network.clone());
         let validator_set_update_handle = ValidatorSetUpdateHandle::new(network.clone());
 
+        let init_view = 
+            match block_tree.highest_view_with_progress().get_int() {
+                0 => ViewNumber::new(0),
+                v => ViewNumber::new(v+1)
+            };
+
         let pacemaker = Pacemaker::new(
             pacemaker_config,
             msg_sender.clone(),
             init_view,
-            block_tree.committed_validator_set().clone(),
+            &block_tree.committed_validator_set(),
             event_publisher.clone()
         );
 
-        let init_leader = pacemaker.view_leader(init_view, &block_tree.committed_validator_set());
-        let next_leader = pacemaker.view_leader(init_view+1, &block_tree.committed_validator_set());
+        let init_view_info = pacemaker.view_info();
 
         let hotstuff = HotStuff::new(
             hotstuff_config,
+            init_view_info.clone(),
             msg_sender.clone(),
             validator_set_update_handle.clone(),
-            init_view,
-            init_leader,
-            next_leader,
             block_tree.committed_validator_set().clone(),
             event_publisher.clone()
         );
@@ -100,7 +94,6 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
 
         Self {
             chain_id,
-            cur_view: init_view,
             pm_stub,
             block_tree,
             app,
@@ -135,27 +128,23 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             }
 
             // 2. Let the pacemaker update its internal state if needed.
-            self.pacemaker.tick();
+            self.pacemaker.tick(&self.block_tree);
 
             // 3. Query the pacemaker for potential updates to the current view.
-            // In case of view update, update HotStuff's internal view and perform
-            // the necessary protocol steps.
-            match self.pacemaker.updates(self.cur_view) {
-                PacemakerUpdates::RemainInView => {}, // do nothing.
-                PacemakerUpdates::EnterView { view, leader, next_leader} => {
-                    self.cur_view = view;
-                    self.hotstuff.on_enter_view(view, leader, next_leader, &mut self.block_tree, &mut self.app)
-                },
-            }
+            let view_info = self.pacemaker.view_info();
 
-            // 4. Poll the network for incoming messages.
-            let deadline = self.pacemaker.view_deadline(self.cur_view).expect("The deadline for this view has not been set!");
-            match self.pm_stub.recv(self.chain_id, self.cur_view, deadline) {
+            // 4. In case the view has been updated, update HotStuff's internal view and perform
+            // the necessary protocol steps.
+            self.hotstuff.on_receive_view_info(view_info.clone(), &mut self.block_tree, &mut self.app);
+
+            // 5. Poll the network for incoming messages.
+            //let deadline = self.pacemaker.view_deadline(self.cur_view).expect("The deadline for this view has not been set!");
+            match self.pm_stub.recv(self.chain_id, view_info.view, view_info.deadline) {
                 Ok((origin, msg)) => {
                     match msg {
-                        ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, origin, &mut self.block_tree, &mut self.app),
-                        ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, origin, &mut self.block_tree),
-                        ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, origin, &self.block_tree),
+                        ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app),
+                        ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, &origin, &mut self.block_tree),
+                        ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &self.block_tree),
                     }
                 },
                 Err(_) => {},

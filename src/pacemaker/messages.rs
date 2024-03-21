@@ -26,10 +26,10 @@ pub enum PacemakerMessage {
 impl PacemakerMessage {
 
     pub(crate) fn timeout_vote(
-        me: Keypair,
+        me: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
-        highest_tc: TimeoutCertificate,
+        highest_tc: Option<TimeoutCertificate>,
     ) -> PacemakerMessage {
         let message = &(chain_id, view)
             .try_to_vec()
@@ -71,18 +71,12 @@ impl PacemakerMessage {
 
 }
 
-impl Into<Message> for PacemakerMessage {
-    fn into(self) -> Message {
-        Message::ProgressMessage(ProgressMessage::PacemakerMessage(self))
-    }
-}
-
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct TimeoutVote {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub signature: SignatureBytes,
-    pub highest_tc: TimeoutCertificate,
+    pub highest_tc: Option<TimeoutCertificate>,
 }
 
 impl SignedMessage for TimeoutVote {

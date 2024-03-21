@@ -10,7 +10,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, VerifyingKey, Verifier};
 
-use crate::block_sync::messages::{BlockSyncMessage, BlockSyncTriggerMessage};
+use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncTriggerMessage};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::pacemaker::messages::PacemakerMessage;
 use crate::types::basic::SignatureBytes;
@@ -52,5 +52,38 @@ pub(crate) trait SignedMessage {
         )
         .is_ok()
     }
+}
 
+impl From<PacemakerMessage> for Message {
+    fn from(value: PacemakerMessage) -> Self {
+        Message::ProgressMessage(ProgressMessage::PacemakerMessage(value))
+    }
+}
+
+impl From<BlockSyncRequest> for Message {
+    fn from(value: BlockSyncRequest) -> Self {
+        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncRequest(value))
+    }
+}
+
+impl From<BlockSyncResponse> for Message {
+    fn from(value: BlockSyncResponse) -> Self {
+        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncResponse(value))
+    }
+}
+
+impl From<AdvertiseBlock> for Message {
+    fn from(value: AdvertiseBlock) -> Self {
+        Message::ProgressMessage(ProgressMessage::
+            BlockSyncTriggerMessage(BlockSyncTriggerMessage::
+                AdvertiseBlock(value)
+            )
+        )
+    }
+}
+
+impl From<HotStuffMessage> for Message {
+    fn from(value: HotStuffMessage) -> Self {
+        Message::ProgressMessage(ProgressMessage::HotStuffMessage(value))
+    }
 }

@@ -21,6 +21,7 @@ use crate::block_sync::messages::{BlockSyncRequest, BlockSyncResponse};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::messages::*;
 use crate::pacemaker::messages::PacemakerMessage;
+use crate::pacemaker::protocol::ViewInfo;
 use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
 
@@ -148,7 +149,7 @@ impl<N: Network> ProgressMessageStub<N> {
     pub(crate) fn recv(
         &mut self,
         chain_id: ChainID,
-        cur_view: ViewNumber,
+        view: ViewNumber,
         deadline: Instant,
     ) -> Result<(VerifyingKey, ProgressMessage), ProgressMessageReceiveError> {
          todo!()

@@ -48,7 +48,7 @@ impl<N: Network> BlockSyncClient<N> {
         }
     }
 
-    pub(crate) fn on_receive_msg<K: KVStore>(&mut self, msg: BlockSyncTriggerMessage, origin: VerifyingKey, block_tree: &BlockTree<K>) {
+    pub(crate) fn on_receive_msg<K: KVStore>(&mut self, msg: BlockSyncTriggerMessage, origin: &VerifyingKey, block_tree: &BlockTree<K>) {
         todo!()
     }
 

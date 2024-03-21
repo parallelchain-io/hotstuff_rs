@@ -117,12 +117,6 @@ impl HotStuffMessage {
     }
 }
 
-impl Into<Message> for HotStuffMessage {
-    fn into(self) -> Message {
-        Message::ProgressMessage(ProgressMessage::HotStuffMessage(self))
-    }
-}
-
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
     pub chain_id: ChainID,
