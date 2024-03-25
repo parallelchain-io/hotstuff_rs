@@ -27,7 +27,7 @@ impl ChainID {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
