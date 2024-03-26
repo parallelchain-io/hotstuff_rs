@@ -71,7 +71,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             init_view,
             &block_tree.committed_validator_set(),
             event_publisher.clone()
-        );
+        ).expect("Failed to create a new Pacemaker!");
 
         let init_view_info = pacemaker.view_info();
 
@@ -105,7 +105,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         }
     }
 
-    pub(crate) fn start(mut self) -> JoinHandle<()> {
+    pub(crate) fn start(self) -> JoinHandle<()> {
 
         thread::spawn(move || {
 
@@ -128,7 +128,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             }
 
             // 2. Let the pacemaker update its internal state if needed.
-            self.pacemaker.tick(&self.block_tree);
+            self.pacemaker.tick(&self.block_tree).expect("Pacemaker failure!");
 
             // 3. Query the pacemaker for potential updates to the current view.
             let view_info = self.pacemaker.view_info();
@@ -143,7 +143,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
                 Ok((origin, msg)) => {
                     match msg {
                         ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app),
-                        ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, &origin, &mut self.block_tree),
+                        ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, &origin, &mut self.block_tree).expect("Pacemaker failure!"),
                         ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &self.block_tree),
                     }
                 },

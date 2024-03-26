@@ -81,16 +81,19 @@ impl<N: Network> Pacemaker<N> {
         init_view: ViewNumber,
         init_validator_set: &ValidatorSet,
         event_publisher: Option<Sender<Event>>,
-    ) -> Self {
+    ) -> Result<Self, PacemakerError> {
         let state = PacemakerState::initialize(&config, init_view, init_validator_set.clone());
-        let view_info = ViewInfo::new(init_view, state.timeouts.get(&init_view).unwrap().clone(), &init_validator_set);
-        Self {
-            config,
-            state,
-            view_info,
-            sender,
-            event_publisher,
-        }
+        let timeout = state.timeouts.get(&init_view).clone().ok_or(UpdateViewError::GetViewTimeoutError{view: init_view})?;
+        let view_info = ViewInfo::new(init_view, *timeout, &init_validator_set);
+        Ok(
+            Self {
+                config,
+                state,
+                view_info,
+                sender,
+                event_publisher,
+            }
+        )
     }
 
     /// Query the pacemaker for [ViewInfo].
@@ -105,7 +108,7 @@ impl<N: Network> Pacemaker<N> {
     /// 2. If it is a non-epoch view, then the view should be updated to the subsequent view.
     /// Additionally, tick should check if there is a QC for the current view (epoch or non-epoch view) 
     /// available in the block tree, and if so it should broadcast the QC in an advance view message.
-    pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) {
+    pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
 
@@ -116,9 +119,9 @@ impl<N: Network> Pacemaker<N> {
                     let pacemaker_message = PacemakerMessage::timeout_vote(&self.config.keypair, self.config.chain_id, cur_view, block_tree.highest_tc());
                     self.sender.broadcast(Message::from(pacemaker_message));
                 }
-                self.state.extend_epoch_view_timeout(cur_view, &self.config).unwrap()
+                self.state.extend_epoch_view_timeout(cur_view, &self.config)?
             } else {
-                self.update_view(cur_view, cur_view + 1 , block_tree).unwrap()
+                self.update_view(cur_view, cur_view + 1 , block_tree)?
             }
         }
 
@@ -127,6 +130,8 @@ impl<N: Network> Pacemaker<N> {
             let pacemaker_message = PacemakerMessage::advance_view(ProgressCertificate::QuorumCertificate(block_tree.highest_qc()));
             self.sender.broadcast(Message::from(pacemaker_message))
         }
+
+        Ok(())
 
     }
 
@@ -137,11 +142,12 @@ impl<N: Network> Pacemaker<N> {
         msg: PacemakerMessage,
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) {
+    ) -> Result<(), PacemakerError> {
         match msg {
-            PacemakerMessage::TimeoutVote(timeout_vote) => self.on_receive_timeout_vote(timeout_vote, origin, block_tree),
-            PacemakerMessage::AdvanceView(advance_view) => self.on_receive_advance_view(advance_view, origin, block_tree),
+            PacemakerMessage::TimeoutVote(timeout_vote) => self.on_receive_timeout_vote(timeout_vote, origin, block_tree)?,
+            PacemakerMessage::AdvanceView(advance_view) => self.on_receive_advance_view(advance_view, origin, block_tree)?,
         }
+        Ok(())
     }
 
     /// Update the [internal state of the pacemaker][PacemakerState] in response to receiving a [TimeoutVote].
@@ -157,8 +163,8 @@ impl<N: Network> Pacemaker<N> {
         timeout_vote: TimeoutVote,
         signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) { 
-        if !block_tree.committed_validator_set().contains(signer) {return};
+    ) -> Result<(), UpdateViewError> { 
+        if !block_tree.committed_validator_set().contains(signer) {return Ok(())};
 
         if timeout_vote.is_correct(signer) && is_epoch_view(timeout_vote.view, self.config.epoch_length) {
             let fallback_tc = 
@@ -188,10 +194,11 @@ impl<N: Network> Pacemaker<N> {
                     // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
                     let cur_view = self.view_info.view;
                     let next_view = tc.view + 1;
-                    self.update_view(cur_view, next_view, block_tree).unwrap()
+                    self.update_view(cur_view, next_view, block_tree)?
                 }
             }
-        } 
+        }
+        Ok(())
     }
 
     /// Update the [internal state of the pacemaker][PacemakerState]
@@ -203,8 +210,8 @@ impl<N: Network> Pacemaker<N> {
         advance_view: AdvanceView,
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) { 
-        if !block_tree.committed_validator_set().contains(origin) {return};
+    ) -> Result<(), UpdateViewError>{ 
+        if !block_tree.committed_validator_set().contains(origin) {return Ok(())};
 
         let progress_certificate = advance_view.progress_certificate.clone();
         let valid = match &progress_certificate {
@@ -222,8 +229,10 @@ impl<N: Network> Pacemaker<N> {
             // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
             let cur_view = self.view_info.view;
             let next_view = progress_certificate.view() + 1;
-            self.update_view(cur_view, next_view, block_tree).unwrap()
+            self.update_view(cur_view, next_view, block_tree)?
         }
+
+        Ok(())
     }
 
     /// Update the current view to the given next view. This may involve setting timeouts for the views
@@ -235,10 +244,10 @@ impl<N: Network> Pacemaker<N> {
         cur_view: ViewNumber, 
         next_view: ViewNumber, 
         block_tree: &BlockTree<K>) 
-        -> Result<(), PacemakerError>{
+        -> Result<(), UpdateViewError>{
 
         if next_view <= cur_view {
-            return Err(PacemakerError::NonIncreasingView{cur_view, next_view})
+            return Err(UpdateViewError::NonIncreasingView{cur_view, next_view})
         }
 
         // If about to enter a new epoch, set timeouts for the new epoch.
@@ -249,7 +258,7 @@ impl<N: Network> Pacemaker<N> {
         // Update the view.
         self.view_info = ViewInfo::new(
             next_view, 
-            *self.state.timeouts.get(&next_view).unwrap(), 
+            *self.state.timeouts.get(&next_view).ok_or(UpdateViewError::GetViewTimeoutError{view: next_view})?, 
             &block_tree.committed_validator_set()
         );
 
@@ -325,14 +334,11 @@ impl PacemakerState {
     }
 
     /// Extend the timeout of the epoch view by another max_view_time.
-    fn extend_epoch_view_timeout(&mut self, epoch_view: ViewNumber, config: &PacemakerConfiguration) -> Result<(), ExtendEpochTimeoutError>  {
-        if !is_epoch_view(epoch_view, config.epoch_length) {
-            return Err(ExtendEpochTimeoutError::TriedToExtendTimeoutOfNonEpochView {view: epoch_view})
+    fn extend_epoch_view_timeout(&mut self, view: ViewNumber, config: &PacemakerConfiguration) -> Result<(), ExtendEpochViewTimeoutError>  {
+        if !is_epoch_view(view, config.epoch_length) {
+            return Err(ExtendEpochViewTimeoutError::TriedToExtendTimeoutOfNonEpochView{view})
         }
-        match self.timeouts.get(&epoch_view) {
-            None => return Err(ExtendEpochTimeoutError::TimeoutOfEpochViewNotSet{view: epoch_view}),
-            Some(v) => {self.timeouts.insert(epoch_view, *v + config.max_view_time);}
-        }
+        self.timeouts.insert(view, Instant::now() + config.max_view_time);
 
         Ok(())
     }
@@ -341,21 +347,33 @@ impl PacemakerState {
 
 #[derive(Debug)]
 pub enum PacemakerError {
-    NonIncreasingView{cur_view: ViewNumber, next_view: ViewNumber},
-    UnableToExtendEpochTimeout(ExtendEpochTimeoutError)
+    UpdateViewError(UpdateViewError),
+    ExtendEpochViewTimeoutError(ExtendEpochViewTimeoutError),
 }
 
-impl From<ExtendEpochTimeoutError> for PacemakerError {
-    fn from(value: ExtendEpochTimeoutError) -> Self {
-        PacemakerError::UnableToExtendEpochTimeout(value)
+impl From<UpdateViewError> for PacemakerError {
+    fn from(value: UpdateViewError) -> Self {
+        PacemakerError::UpdateViewError(value)
+    }
+}
+
+impl From<ExtendEpochViewTimeoutError> for PacemakerError {
+    fn from(value: ExtendEpochViewTimeoutError) -> Self {
+        PacemakerError::ExtendEpochViewTimeoutError(value)
     }
 }
 
 #[derive(Debug)]
-pub enum ExtendEpochTimeoutError {
-    TriedToExtendTimeoutOfNonEpochView{view: ViewNumber},
-    TimeoutOfEpochViewNotSet{view: ViewNumber},
+enum UpdateViewError {
+    NonIncreasingView{cur_view: ViewNumber, next_view: ViewNumber},
+    GetViewTimeoutError{view: ViewNumber},
 }
+
+#[derive(Debug)]
+enum ExtendEpochViewTimeoutError {
+    TriedToExtendTimeoutOfNonEpochView{view: ViewNumber},
+}
+
 
 #[derive(PartialEq, Eq, Clone)]
 pub(crate) struct ViewInfo {
