@@ -41,7 +41,7 @@ impl BlockHeight {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 
@@ -71,7 +71,7 @@ impl ChildrenList {
         Self(blocks)
     }
 
-    pub const fn get_vec(&self) -> &Vec<CryptoHash> {
+    pub const fn vec(&self) -> &Vec<CryptoHash> {
         &self.0
     }
 
@@ -94,7 +94,7 @@ impl CryptoHash {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> [u8; 32] {
+    pub const fn bytes(&self) -> [u8; 32] {
         self.0
     }
 }
@@ -108,7 +108,7 @@ impl Data {
         Self(datum_vec)
     }
 
-    pub const fn get_vec(&self) -> &Vec<Datum> {
+    pub const fn vec(&self) -> &Vec<Datum> {
         &self.0
     }
 
@@ -126,7 +126,7 @@ impl Data {
 pub struct DataLen(u32);
 
 impl DataLen {
-    pub const fn get_int(&self) -> u32 {
+    pub const fn int(&self) -> u32 {
         self.0
     }
 }
@@ -140,7 +140,7 @@ impl Datum {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> &Vec<u8> {
+    pub const fn bytes(&self) -> &Vec<u8> {
         &self.0
     }
 }
@@ -150,7 +150,7 @@ impl Datum {
 pub struct Power(u64);
 
 impl Power {
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
@@ -164,7 +164,7 @@ impl TotalPower {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u128 {
+    pub const fn int(&self) -> u128 {
         self.0
     }
 }
@@ -184,7 +184,7 @@ impl SignatureBytes {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> [u8; 64] {
+    pub const fn bytes(&self) -> [u8; 64] {
         self.0
     }
 }
@@ -205,7 +205,7 @@ impl SignatureSet {
         Self(vec![None; len])
     }
 
-    pub const fn get_vec(&self) -> &Vec<Option<SignatureBytes>> {
+    pub const fn vec(&self) -> &Vec<Option<SignatureBytes>> {
         &self.0
     }
 
@@ -240,7 +240,7 @@ impl ViewNumber {
         Self(0)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
@@ -268,7 +268,7 @@ impl EpochLength {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u32 {
+    pub const fn int(&self) -> u32 {
         self.0
     }
 }
@@ -282,7 +282,7 @@ impl BufferSize {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }

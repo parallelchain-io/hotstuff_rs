@@ -306,13 +306,13 @@ impl PacemakerState {
         self.timeouts = self.timeouts.split_off(&start_view);
 
         let epoch = epoch(start_view, config.epoch_length);
-        let epoch_view = epoch * config.epoch_length.get_int() as u64;
+        let epoch_view = epoch * config.epoch_length.int() as u64;
 
         let start_time = Instant::now();
 
         // Add timeouts for all remaining views in the epoch of start_view.
-        for view in start_view.get_int()..=epoch_view {
-            let time_to_view_deadline = Duration::from_secs(config.max_view_time.as_secs()*(view - start_view.get_int() + 1));
+        for view in start_view.int()..=epoch_view {
+            let time_to_view_deadline = Duration::from_secs(config.max_view_time.as_secs()*(view - start_view.int() + 1));
             self.timeouts.insert(ViewNumber::new(view), start_time + time_to_view_deadline);
         }
     }
@@ -321,13 +321,13 @@ impl PacemakerState {
         let mut timeouts = BTreeMap::new();
 
         let epoch = epoch(start_view, config.epoch_length);
-        let epoch_view = epoch * config.epoch_length.get_int() as u64;
+        let epoch_view = epoch * config.epoch_length.int() as u64;
 
         let start_time = Instant::now();
 
         // Add timeouts for all remaining views in the epoch of start_view.
-        for view in start_view.get_int()..=epoch_view {
-            let time_to_view_deadline = Duration::from_secs(config.max_view_time.as_secs()*(view - start_view.get_int() + 1));
+        for view in start_view.int()..=epoch_view {
+            let time_to_view_deadline = Duration::from_secs(config.max_view_time.as_secs()*(view - start_view.int() + 1));
             timeouts.insert(ViewNumber::new(view), start_time + time_to_view_deadline);
         }
 
@@ -407,10 +407,10 @@ fn select_leader(
     // Total number of validators.
     let n = validator_set.len();
     // Index in the abstract array.
-    let index = view.get_int() % (p_total.get_int() as u64);
+    let index = view.int() % (p_total.int() as u64);
     // Max. power among the validators.
     let p_max = 
-        validator_set.validators_and_powers().iter().map(|(_, power)| power.get_int()).max().expect("The validator set cannot be empty!").clone();
+        validator_set.validators_and_powers().iter().map(|(_, power)| power.int()).max().expect("The validator set cannot be empty!").clone();
 
     let mut counter = 0;
 
@@ -418,7 +418,7 @@ fn select_leader(
     for threshold in 1..p_max {
         for k in 0..(n-1) {
             let validator = validator_set.validators().nth(k).unwrap();
-            if validator_set.power(validator).unwrap().get_int() >= threshold {
+            if validator_set.power(validator).unwrap().int() >= threshold {
                 if counter == index {
                     return *validator;
                 }
@@ -432,9 +432,9 @@ fn select_leader(
 }
 
 fn is_epoch_view(view: ViewNumber, epoch_length: EpochLength) -> bool {
-    view.get_int() % (epoch_length.get_int() as u64) == 0
+    view.int() % (epoch_length.int() as u64) == 0
 }
 
 fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
-    view.get_int().div_ceil(epoch_length.get_int() as u64)
+    view.int().div_ceil(epoch_length.int() as u64)
 }

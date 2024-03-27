@@ -60,7 +60,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         let validator_set_update_handle = ValidatorSetUpdateHandle::new(network);
 
         let init_view = 
-            match block_tree.highest_view_with_progress().get_int() {
+            match block_tree.highest_view_with_progress().int() {
                 0 => ViewNumber::new(0),
                 v => ViewNumber::new(v+1)
             };

@@ -265,8 +265,8 @@ impl ProgressMessageBuffer {
         
         // Try to cache the message.
         let bytes_requested = mem::size_of::<VerifyingKey>() as u64 + msg.size();
-        let new_buffer_size = self.buffer_size.get_int().checked_add(bytes_requested);
-        let buffer_will_be_overloaded = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.buffer_capacity.get_int();
+        let new_buffer_size = self.buffer_size.int().checked_add(bytes_requested);
+        let buffer_will_be_overloaded = new_buffer_size.is_none() || new_buffer_size.unwrap() > self.buffer_capacity.int();
         let cache_message_if_buffer_will_be_overloaded = self.buffer.keys().max().is_none()
                                                                || self.buffer.keys().max().is_some_and(|max_view| msg.view() < *max_view);
 

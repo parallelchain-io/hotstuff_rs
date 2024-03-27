@@ -78,7 +78,7 @@ pub(crate) trait SignedMessage {
 
     // Verifies the correctness of the signature given the values that should be signed.
     fn is_correct(&self, pk:&VerifyingKey) -> bool {
-        let signature = Signature::from_bytes(&self.signature_bytes().get_bytes());
+        let signature = Signature::from_bytes(&self.signature_bytes().bytes());
         pk.verify(
             &self.message_bytes(),
             &signature,
