@@ -13,7 +13,7 @@ use ed25519_dalek::{Signature, VerifyingKey, Verifier};
 use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncTriggerMessage};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::pacemaker::messages::PacemakerMessage;
-use crate::types::basic::SignatureBytes;
+use crate::types::basic::{ChainID, SignatureBytes, ViewNumber};
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum Message {
@@ -26,6 +26,39 @@ pub enum ProgressMessage {
     HotStuffMessage(HotStuffMessage),
     PacemakerMessage(PacemakerMessage),
     BlockSyncTriggerMessage(BlockSyncTriggerMessage),
+}
+
+impl ProgressMessage {
+    pub fn chain_id(&self) -> ChainID {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => msg.chain_id(),
+            ProgressMessage::PacemakerMessage(msg) => msg.chain_id(),
+            ProgressMessage::BlockSyncTriggerMessage(msg) => msg.chain_id(),
+        }
+    }
+
+    pub fn view(&self) -> Option<ViewNumber> {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
+            ProgressMessage::PacemakerMessage(msg) => Some(msg.view()),
+            ProgressMessage::BlockSyncTriggerMessage(msg) => None,
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => msg.size(),
+            ProgressMessage::PacemakerMessage(msg) => msg.size(),
+            ProgressMessage::BlockSyncTriggerMessage(msg) => msg.size(),
+        }
+    }
+
+    pub fn is_block_sync_trigger_msg(&self) -> bool {
+        match self {
+            ProgressMessage::BlockSyncTriggerMessage(msg) => true,
+            _ => false,
+        }
+    }
 }
 
 /// A signed message must consist of:
@@ -52,6 +85,16 @@ pub(crate) trait SignedMessage {
         )
         .is_ok()
     }
+}
+
+/// A cacheable message can be inserted into a message buffer.
+/// For this, we require that:
+/// 1. The message is associated with a view,
+/// 2. The message size is statically known and depends on a particular enum variant.
+pub(crate) trait Cacheable {
+    fn view(&self) -> ViewNumber;
+
+    fn size(&self) -> u64;
 }
 
 impl From<PacemakerMessage> for Message {

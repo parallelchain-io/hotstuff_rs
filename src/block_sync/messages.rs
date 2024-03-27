@@ -6,6 +6,8 @@
 //! Definitions for structured messages that are sent between replicas as part of the [BlockSync] protocol.
 //! Note: the struct definitions may be subject to change as we flesh out the details of the [BlockSync] protocol.
 
+use std::mem;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
@@ -54,6 +56,19 @@ impl BlockSyncTriggerMessage {
     pub fn advertise_block(chain_id: ChainID, block: CryptoHash, block_qc: QuorumCertificate) -> Self {
         BlockSyncTriggerMessage::AdvertiseBlock(AdvertiseBlock{chain_id, block, block_qc})
     }
+
+    pub fn chain_id(&self) -> ChainID {
+        match self {
+            BlockSyncTriggerMessage::AdvertiseBlock(msg) => msg.chain_id
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        match self {
+            BlockSyncTriggerMessage::AdvertiseBlock(msg) => mem::size_of::<AdvertiseBlock>() as u64,
+        }
+    }
+
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]

@@ -238,7 +238,8 @@ impl<N: Network> Pacemaker<N> {
     /// Update the current view to the given next view. This may involve setting timeouts for the views
     /// of a new epoch, in case the next view is in a future epoch.
     /// Note: this method, by being the unique method used to update the pacemaker [ViewInfo],
-    /// and checking if the next view is greater than the current view, guarantees monotonicity.
+    /// and checking if the next view is greater than the current view, guarantees monotonically
+    /// increasing views.
     fn update_view<K: KVStore>(
         &mut self, 
         cur_view: ViewNumber, 

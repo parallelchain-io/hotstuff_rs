@@ -14,7 +14,7 @@
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
     fmt::{self, Display, Formatter}, 
-    hash::Hash, ops::{Add, AddAssign}
+    hash::Hash, ops::{Add, AddAssign, SubAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -284,6 +284,18 @@ impl BufferSize {
 
     pub const fn get_int(&self) -> u64 {
         self.0
+    }
+}
+
+impl AddAssign<u64> for BufferSize {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0.add_assign(rhs)
+    }
+}
+
+impl SubAssign<u64> for BufferSize {
+    fn sub_assign(&mut self, rhs: u64) {
+        self.0.sub_assign(rhs)
     }
 }
 

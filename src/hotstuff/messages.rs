@@ -10,7 +10,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Verifier};
 
-use crate::messages::{Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     block::*, 
@@ -114,6 +114,22 @@ impl HotStuffMessage {
             HotStuffMessage::Vote(_) => mem::size_of::<Vote>() as u64,
             HotStuffMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
+    }
+}
+
+impl Cacheable for HotStuffMessage {
+    fn size(&self) -> u64 {
+        self.size()
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view()
+    }
+}
+
+impl Into<ProgressMessage> for HotStuffMessage {
+    fn into(self) -> ProgressMessage {
+        ProgressMessage::HotStuffMessage(self)
     }
 }
 

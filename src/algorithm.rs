@@ -27,7 +27,7 @@ use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,
-    pm_stub: ProgressMessageStub<N>,
+    pm_stub: ProgressMessageStub,
     block_tree: BlockTree<K>,
     app: A,
     hotstuff: HotStuff<N>,
@@ -54,10 +54,10 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         progress_msg_buffer_capacity: BufferSize,
     ) -> Self {
 
-        let pm_stub = ProgressMessageStub::new(network.clone(), progress_msg_receiver, progress_msg_buffer_capacity);
-        let block_sync_client_stub = BlockSyncClientStub::new(network.clone(), block_sync_response_receiver);
+        let pm_stub = ProgressMessageStub::new(progress_msg_receiver, progress_msg_buffer_capacity);
+        let block_sync_client_stub = BlockSyncClientStub::new(block_sync_response_receiver);
         let msg_sender: SenderHandle<N> = SenderHandle::new(network.clone());
-        let validator_set_update_handle = ValidatorSetUpdateHandle::new(network.clone());
+        let validator_set_update_handle = ValidatorSetUpdateHandle::new(network);
 
         let init_view = 
             match block_tree.highest_view_with_progress().get_int() {

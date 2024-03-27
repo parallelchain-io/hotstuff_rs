@@ -9,7 +9,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::{Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     keypair::*,
@@ -69,6 +69,22 @@ impl PacemakerMessage {
         }
     }
 
+}
+
+impl Cacheable for PacemakerMessage {
+    fn size(&self) -> u64 {
+        self.size()
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view()
+    }
+}
+
+impl Into<ProgressMessage> for PacemakerMessage {
+    fn into(self) -> ProgressMessage {
+        ProgressMessage::PacemakerMessage(self)
+    }
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
