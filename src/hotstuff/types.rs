@@ -49,7 +49,7 @@ impl QuorumCertificate {
                 .zip(validator_set.validators_and_powers())
             {
                 if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(&signature.get_bytes()) {
+                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
                         if signer
                             .verify(
                                 &(self.chain_id, self.view, self.block, self.phase)

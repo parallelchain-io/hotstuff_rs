@@ -9,7 +9,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::{Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     keypair::*,
@@ -26,10 +26,10 @@ pub enum PacemakerMessage {
 impl PacemakerMessage {
 
     pub(crate) fn timeout_vote(
-        me: Keypair,
+        me: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
-        highest_tc: TimeoutCertificate,
+        highest_tc: Option<TimeoutCertificate>,
     ) -> PacemakerMessage {
         let message = &(chain_id, view)
             .try_to_vec()
@@ -71,9 +71,19 @@ impl PacemakerMessage {
 
 }
 
-impl Into<Message> for PacemakerMessage {
-    fn into(self) -> Message {
-        Message::ProgressMessage(ProgressMessage::PacemakerMessage(self))
+impl Cacheable for PacemakerMessage {
+    fn size(&self) -> u64 {
+        self.size()
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view()
+    }
+}
+
+impl Into<ProgressMessage> for PacemakerMessage {
+    fn into(self) -> ProgressMessage {
+        ProgressMessage::PacemakerMessage(self)
     }
 }
 
@@ -82,7 +92,7 @@ pub struct TimeoutVote {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub signature: SignatureBytes,
-    pub highest_tc: TimeoutCertificate,
+    pub highest_tc: Option<TimeoutCertificate>,
 }
 
 impl SignedMessage for TimeoutVote {

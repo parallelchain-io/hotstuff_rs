@@ -53,6 +53,7 @@
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [genesis QC](crate::types::QuorumCertificate::genesis_qc)|
 
+use std::cmp::max;
 use std::iter::successors;
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
@@ -60,6 +61,7 @@ use std::time::SystemTime;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::events::{Event, InsertBlockEvent, CommitBlockEvent, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedViewEvent, UpdateValidatorSetEvent};
+use crate::pacemaker::types::TimeoutCertificate;
 use crate::state::basic::{ChildrenList, CryptoHash, ViewNumber};
 use crate::types::*;
 use crate::hotstuff::types::{QuorumCertificate, Phase};
@@ -295,6 +297,12 @@ impl<K: KVStore> BlockTree<K> {
         self.write(wb);
     }
 
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_tc(tc);
+        self.write(wb);
+    }
+
     pub fn set_highest_view_entered(&mut self, view: ViewNumber) {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_entered(view);
@@ -443,6 +451,16 @@ impl<K: KVStore> BlockTree<K> {
 
     pub fn contains(&self, block: &CryptoHash) -> bool {
         self.block_height(block).is_some()
+    }
+
+    pub(crate) fn highest_view_with_progress(&self) -> ViewNumber {
+        max(
+            self.highest_view_entered(),
+            max(
+                self.highest_qc().view,
+                self.highest_tc().map(|tc| tc.view).unwrap_or(ViewNumber::init()),
+            )
+        )
     }
 
     pub(crate) fn highest_committed_block_height(&self) -> Option<BlockHeight> {
@@ -607,7 +625,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Block ↓↓↓  */
 
     pub fn set_block(&mut self, block: &Block) {
-        let block_prefix = combine(&BLOCKS, &block.hash.get_bytes());
+        let block_prefix = combine(&BLOCKS, &block.hash.bytes());
 
         self.0.set(
             &combine(&block_prefix, &BLOCK_HEIGHT),
@@ -630,12 +648,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
         for (i, datum) in block.data.iter().enumerate() {
             let datum_key = combine(&block_data_prefix, &(i as u32).try_to_vec().unwrap());
-            self.0.set(&datum_key, datum.get_bytes());
+            self.0.set(&datum_key, datum.bytes());
         }
     }
 
     pub fn delete_block(&mut self, block: &CryptoHash, data_len: DataLen) {
-        let block_prefix = combine(&BLOCKS, &block.get_bytes());
+        let block_prefix = combine(&BLOCKS, &block.bytes());
 
         self.0.delete(&combine(&block_prefix, &BLOCK_HEIGHT));
         self.0.delete(&combine(&block_prefix, &BLOCK_JUSTIFY));
@@ -643,7 +661,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         self.0.delete(&combine(&block_prefix, &BLOCK_DATA_LEN));
 
         let block_data_prefix = combine(&block_prefix, &BLOCK_DATA);
-        for i in 0..data_len.get_int() {
+        for i in 0..data_len.int() {
             let datum_key = combine(&block_data_prefix, &i.try_to_vec().unwrap());
             self.0.delete(&datum_key);
         }
@@ -662,13 +680,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_children(&mut self, block: &CryptoHash, children: &ChildrenList) {
         self.0.set(
-            &combine(&BLOCK_TO_CHILDREN, &block.get_bytes()),
+            &combine(&BLOCK_TO_CHILDREN, &block.bytes()),
             &children.try_to_vec().unwrap(),
         );
     }
 
     pub fn delete_children(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(&BLOCK_TO_CHILDREN, &block.get_bytes()));
+        self.0.delete(&combine(&BLOCK_TO_CHILDREN, &block.bytes()));
     }
 
     /* ↓↓↓ Committed App State ↓↓↓ */
@@ -689,7 +707,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         app_state_updates: &AppStateUpdates,
     ) {
         self.0.set(
-            &combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()),
+            &combine(&PENDING_APP_STATE_UPDATES, &block.bytes()),
             &app_state_updates.try_to_vec().unwrap(),
         );
     }
@@ -705,7 +723,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     }
 
     pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
-        self.0.delete(&combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()));
+        self.0.delete(&combine(&PENDING_APP_STATE_UPDATES, &block.bytes()));
     }
 
     /* ↓↓↓ Commmitted Validator Set */
@@ -727,14 +745,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     ) {
         let validator_set_updates_bytes: ValidatorSetUpdatesBytes = validator_set_updates.into();
         self.0.set(
-            &combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()),
+            &combine(&PENDING_VALIDATOR_SET_UPDATES, &block.bytes()),
             &validator_set_updates_bytes.try_to_vec().unwrap(),
         )
     }
 
     pub fn delete_pending_validator_set_updates(&mut self, block: &CryptoHash) {
         self.0
-            .delete(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()))
+            .delete(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.bytes()))
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */
@@ -768,6 +786,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub fn set_newest_block(&mut self, block: &CryptoHash) {
         self.0.set(&NEWEST_BLOCK, &block.try_to_vec().unwrap())
     }
+
+    /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) {
+        self.0.set(&HIGHEST_TC, &tc.try_to_vec().unwrap())
+    }
+
 }
 
 #[derive(Clone)]
@@ -922,7 +947,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         }
 
         fn block_height(&self, block: &CryptoHash) -> Option<BlockHeight> {
-            let block_key = combine(&BLOCKS, &block.get_bytes());
+            let block_key = combine(&BLOCKS, &block.bytes());
             let block_height_key = combine(&block_key, &BLOCK_HEIGHT);
             let block_height = {
                 let bs = self.get(&block_height_key)?;
@@ -934,7 +959,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_justify(&self, block: &CryptoHash) -> Option<QuorumCertificate> {
             Some(
                 QuorumCertificate::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_JUSTIFY)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.bytes(), &BLOCK_JUSTIFY)))?,
                 )
                 .unwrap(),
             )
@@ -943,7 +968,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_data_hash(&self, block: &CryptoHash) -> Option<CryptoHash> {
             Some(
                 CryptoHash::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA_HASH)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.bytes(), &BLOCK_DATA_HASH)))?,
                 )
                 .unwrap(),
             )
@@ -952,7 +977,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn block_data_len(&self, block: &CryptoHash) -> Option<DataLen> {
             Some(
                 DataLen::deserialize(
-                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA_LEN)))?,
+                    &mut &*self.get(&combine(&BLOCKS, &combine(&block.bytes(), &BLOCK_DATA_LEN)))?,
                 )
                 .unwrap(),
             )
@@ -960,7 +985,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
 
         fn block_data(&self, block: &CryptoHash) -> Option<Data> {
             let data_len = self.block_data_len(block)?;
-            let data = (0..data_len.get_int())
+            let data = (0..data_len.int())
                 .map(|i| self.block_datum(block, i).unwrap())
                 .collect();
 
@@ -968,7 +993,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         }
 
         fn block_datum(&self, block: &CryptoHash, datum_index: u32) -> Option<Datum> {
-            let block_data_prefix = combine(&BLOCKS, &combine(&block.get_bytes(), &BLOCK_DATA));
+            let block_data_prefix = combine(&BLOCKS, &combine(&block.bytes(), &BLOCK_DATA));
             self.get(&combine(
                 &block_data_prefix,
                 &datum_index.try_to_vec().unwrap(),
@@ -992,7 +1017,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
 
         fn children(&self, block: &CryptoHash) -> Option<ChildrenList> {
             Some(
-                ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_TO_CHILDREN, &block.get_bytes()))?)
+                ChildrenList::deserialize(&mut &*self.get(&combine(&BLOCK_TO_CHILDREN, &block.bytes()))?)
                     .unwrap(),
             )
         }
@@ -1008,7 +1033,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn pending_app_state_updates(&self, block: &CryptoHash) -> Option<AppStateUpdates> {
             Some(
                 AppStateUpdates::deserialize(
-                    &mut &*self.get(&combine(&PENDING_APP_STATE_UPDATES, &block.get_bytes()))?,
+                    &mut &*self.get(&combine(&PENDING_APP_STATE_UPDATES, &block.bytes()))?,
                 )
                 .unwrap(),
             )
@@ -1024,7 +1049,7 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         /* ↓↓↓ Pending Validator Set Updates */
 
         fn pending_validator_set_updates(&self, block: &CryptoHash) -> Option<ValidatorSetUpdates> {
-            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.get_bytes()))?,).unwrap();
+            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*self.get(&combine(&PENDING_VALIDATOR_SET_UPDATES, &block.bytes()))?,).unwrap();
             Some(ValidatorSetUpdates::try_from(validator_set_updates_bytes).unwrap())
         }
 
@@ -1057,6 +1082,11 @@ re_export_getters_from_block_tree_and_block_tree_snapshot!(
         fn newest_block(&self) -> Option<CryptoHash> {
             Some(CryptoHash::deserialize(&mut &*self.get(&NEWEST_BLOCK)?).unwrap())
         }
+
+        /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+        fn highest_tc(&self) -> Option<TimeoutCertificate> {
+            TimeoutCertificate::deserialize(&mut &*self.get(&HIGHEST_TC)?).ok()
+        }
     }
 );
 
@@ -1074,6 +1104,7 @@ mod paths {
     pub(super) const HIGHEST_QC: [u8; 1] = [9];
     pub(super) const HIGHEST_COMMITTED_BLOCK: [u8; 1] = [10];
     pub(super) const NEWEST_BLOCK: [u8; 1] = [11];
+    pub(super) const HIGHEST_TC: [u8; 1] = [12];
 
     // Fields of Block
     pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];

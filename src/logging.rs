@@ -73,7 +73,7 @@ impl Logger for InsertBlockEvent {
                 "{}, {}, {}, {}",
                 INSERT_BLOCK,
                 secs_since_unix_epoch(insert_block_event.timestamp),
-                first_seven_base64_chars(&insert_block_event.block.hash.get_bytes()),
+                first_seven_base64_chars(&insert_block_event.block.hash.bytes()),
                 insert_block_event.block.height
             )
         };
@@ -84,7 +84,7 @@ impl Logger for InsertBlockEvent {
 impl Logger for CommitBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |commit_block_event: &CommitBlockEvent| {
-            log::info!("{}, {}, {}", COMMIT_BLOCK, secs_since_unix_epoch(commit_block_event.timestamp), first_seven_base64_chars(&commit_block_event.block.get_bytes()))
+            log::info!("{}, {}, {}", COMMIT_BLOCK, secs_since_unix_epoch(commit_block_event.timestamp), first_seven_base64_chars(&commit_block_event.block.bytes()))
         };
         Box::new(logger)
     }
@@ -93,7 +93,7 @@ impl Logger for CommitBlockEvent {
 impl Logger for PruneBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |prune_block_event: &PruneBlockEvent| {
-            log::info!("{}, {}, {}", PRUNE_BLOCK, secs_since_unix_epoch(prune_block_event.timestamp), first_seven_base64_chars(&prune_block_event.block.get_bytes()))
+            log::info!("{}, {}, {}", PRUNE_BLOCK, secs_since_unix_epoch(prune_block_event.timestamp), first_seven_base64_chars(&prune_block_event.block.bytes()))
         };
         Box::new(logger)
     }
@@ -106,7 +106,7 @@ impl Logger for UpdateHighestQCEvent {
                 "{}, {}, {}, {}, {:?}",
                 UPDATE_HIGHEST_QC,
                 secs_since_unix_epoch(update_highest_qc_event.timestamp),
-                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.get_bytes()),
+                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
                 update_highest_qc_event.highest_qc.view,
                 update_highest_qc_event.highest_qc.phase
             )
@@ -136,7 +136,7 @@ impl Logger for UpdateValidatorSetEvent {
                 "{}, {}, {}",
                 UPDATE_VALIDATOR_SET,
                 secs_since_unix_epoch(update_validator_set_event.timestamp),
-                first_seven_base64_chars(&update_validator_set_event.cause_block.get_bytes())
+                first_seven_base64_chars(&update_validator_set_event.cause_block.bytes())
             )
         };
         Box::new(logger)
@@ -150,7 +150,7 @@ impl Logger for ProposeEvent {
                 "{}, {}, {}, {}, {}",
                 PROPOSE,
                 secs_since_unix_epoch(propose_event.timestamp),
-                first_seven_base64_chars(&propose_event.proposal.block.hash.get_bytes()),
+                first_seven_base64_chars(&propose_event.proposal.block.hash.bytes()),
                 propose_event.proposal.block.height,
                 propose_event.proposal.view
             )
@@ -166,7 +166,7 @@ impl Logger for NudgeEvent {
                 "{}, {}, {}, {}, {:?}",
                 NUDGE,
                 secs_since_unix_epoch(nudge_event.timestamp),
-                first_seven_base64_chars(&nudge_event.nudge.justify.block.get_bytes()),
+                first_seven_base64_chars(&nudge_event.nudge.justify.block.bytes()),
                 nudge_event.nudge.view,
                 nudge_event.nudge.justify.phase
             )
@@ -182,7 +182,7 @@ impl Logger for VoteEvent {
                 "{}, {}, {}, {}, {:?}",
                 VOTE,
                 secs_since_unix_epoch(vote_event.timestamp),
-                first_seven_base64_chars(&vote_event.vote.block.get_bytes()),
+                first_seven_base64_chars(&vote_event.vote.block.bytes()),
                 vote_event.vote.view,
                 vote_event.vote.phase
             )
@@ -198,7 +198,7 @@ impl Logger for NewViewEvent {
                 "{}, {}, {}, {}, {:?}",
                 NEW_VIEW,
                 secs_since_unix_epoch(new_view_event.timestamp),
-                first_seven_base64_chars(&new_view_event.new_view.highest_qc.block.get_bytes()),
+                first_seven_base64_chars(&new_view_event.new_view.highest_qc.block.bytes()),
                 new_view_event.new_view.view,
                 new_view_event.new_view.highest_qc.phase
             )
@@ -215,7 +215,7 @@ impl Logger for ReceiveProposalEvent {
                 RECEIVE_PROPOSAL,
                 secs_since_unix_epoch(receive_proposal_event.timestamp),
                 first_seven_base64_chars(&receive_proposal_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_proposal_event.proposal.block.hash.get_bytes()),
+                first_seven_base64_chars(&receive_proposal_event.proposal.block.hash.bytes()),
                 receive_proposal_event.proposal.block.height
             )
         };
@@ -231,7 +231,7 @@ impl Logger for ReceiveNudgeEvent {
                 RECEIVE_NUDGE,
                 secs_since_unix_epoch(receive_nudge_event.timestamp),
                 first_seven_base64_chars(&receive_nudge_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_nudge_event.nudge.justify.block.get_bytes()),
+                first_seven_base64_chars(&receive_nudge_event.nudge.justify.block.bytes()),
                 receive_nudge_event.nudge.justify.phase
             )
         };
@@ -247,7 +247,7 @@ impl Logger for ReceiveVoteEvent {
                 RECEIVE_VOTE,
                 secs_since_unix_epoch(receive_vote_event.timestamp),
                 first_seven_base64_chars(&receive_vote_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_vote_event.vote.block.get_bytes()),
+                first_seven_base64_chars(&receive_vote_event.vote.block.bytes()),
                 receive_vote_event.vote.phase
             )
         };
@@ -263,7 +263,7 @@ impl Logger for ReceiveNewViewEvent {
                 RECEIVE_NEW_VIEW,
                 secs_since_unix_epoch(receive_new_view_event.timestamp),
                 first_seven_base64_chars(&receive_new_view_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_new_view_event.new_view.highest_qc.block.get_bytes()),
+                first_seven_base64_chars(&receive_new_view_event.new_view.highest_qc.block.bytes()),
                 receive_new_view_event.new_view.view,
                 receive_new_view_event.new_view.highest_qc.phase
             )
@@ -309,7 +309,7 @@ impl Logger for CollectQCEvent {
                 "{}, {}, {}, {}, {:?}",
                 COLLECT_QC,
                 secs_since_unix_epoch(collect_qc_event.timestamp),
-                first_seven_base64_chars(&collect_qc_event.quorum_certificate.block.get_bytes()),
+                first_seven_base64_chars(&collect_qc_event.quorum_certificate.block.bytes()),
                 collect_qc_event.quorum_certificate.view,
                 collect_qc_event.quorum_certificate.phase,
             )
@@ -360,7 +360,7 @@ impl Logger for SendSyncResponseEvent {
                 SEND_SYNC_RESPONSE,
                 secs_since_unix_epoch(send_sync_response_event.timestamp),
                 first_seven_base64_chars(&send_sync_response_event.peer.to_bytes()),
-                first_seven_base64_chars(&send_sync_response_event.highest_qc.block.get_bytes()),
+                first_seven_base64_chars(&send_sync_response_event.highest_qc.block.bytes()),
                 send_sync_response_event.blocks.len(),
             )  
         };

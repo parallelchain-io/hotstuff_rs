@@ -131,7 +131,7 @@ impl ValidatorSet {
 
         TotalPower::new(
         (self.total_power()
-            .get_int()
+            .int()
             .checked_mul(2)
             .expect(TOTAL_POWER_OVERFLOW)
             / 3
