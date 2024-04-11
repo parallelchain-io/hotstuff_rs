@@ -3,10 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the Pacemaker protocol, based on the Lewis-Pye View Synchronisation protcol
+//! Implementation of the Pacemaker protocol, based on the Lewis-Pye View Synchronisation protocol
 //! (https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved Weighted Round Robin leader selection mechanism.
 //! 
-//! The liveness of the HotStuff protocol is dependent on a pluggable Pacemaker module, which regulates how and when
+//! The liveness of the HotStuff protocol is dependent on the Pacemaker module, which regulates how and when
 //! a replica advances its view, as well as determines which validator shall act as the leader of a given view. 
 //! 
 //! ## View Synchronisation
@@ -16,14 +16,20 @@
 //! is Byzantine Fault Tolerant: eventual succesful view synchronization is guaranteed in the presence of n = 3f + 1 
 //! validators where at most f validators are Byzantine.
 //! 
-//! The Lewis-Pye Pacemaker achieves view synchronisation by dividing the infinite sequence of views into epochs:
-//! 1. All-to-all broadcast in every epoch view (i.e., last view of an epoch) upon which replicas enter the next 
+//! The Lewis-Pye Pacemaker achieves view synchronisation by dividing the sequence of views into epochs. The mechanism
+//! for advancing the view depends on whether a view is advanced within the same epoch or involves epoch change:
+//! 1. All-to-all broadcast in every epoch-change view (i.e., last view of an epoch) upon which replicas enter the next 
 //!    epoch and set their timeout deadlines for all views in the next epoch,
 //! 2. Advancing to a next view within the same epoch either on timeout or optimistically on receiving a QC for 
 //!    their current view.
 //! 
 //! The latter ensures synchronisation when timeouts are set in a uniform manner and when leaders are honest,
 //! and the former serves as a fallback mechanism in case views fall out of sync.
+//! 
+//! This protocol deviates from Lewis-Pye in two fundamental ways:
+//! 1. Epoch length is configurable, rather than equal to f+1. This is to enable dynamic validator sets.
+//! 2. [TimeoutVote]s include a highest_tc the sender knows. This provides a fallback
+//!    mechanism for helping validators lagging behind on epoch number catch up with the validators ahead.
 //! 
 //! ## Leader Selection
 //! 
@@ -107,9 +113,11 @@ impl<N: Network> Pacemaker<N> {
 
     /// Check the current time ('clock tick'), and possibly send messages and update the 
     /// [internal state of the pacemaker][PacemakerState] in response to the 'clock tick'.
-    /// The state can be updated in two ways, in response to a clock tick indicating a view timeout:
+    /// 
+    /// First, in response to a clock tick indicating a view timeout the state can be updated in two ways:
     /// 1. If it is an epoch view, then its deadline should be extended, and a timeout vote should be broadcasted.
     /// 2. If it is a non-epoch view, then the view should be updated to the subsequent view.
+    /// 
     /// Additionally, tick should check if there is a QC for the current view (epoch or non-epoch view) 
     /// available in the block tree, and if so it should broadcast the QC in an advance view message.
     pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) -> Result<(), PacemakerError>{
@@ -139,8 +147,10 @@ impl<N: Network> Pacemaker<N> {
 
     }
 
-    /// Update the internal state of the pacemaker and possibly the block tree, as well as broadcast messages, 
-    /// in response to receiving a [PacemakerMessage].
+    /// Update the internal state of the pacemaker and possibly the block tree, in response to 
+    /// receiving a [PacemakerMessage]. Broadcast an [AdvanceView] message in case a 
+    /// [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] was collected, or
+    /// in case a valid AdvanceView was received from a peer.
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: PacemakerMessage,
@@ -160,7 +170,7 @@ impl<N: Network> Pacemaker<N> {
     /// The vote may be rejected if the receiver replica is lagging behind the quorum from which the vote is sent. In such
     /// case the replica can use the sender's highest_tc attached to the vote to move ahead.
     /// 
-    /// Note: the [TimeoutVote] can be for any view greater or equal to the current view, but only timeout votes for
+    /// Note: the TimeoutVote can be for any view greater or equal to the current view, but only timeout votes for
     /// the current view will be collected.
     fn on_receive_timeout_vote<K: KVStore>(
         &mut self, 
@@ -207,7 +217,7 @@ impl<N: Network> Pacemaker<N> {
     /// Update the [internal state of the pacemaker][PacemakerState]
     /// and possibly the block tree in response to receiving an [AdvanceView].
     /// 
-    /// Note: the [AdvanceView] message must be for the current view.
+    /// Note: the AdvanceView message must be for the current view.
     fn on_receive_advance_view<K: KVStore>(
         &mut self, 
         advance_view: AdvanceView,
