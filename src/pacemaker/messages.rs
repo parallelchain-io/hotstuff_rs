@@ -3,13 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [Pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+//! Definitions for structured messages that are sent between replicas as part of the 
+//! [Pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     keypair::*,
@@ -17,6 +19,16 @@ use crate::types::{
 
 use super::types::TimeoutCertificate;
 
+/// The Pacemaker protocol involves two types of messages:
+/// 1. [TimeoutVote] which a replica sends to signal to others that its epoch-change view has timed out,
+/// 2. [AdvanceView] which a replica sends to prove to others that it is safe to move to the next view.
+///    The proof consists of either a [QuorumCertificate] for the current view, which serves as an evidence
+///    that progress has been made in the current view, or a [TimeoutCertificate] which serves as an evidence
+///    that a quorum of replicas have timed out in the current view.
+/// 
+/// Note that TimeoutVote is only sent in the epoch-change view. This is because for all other views
+/// replicas move to the next view either optimistically on seeing a QuorumCertificate for the view,
+/// or as soon as the view times out.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum PacemakerMessage {
     TimeoutVote(TimeoutVote),
@@ -87,6 +99,8 @@ impl Into<ProgressMessage> for PacemakerMessage {
     }
 }
 
+/// A vote in favour of terminating a given view and moving to the next view. The signature is over 
+/// chain id and view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct TimeoutVote {
     pub chain_id: ChainID,
@@ -107,11 +121,16 @@ impl SignedMessage for TimeoutVote {
     }
 }
 
+/// A message containing a proof that the view can be advanced. The proof can be either a 
+/// [QuorumCertificate] or a [TimeoutCertificate] for the view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvanceView {
     pub progress_certificate: ProgressCertificate,
 }
 
+/// Proof that either:
+/// 1. A quorum made a decision in the current view ([QuorumCertificate]), or
+/// 2. A quorum voted for terminating the current view on timing out ([TimeoutCertificate]).
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressCertificate {
     TimeoutCertificate(TimeoutCertificate),

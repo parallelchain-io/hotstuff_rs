@@ -95,7 +95,8 @@ impl<N: Network> Pacemaker<N> {
         event_publisher: Option<Sender<Event>>,
     ) -> Result<Self, PacemakerError> {
         let state = PacemakerState::initialize(&config, init_view, init_validator_set.clone());
-        let timeout = state.timeouts.get(&init_view).clone().ok_or(UpdateViewError::GetViewTimeoutError{view: init_view})?;
+        let timeout = state.timeouts.get(&init_view).clone()
+                               .ok_or(UpdateViewError::GetViewTimeoutError{view: init_view})?;
         let view_info = ViewInfo::new(init_view, *timeout, &init_validator_set);
         Ok(
             Self {
@@ -117,20 +118,28 @@ impl<N: Network> Pacemaker<N> {
     /// [internal state of the pacemaker][PacemakerState] in response to the 'clock tick'.
     /// 
     /// First, in response to a clock tick indicating a view timeout the state can be updated in two ways:
-    /// 1. If it is an epoch view, then its deadline should be extended, and a timeout vote should be broadcasted.
-    /// 2. If it is a non-epoch view, then the view should be updated to the subsequent view.
+    /// 1. If it is an epoch-change view, then its deadline should be extended, and a timeout vote should
+    ///    be broadcasted.
+    /// 2. If it is a not an epoch-change view, then the view should be updated to the subsequent view.
     /// 
-    /// Additionally, tick should check if there is a QC for the current view (epoch or non-epoch view) 
-    /// available in the block tree, and if so it should broadcast the QC in an advance view message.
+    /// Additionally, tick should check if there is a QC for the current view (whether an epoch-change 
+    /// view or not) available in the block tree, and if so it should broadcast the QC in an advance 
+    /// view message.
     pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
 
         // 1. Check if the current view has timed out, and proceed accordingly.
         if Instant::now() > self.view_info.deadline {
-            if is_epoch_view(&cur_view, self.config.epoch_length) {
+            if is_epoch_change_view(&cur_view, self.config.epoch_length) {
                 if block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
-                    let pacemaker_message = PacemakerMessage::timeout_vote(&self.config.keypair, self.config.chain_id, cur_view, block_tree.highest_tc());
+                    let pacemaker_message = 
+                        PacemakerMessage::timeout_vote(
+                            &self.config.keypair, 
+                            self.config.chain_id, 
+                            cur_view, 
+                            block_tree.highest_tc()
+                        );
                     self.sender.broadcast(Message::from(pacemaker_message));
                 }
                 self.extend_view()?
@@ -139,9 +148,13 @@ impl<N: Network> Pacemaker<N> {
             }
         }
 
-        // 2. Check if a QC for the current view is available and if I am a validator, and if so broadcast an advance view message.
+        // 2. Check if a QC for the current view is available and if I am a validator, and if so 
+        //    broadcast an advance view message.
         if block_tree.highest_qc().view == cur_view && block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
-            let pacemaker_message = PacemakerMessage::advance_view(ProgressCertificate::QuorumCertificate(block_tree.highest_qc()));
+            let pacemaker_message = 
+                PacemakerMessage::advance_view(
+                    ProgressCertificate::QuorumCertificate(block_tree.highest_qc())
+                );
             self.sender.broadcast(Message::from(pacemaker_message))
         }
 
@@ -181,7 +194,7 @@ impl<N: Network> Pacemaker<N> {
     ) -> Result<(), UpdateViewError> { 
         if !block_tree.committed_validator_set().contains(signer) {return Ok(())};
 
-        if timeout_vote.is_correct(signer) && is_epoch_view(&timeout_vote.view, self.config.epoch_length) {
+        if timeout_vote.is_correct(signer) && is_epoch_change_view(&timeout_vote.view, self.config.epoch_length) {
             let fallback_tc = 
                 timeout_vote.highest_tc.clone().filter(|tc| tc.is_correct(&block_tree.committed_validator_set()));
 
@@ -232,7 +245,7 @@ impl<N: Network> Pacemaker<N> {
         let valid = match &progress_certificate {
             ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(&block_tree.committed_validator_set()),
             ProgressCertificate::TimeoutCertificate(tc) => 
-                tc.is_correct(&block_tree.committed_validator_set()) && is_epoch_view(&tc.view, self.config.epoch_length) 
+                tc.is_correct(&block_tree.committed_validator_set()) && is_epoch_change_view(&tc.view, self.config.epoch_length) 
         };
 
         if valid {
@@ -281,11 +294,11 @@ impl<N: Network> Pacemaker<N> {
         Ok(())
     }
 
-    /// Extend the timeout of the current view. This should only be applied if the current view is an epoch view.
+    /// Extend the timeout of the current view. This should only be applied if the current view is an epoch-change view.
     /// Otherwise an [ExtendViewError] will be returned.
     fn extend_view(&mut self) -> Result<(), ExtendViewError> {
         let cur_view = self.view_info.view;
-        if !is_epoch_view(&cur_view, self.config.epoch_length) {
+        if !is_epoch_change_view(&cur_view, self.config.epoch_length) {
             return Err(ExtendViewError::TriedToExtendNonEpochView{view: cur_view.clone()})
         };
         self.state.extend_epoch_view_timeout(self.view_info.view, &self.config);
@@ -363,9 +376,9 @@ impl PacemakerState {
         return timeouts
     }
 
-    /// Extend the timeout of the epoch view by another max_view_time.
+    /// Extend the timeout of the epoch-change view by another max_view_time.
     /// 
-    /// Required: The caller must ensure that the epoch view is an epoch view.
+    /// Required: The caller must ensure that the view is an epoch-change view.
     fn extend_epoch_view_timeout(&mut self, epoch_view: ViewNumber, config: &PacemakerConfiguration)  {
         self.timeouts.insert(epoch_view, Instant::now() + config.max_view_time);
     }
@@ -376,7 +389,7 @@ impl PacemakerState {
 /// 1. In updating the view, which involves creating [ViewInfo] for the new view.
 /// 2. In extending its current view, which involves setting a new deadline in its ViewInfo.
 /// 
-/// Both of these failures correspond to violations of key invariant of the protocol.
+/// Both of these failures correspond to violations of key invariants of the protocol.
 /// Hence, this error is irrecoverable and on seeing it, the caller should panic.
 #[derive(Debug)]
 pub enum PacemakerError {
@@ -413,7 +426,7 @@ pub enum UpdateViewError {
 /// 1. If an attempt is made to extend a view that is not an epoch-change view. If succesful, such action
 ///    would violate the invariant that only epoch-change views can be updated.
 /// 2. If the current timeout for the view cannot be obtained from the [PacemakerState]. If succesful, 
-///    such action would violate the invariant that a view can only be extended its timeout is known.
+///    such action would violate the invariant that a view can only be extended if its timeout is known.
 #[derive(Debug)]
 pub enum ExtendViewError {
     TriedToExtendNonEpochView{view: ViewNumber},
@@ -487,7 +500,7 @@ fn select_leader(
     panic!("Cannot select a leader: index not found!")
 }
 
-fn is_epoch_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {
+fn is_epoch_change_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {
     view.int() % (epoch_length.int() as u64) == 0
 }
 
