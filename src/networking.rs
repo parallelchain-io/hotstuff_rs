@@ -3,12 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and functions
-//! that replicas use to interact with the network.
+//! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and 
+//! functions that replicas use to interact with the network.
 //!
 //! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their [VerifyingKey](ed25519_dalek::VerifyingKey). 
-//! Networking providers interact with HotStuff-rs' threads through implementations of the [Network] trait. This trait has five methods
-//! that collectively allow peers to exchange progress protocol and sync protocol messages.  
+//! Networking providers interact with HotStuff-rs' threads through implementations of the [Network] trait. 
+//! This trait has five methods that collectively allow peers to exchange progress protocol and sync protocol messages.  
 
 use std::collections::{BTreeMap, VecDeque};
 use std::mem;
@@ -92,9 +92,8 @@ pub(crate) fn start_polling<N: Network + 'static>(
     )
 }
 
-/// Handle for sending and broadcasting messages to the [Network].
-/// Can be used to send or broadcast messages of message types that 
-/// implement the [Into<Message>] trait. 
+/// Handle for sending and broadcasting messages to the [Network]. It can be used to send or broadcast 
+/// messages of message types that implement the [Into<Message>] trait. 
 #[derive(Clone)]
 pub(crate) struct SenderHandle<N: Network> {
     network: N,
@@ -130,25 +129,29 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
     }
 }
 
-/// A receiving end for progress messages. Performs pre-processing of the received messages,
-/// returning the messages immediately or storing them in the buffer.
+/// A receiving end for progress messages. Performs pre-processing of the received messages, returning the
+/// messages immediately or storing them in the buffer.
 ///
 /// All messages must match the chain id passed to the receiver to be accepted.
 ///
 /// ### HotStuff Messages
+/// 
 /// This type's recv method only returns hotstuff messages for the current view, and caches messages from
 /// future views for future consumption. This helps prevent interruptions to progress when replicas' views
 /// are mostly synchronized but they enter views at slightly different times.
 /// 
 /// ### Pacemaker Messages
+/// 
 /// This type's recv method returns pacemaker messages for any view greater or equal to the current view.
 /// It also caches all messages for view greater than the current view, for processing in the appropriate view
 /// in case immediate processing is not possible.
 ///
 /// ### BlockSyncTrigger Messages
+/// 
 /// This type's recv method returns block sync trigger messages immediately without caching.
 ///
 /// ### Buffer management
+/// 
 /// If a message buffer grows beyond its maximum capacity, some highest-viewed messages might be removed 
 /// from the buffer to make space for the new message.
 pub(crate) struct ProgressMessageStub {
@@ -169,11 +172,10 @@ impl ProgressMessageStub {
         }
     }
 
-    /// Receive a message matching the given chain id, and view >= current view (if any).
-    /// Cache and/or return immediately, depending on the message type.
-    /// Messages older than current view are dropped immediately.
-    /// [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage] 
-    /// messages do not have a view, and so they are returned immediately..
+    /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or return
+    /// immediately, depending on the message type. Messages older than current view are dropped immediately.
+    /// [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage] messages do not have 
+    /// a view, and so they are returned immediately.
     pub(crate) fn recv(
         &mut self,
         chain_id: ChainID,
@@ -237,9 +239,8 @@ pub(crate) enum ProgressMessageReceiveError {
     Disconnected,
 }
 
-/// Message buffer intended for storing received [ProgressMessage]s for future views.
-/// Its size is bounded by its capacity, and when the capacity is reached messages
-/// for highest views may be removed.
+/// Message buffer intended for storing received [ProgressMessage]s for future views. Its size is bounded
+/// by its capacity, and when the capacity is reached messages for highest views may be removed.
 struct ProgressMessageBuffer {
     buffer_capacity: BufferSize,
     buffer: BTreeMap<ViewNumber, VecDeque<(VerifyingKey, ProgressMessage)>>,
@@ -258,8 +259,11 @@ impl ProgressMessageBuffer {
 
     /// Try inserting the message into the buffer.
     /// In case caching the message makes the buffer grow beyond its capacity, this function either:
-    /// 1. If the message has the highest view among the views of messages currently in the buffer, then the message is dropped, or
-    /// 2. Otherwise, just enough highest-viewed messages are removed from the buffer to make space for the new message.
+    /// 1. If the message has the highest view among the views of messages currently in the buffer, 
+    ///    then the message is dropped, or
+    /// 2. Otherwise, just enough highest-viewed messages are removed from the buffer to make space
+    ///    for the new message.
+    /// 
     /// Returns whether the message was successfully inserted into the buffer.
     fn insert<M: Into<ProgressMessage> + Cacheable>(&mut self, msg: M, sender: VerifyingKey) -> bool {
         
@@ -272,8 +276,8 @@ impl ProgressMessageBuffer {
 
         // We only need to make space in the buffer if:
         // (1) It will be overloaded after storing the message, and 
-        // (2) We want to store this message in the buffer, i.e., if the message's view is lower than that of the highest-viewed 
-        //     message stored in the buffer
+        // (2) We want to store this message in the buffer, i.e., if the message's view is lower than that of 
+        //     the highest-viewed message stored in the buffer.
         // Otherwise we ignore the message to avoid overloading the buffer.
         if buffer_will_be_overloaded && cache_message_if_buffer_will_be_overloaded {
             self.remove_highest_viewed_msgs(bytes_requested);
@@ -353,8 +357,8 @@ impl ProgressMessageBuffer {
     }
 }
 
-/// A receiving end for sync responses.
-/// The [BlockSyncClientStub::recv_response] method returns the received response.
+/// A receiving end for sync responses. The [BlockSyncClientStub::recv_response] method returns 
+/// the received response.
 pub(crate) struct BlockSyncClientStub {
     responses: Receiver<(VerifyingKey, BlockSyncResponse)>,
 }
@@ -366,9 +370,8 @@ impl BlockSyncClientStub {
         BlockSyncClientStub { responses }
     }
 
-    /// Receive a [BlockSyncResponse] from a given peer.
-    /// Waits for the response until the deadline is reached, and
-    /// if no response is received it returns [BlockSyncResponseReceiveError::Timeout].
+    /// Receive a [BlockSyncResponse] from a given peer. Waits for the response until the deadline is reached, 
+    /// and if no response is received it returns [BlockSyncResponseReceiveError::Timeout].
     pub(crate) fn recv_response(
         &self,
         peer: VerifyingKey,
@@ -397,8 +400,8 @@ pub enum BlockSyncResponseReceiveError {
     Timeout,
 }
 
-/// A receiving end for sync requests. 
-/// The [BlockSyncServerStub::recv_request] method returns the received request.
+/// A receiving end for sync requests. The [BlockSyncServerStub::recv_request] method returns the received
+/// request.
 pub(crate) struct BlockSyncServerStub<N: Network> {
     network: N,
     requests: Receiver<(VerifyingKey, BlockSyncRequest)>,
