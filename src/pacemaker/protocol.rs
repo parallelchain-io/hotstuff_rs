@@ -13,10 +13,10 @@
 //! 
 //! ## View Synchronisation
 //! 
-//! The goal is to ensure that at any point all honest replicas should eventually end up in the same view
-//! and stay there for long enough to enable consensus through forming a QC. Just like the HotStuff SMR, 
-//! the Pacemaker protocol is Byzantine Fault Tolerant: eventual succesful view synchronization is guaranteed
-//! in the presence of n = 3f + 1 validators where at most f validators are Byzantine.
+//! The goal is to ensure that at any point all honest replicas should eventually end up in the same
+//! view and stay there for long enough to enable consensus through forming a QC. Just like the HotStuff
+//! SMR, the Pacemaker protocol is Byzantine Fault Tolerant: eventual succesful view synchronization is 
+//! guaranteed in the presence of n = 3f + 1 validators where at most f validators are Byzantine.
 //! 
 //! The Lewis-Pye Pacemaker achieves view synchronisation by dividing the sequence of views into epochs. 
 //! The mechanism for advancing the view depends on whether a view is advanced within the same epoch or 
@@ -26,20 +26,21 @@
 //! 2. Advancing to a next view within the same epoch either on timeout or optimistically on receiving a 
 //!    QC for their current view.
 //! 
-//! The latter ensures synchronisation when timeouts are set in a uniform manner and when leaders are honest,
-//! and the former serves as a fallback mechanism in case views fall out of sync.
+//! The latter ensures synchronisation when timeouts are set in a uniform manner and when leaders are
+//! honest, and the former serves as a fallback mechanism in case views fall out of sync.
 //! 
 //! This protocol deviates from Lewis-Pye in two fundamental ways:
 //! 1. Epoch length is configurable, rather than equal to f+1. This is to enable dynamic validator sets.
-//! 2. [TimeoutVote]s include a highest_tc the sender knows. This provides a fallback mechanism for helping 
-//!    validators lagging behind on epoch number catch up with the validators ahead.
+//! 2. [TimeoutVote]s include a highest_tc the sender knows. This provides a fallback mechanism for 
+//!    helping validators lagging behind on epoch number catch up with the validators ahead.
 //! 
 //! ## Leader Selection
 //! 
 //! Leaders are selected according to Interleaved Weighted Round Robin algorithm. This ensures that:
-//! 1. The frequency with which a validator is selected as a leader is proportional to the validator's power, 
-//! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power than any 
-//!    other validator, it will never act as a leader for more than one consecutive view.
+//! 1. The frequency with which a validator is selected as a leader is proportional to the validator's
+//!    power, 
+//! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power
+//!    than any other validator, it will never act as a leader for more than one consecutive view.
 
 use std::time::Duration;
 use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
@@ -60,20 +61,21 @@ use crate::pacemaker::messages::{AdvanceView, PacemakerMessage, TimeoutVote};
 use crate::pacemaker::types::TimeoutVoteCollector;
 use crate::pacemaker::messages::ProgressCertificate;
 
-/// A Pacemaker protocol for Byzantine View Synchronization inspired by the Lewis-Pye View Synchronization
-/// protocol (https://arxiv.org/pdf/2201.01107.pdf). Its [PacemakerState] is an authoritative source of 
-/// information regarding the current view and its leader, and [Algorithm][crate::algorithm::Algorithm] 
-/// should regularly query the [Pacemaker] for this information ([ViewInfo]), and propagate the information 
-/// to [HotStuff](crate::hotstuff::protocol::HotStuff).
+/// A Pacemaker protocol for Byzantine View Synchronization inspired by the Lewis-Pye View 
+/// Synchronization protocol (https://arxiv.org/pdf/2201.01107.pdf). Its [PacemakerState] is an
+/// authoritative source of information regarding the current view and its leader, and 
+/// [Algorithm][crate::algorithm::Algorithm] should regularly query the [Pacemaker] for this 
+/// information ([ViewInfo]), and propagate the information to 
+/// [HotStuff](crate::hotstuff::protocol::HotStuff).
 ///
 /// The Pacemaker exposes the following API for use in the Algorithm:
 /// 1. [Pacemaker::new]: creates a fresh instance of the [Pacemaker],
-/// 2. [Pacemaker::view_info]: queries the Pacemaker for [ViewInfo], which can be used to determine whether 
-///    the view should be updated,
-/// 3. [Pacemaker::tick]: updates the internal state of the Pacemaker and broadcasts a message if needed in 
-///    response to a time measurement,
-/// 4. [Pacemaker::on_receive_msg]: updates the [PacemakerState] and possibly the [BlockTree], as well as 
-///    broadcasts messages, in response to a received [PacemakerMessage].
+/// 2. [Pacemaker::view_info]: queries the Pacemaker for [ViewInfo], which can be used to determine
+///    whether the view should be updated,
+/// 3. [Pacemaker::tick]: updates the internal state of the Pacemaker and broadcasts a message if needed
+///    in response to a time measurement,
+/// 4. [Pacemaker::on_receive_msg]: updates the [PacemakerState] and possibly the [BlockTree], as well 
+///    as broadcasts messages, in response to a received [PacemakerMessage].
 /// 
 /// If any of these actions fail, a [PacemakerError] is returned.
 pub(crate) struct Pacemaker<N: Network> {
@@ -163,8 +165,9 @@ impl<N: Network> Pacemaker<N> {
     }
 
     /// Update the internal state of the pacemaker and possibly the block tree, in response to receiving a 
-    /// [PacemakerMessage]. Broadcast an [AdvanceView] message in case a [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] 
-    /// was collected, or in case a valid AdvanceView was received from a peer.
+    /// [PacemakerMessage]. Broadcast an [AdvanceView] message in case a 
+    /// [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] was collected, or in case a valid
+    /// AdvanceView message was received from a peer.
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: PacemakerMessage,
@@ -178,14 +181,15 @@ impl<N: Network> Pacemaker<N> {
         Ok(())
     }
 
-    /// Update the [internal state of the pacemaker][PacemakerState] in response to receiving a [TimeoutVote].
-    /// If a [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] is collected, the replica should 
-    /// try to update its highest_tc and broadcast the collected [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate].
-    /// The vote may be rejected if the receiver replica is lagging behind the quorum from which the vote is sent. 
-    /// In such case the replica can use the sender's highest_tc attached to the vote to move ahead.
+    /// Update the [internal state of the pacemaker][PacemakerState] in response to receiving a 
+    /// [TimeoutVote]. If a [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] is collected,
+    /// the replica should try to update its highest_tc and broadcast the collected 
+    /// [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate]. The vote may be rejected if the
+    /// receiver replica is lagging behind the quorum from which the vote is sent. In such case the replica
+    /// can use the sender's highest_tc attached to the vote to move ahead.
     /// 
-    /// Note: the TimeoutVote can be for any view greater or equal to the current view, but only timeout votes for
-    /// the current view will be collected.
+    /// Note: the TimeoutVote can be for any view greater or equal to the current view, but only timeout 
+    /// votes for the current view will be collected.
     fn on_receive_timeout_vote<K: KVStore>(
         &mut self, 
         timeout_vote: TimeoutVote,
@@ -294,8 +298,8 @@ impl<N: Network> Pacemaker<N> {
         Ok(())
     }
 
-    /// Extend the timeout of the current view. This should only be applied if the current view is an epoch-change view.
-    /// Otherwise an [ExtendViewError] will be returned.
+    /// Extend the timeout of the current view. This should only be applied if the current view is an
+    /// epoch-change view. Otherwise an [ExtendViewError] will be returned.
     fn extend_view(&mut self) -> Result<(), ExtendViewError> {
         let cur_view = self.view_info.view;
         if !is_epoch_change_view(&cur_view, self.config.epoch_length) {
@@ -410,7 +414,7 @@ impl From<ExtendViewError> for PacemakerError {
 }
 
 /// Updating the view can fail in two ways:
-/// 1. If an attempt is made to update the view to a lower view than the current view. If succesful,
+/// 1. If an attempt is made to update the view to a lower view than the current view. If successful,
 ///    such action would violate the invariant the views obtained through [Pacemaker::view_info] are
 ///    monotonically increasing.
 /// 2. If the timeout for the target view cannot be found in the [PacemakerState]. If succesful, 
@@ -423,9 +427,9 @@ pub enum UpdateViewError {
 }
 
 /// Extending the view can fail in two ways:
-/// 1. If an attempt is made to extend a view that is not an epoch-change view. If succesful, such action
-///    would violate the invariant that only epoch-change views can be updated.
-/// 2. If the current timeout for the view cannot be obtained from the [PacemakerState]. If succesful, 
+/// 1. If an attempt is made to extend a view that is not an epoch-change view. If succesful, such 
+///    action would violate the invariant that only epoch-change views can be updated.
+/// 2. If the current timeout for the view cannot be obtained from the [PacemakerState]. If successful, 
 ///    such action would violate the invariant that a view can only be extended if its timeout is known.
 #[derive(Debug)]
 pub enum ExtendViewError {
@@ -463,8 +467,8 @@ impl ViewInfo {
     }
 }
 
-/// Implements the Interleaved Weighted Round Robin algorithm for selecting a view leader. For internal use 
-/// by the [Pacemaker] and [PacemakerState] methods.
+/// Implements the Interleaved Weighted Round Robin algorithm for selecting a view leader. For internal
+/// use by the [Pacemaker] and [PacemakerState] methods.
 fn select_leader(
     view: ViewNumber,
     validator_set: &ValidatorSet,

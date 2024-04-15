@@ -3,25 +3,27 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Types and methods used to access and mutate the persistent state that a replica keeps track for the operation
-//! of the protocol, and for its application.
+//! Types and methods used to access and mutate the persistent state that a replica keeps track for the
+//! operation of the protocol, and for its application.
 //!
-//! This state may be stored in any key-value store of the library user's own choosing, as long as that KV store
-//! can provide a type that implements [KVStore]. This state can be mutated through an instance of [BlockTree],
-//! and read through an instance of [BlockTreeSnapshot], which can be created using [BlockTreeCamera].
+//! This state may be stored in any key-value store of the library user's own choosing, as long as that
+//! KV store can provide a type that implements [KVStore]. This state can be mutated through an instance
+//! of [BlockTree], and read through an instance of [BlockTreeSnapshot], which can be created using
+//! [BlockTreeCamera].
 //!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the [Block Tree](crate::state::BlockTree), and users can
-//! get a [BlockTreeCamera] using replica's [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
+//! In normal operation, HotStuff-rs code will internally be making all writes to the 
+//! [Block Tree](crate::state::BlockTree), and users can get a [BlockTreeCamera] using replica's 
+//! [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
 //!
-//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from an error
-//! that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of BlockTree using
-//! [BlockTree::new_unsafe] and an instance of the corresponding [BlockTreeWriteBatch] using
-//! [BlockTreeWriteBatch::new_unsafe].
+//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
+//! an error that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of 
+//! BlockTree using [BlockTree::new_unsafe] and an instance of the corresponding [BlockTreeWriteBatch]
+//! using [BlockTreeWriteBatch::new_unsafe].
 //!
 //! ## State variables
 //!
-//! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples that sit
-//! at a particular key path or prefix in the library user's chosen KV store. These variables are:
+//! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples
+//! that sit at a particular key path or prefix in the library user's chosen KV store. These variables are:
 //! 
 //! |Variable|"Type"|Description|
 //! |---|---|---|
@@ -120,15 +122,16 @@ impl<K: KVStore> BlockTree<K> {
         /* 3 */ (block.justify.phase.is_generic() || block.justify.phase.is_commit())
     }
 
-    /// Returns whether a qc can be 'inserted' into the block tree, whether as part of a block using [BlockTree::insert_block],
-    /// or to be set as the highest qc, or, if it is a precommit or commit qc, to have the view of its prepare qc set as the
-    /// locked view.
+    /// Returns whether a qc can be 'inserted' into the block tree, whether as part of a block using
+    /// [BlockTree::insert_block], or to be set as the highest qc, or, if it is a precommit or commit qc,
+    /// to have the view of its prepare qc set as the locked view.
     ///
     /// For this, it is necessary that:
     /// 1. Its chain ID matches the chain ID of the replica, or is the genesis qc.
     /// 2. It justifies a known block, or is the genesis qc.
     /// 3. Its view number is greater than or equal to locked view.
-    /// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state updates.
+    /// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state
+    ///    updates.
     /// 5. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
     ///
     /// # Precondition
@@ -143,7 +146,8 @@ impl<K: KVStore> BlockTree<K> {
         /* 5 */ (qc.phase.is_generic() && self.pending_validator_set_updates(&qc.block).is_none()))
     }
 
-    /// Insert a block, causing all of the necessary state changes, including possibly block commit, to happen.
+    /// Insert a block, causing all of the necessary state changes, including possibly block commit, to
+    /// happen.
     ///
     /// If the insertion causes a block/blocks to be committed, returns the updates that this causes to the
     /// validator set, if any.
@@ -247,7 +251,9 @@ impl<K: KVStore> BlockTree<K> {
 
         /// Publish all events resulting from calling [self::insert_block] on a block, 
         /// These events change persistent state, and always include [InsertBlockEvent], 
-        /// possibly include: [UpdateHighestQCEvent], [UpdateLockedViewEvent], [PruneBlockEvent], [CommitBlockEvent], [UpdateValidatorSetEvent].
+        /// possibly include: [UpdateHighestQCEvent], [UpdateLockedViewEvent], [PruneBlockEvent], 
+        /// [CommitBlockEvent], [UpdateValidatorSetEvent].
+        /// 
         /// Invariant: this method is invoked immediately after the corresponding changes are written to the [BlockTree].
         fn publish_insert_block_events(
             event_publisher: &Option<Sender<Event>>,
@@ -284,10 +290,9 @@ impl<K: KVStore> BlockTree<K> {
             });
         }
 
-        // Safety: a block that updates the validator set must be followed by a block that contains
-        // a commit qc. A block becomes committed immediately if followed by a commit qc. Therefore,
-        // under normal operation, at most 1 validator-set-updating block can be committed by one
-        // insertion.
+        // Safety: a block that updates the validator set must be followed by a block that contains a commit
+        // qc. A block becomes committed immediately if followed by a commit qc. Therefore, under normal
+        // operation, at most 1 validator-set-updating block can be committed by on insertion.
         committed_blocks.into_iter().rev().find_map(|(_, validator_set_updates_opt)| validator_set_updates_opt)
     }
 
@@ -313,8 +318,8 @@ impl<K: KVStore> BlockTree<K> {
 
     /// Commits a block and its ancestors if they have not been committed already. 
     /// 
-    /// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set, in sequence (from lowest height to 
-    /// highest height).
+    /// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set,
+    /// in sequence (from lowest height to highest height).
     pub fn commit_block(
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
@@ -334,15 +339,18 @@ impl<K: KVStore> BlockTree<K> {
         // Newest committed block height, we do not consider the blocks from this height downwards.
         let min_height = self.highest_committed_block_height();
 
-        // Obtain an iterator over the uncomitted blocks among "block" and its ancestors from oldest to newest, the newest block being "block".
-        // This is required because we want to commit blocks in correct order, applying updates from oldest to newest.
+        // Obtain an iterator over the uncomitted blocks among "block" and its ancestors from oldest to newest,
+        // the newest block being "block".
+        // This is required because we want to commit blocks in correct order, applying updates from oldest to
+        // newest.
         let uncommitted_blocks_iter = blocks_iter.take_while(|b| min_height.is_none() || min_height.is_some_and(|h| self.block_height(b).unwrap() > h));
         let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
         let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
         
         // Helper closure that
         // (1) commits block b, applying all related updates to the write batch,
-        // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional validator set updates associated with b,
+        // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional
+        //     validator set updates associated with b,
         // (3) returns the extended vector of blocks committed so far (updated accumulator).
         let commit = |mut committed_blocks: Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, b: &CryptoHash| ->  Vec<(CryptoHash, Option<ValidatorSetUpdates>)>{
 
@@ -384,7 +392,8 @@ impl<K: KVStore> BlockTree<K> {
 
         // Iterate over the uncommitted blocks from oldest to newest, 
         // (1) applying related updates (by mutating the write batch), and
-        // (2) building up the vector of committed blocks (by pushing the newely committed blocks to the accumulator vector).
+        // (2) building up the vector of committed blocks (by pushing the newely committed blocks to
+        //     the accumulator vector).
         // Finally, return the accumulator.
         uncommitted_blocks_ordered_iter.fold(Vec::new(), commit)
 
@@ -392,15 +401,16 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
 
-    /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending app state updates). Siblings
+    /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending
+    /// app state updates). Siblings
     /// here refer to other blocks that share the same parent as the specified block.
     /// 
     ///  # Precondition
     /// Block is in its parents' (or the genesis) children list.
     ///
     /// # Panics
-    /// Panics if the block is not in the block tree, or if the block's parent (or genesis) does not have a children
-    /// list.
+    /// Panics if the block is not in the block tree, or if the block's parent (or genesis) does not have a
+    /// children list.
     pub fn delete_siblings(
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
@@ -818,7 +828,8 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
 
     /* ↓↓↓ Used for syncing ↓↓↓ */
 
-    /// Get a chain of blocks starting from the specified tail block and going towards the newest block, up until the limit.
+    /// Get a chain of blocks starting from the specified tail block and going towards the newest block,
+    /// up until the limit.
     ///
     /// If tail is None, then the chain starts from genesis instead.
     pub(crate) fn blocks_from_height_to_newest(
@@ -852,8 +863,10 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         res
     }
 
-    // Get a chain of blocks from the newest block up to (but not including) the highest committed block, or genesis.
-    // The returned chain goes from blocks of higher height (newest block) to blocks of lower height.
+    /// Get a chain of blocks from the newest block up to (but not including) the highest committed block,
+    /// or genesis.
+    ///
+    /// The returned chain goes from blocks of higher height (newest block) to blocks of lower height.
     fn blocks_from_newest_to_committed(&self) -> Vec<Block> {
         let mut res = Vec::new();
         if let Some(newest_block) = self.newest_block() {

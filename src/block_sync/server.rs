@@ -4,7 +4,8 @@
 */
 
 //! Implements the [BlockSyncServer], which is reponsible for:
-//! 1. Periodically publishing the replica's highest known block (or highest_qc.block) by broadcasting an [AdvertiseBlock] message, and
+//! 1. Periodically publishing the replica's highest known block (or highest_qc.block) by broadcasting
+//!    an [AdvertiseBlock] message, and
 //! 2. Responding to received sync requests.
 
 use std::{sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}};

@@ -24,11 +24,10 @@ use crate::types::{
 use crate::hotstuff::messages::{Vote, HotStuffMessage, NewView, Nudge, Proposal};
 use crate::hotstuff::types::{NewViewCollector, VoteCollector};
 
-/// An implementation of the HotStuff protocol (https://arxiv.org/abs/1803.05069),
-/// adapted to enable dynamic validator sets. The protocol operates on a per-view
-/// basis, where in each view the validator exchanges messages with other validators,
-/// and updates the [block tree][BlockTree]. The [HotStuffState] reflects the view-specific
-/// parameters that define how the validator communicates.
+/// An implementation of the HotStuff protocol (https://arxiv.org/abs/1803.05069), adapted to enable
+/// dynamic validator sets. The protocol operates on a per-view basis, where in each view the validator
+/// exchanges messages with other validators, and updates the [block tree][BlockTree]. The 
+/// [HotStuffState] reflects the view-specific parameters that define how the validator communicates.
 pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     state: HotStuffState,

@@ -3,8 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [BlockSync] protocol.
-//! Note: the struct definitions may be subject to change as we flesh out the details of the [BlockSync] protocol.
+//! Definitions for structured messages that are sent between replicas as part of the [BlockSync]
+//! protocol.
+//! 
+//! Note: the struct definitions may be subject to change as we flesh out the details of the 
+//! [BlockSync] protocol.
 
 use std::mem;
 

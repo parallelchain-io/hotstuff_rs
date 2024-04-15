@@ -23,8 +23,8 @@ use super::types::TimeoutCertificate;
 /// 1. [TimeoutVote] which a replica sends to signal to others that its epoch-change view has timed out,
 /// 2. [AdvanceView] which a replica sends to prove to others that it is safe to move to the next view.
 ///    The proof consists of either a [QuorumCertificate] for the current view, which serves as an evidence
-///    that progress has been made in the current view, or a [TimeoutCertificate] which serves as an evidence
-///    that a quorum of replicas have timed out in the current view.
+///    that progress has been made in the current view, or a [TimeoutCertificate] which serves as an 
+///    evidence that a quorum of replicas have timed out in the current view.
 /// 
 /// Note that TimeoutVote is only sent in the epoch-change view. This is because for all other views
 /// replicas move to the next view either optimistically on seeing a QuorumCertificate for the view,

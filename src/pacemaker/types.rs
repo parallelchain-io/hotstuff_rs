@@ -14,8 +14,10 @@ use crate::types::{
 };
 use crate::pacemaker::messages::TimeoutVote;
 
-/// Proof that at least a quorum of validators have sent a [TimeoutVote][crate::pacemaker::messages::TimeoutVote] for the same view.
-/// Required for advancing to a new epoch as part of the [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+/// Proof that at least a quorum of validators have sent a 
+/// [TimeoutVote][crate::pacemaker::messages::TimeoutVote] for the same view.
+/// Required for advancing to a new epoch as part of the 
+/// [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TimeoutCertificate {
     pub chain_id: ChainID,
@@ -25,7 +27,8 @@ pub struct TimeoutCertificate {
 
 impl TimeoutCertificate {
 
-    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms a quorum.
+    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
+    /// a quorum.
     pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
 
             // Check whether the size of the signature set is the same as the size of the validator set.
@@ -70,12 +73,11 @@ impl TimeoutCertificate {
 
 }
 
-/// Helps leaders incrementally form [TimeoutCertificate]s by combining votes for the same chain_id and view by replicas
-/// in a given [validator set](ValidatorSet).
+/// Helps leaders incrementally form [TimeoutCertificate]s by combining votes for the same chain_id and
+/// view by replicas in a given [validator set](ValidatorSet).
 pub(crate) struct TimeoutVoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
-    validator_set_total_power: TotalPower,
     validator_set: ValidatorSet,
     signature_set_power: TotalPower,
     signature_set: SignatureSet,
@@ -88,18 +90,17 @@ impl TimeoutVoteCollector {
         Self { 
             chain_id, 
             view, 
-            validator_set_total_power: validator_set.total_power(), 
             validator_set, 
             signature_set_power: TotalPower::new(0),
             signature_set: SignatureSet::new(n), 
         }
     }
 
-    /// Adds the timeout vote to a signature set if it has the correct view and chain id. 
-    /// Returning a quorum certificate if adding the vote allows for one to be created.
+    /// Adds the timeout vote to a signature set if it has the correct view and chain id. Returning a Quorum
+    /// Certificate if adding the vote allows for one to be created.
     ///
-    /// If the timeout vote is not signed correctly, or doesn't match the collector's view, 
-    /// or the signer is not part of its validator set, then this is a no-op.
+    /// If the timeout vote is not signed correctly, or doesn't match the collector's view, or the signer is
+    /// not part of its validator set, then this is a no-op.
     ///
     /// # Preconditions
     /// vote.is_correct(signer)

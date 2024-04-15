@@ -72,9 +72,11 @@ impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
 }
 
 /// Response from the app upon receiving a [request to produce a new block](ProduceBlockRequest).
-/// Contains the new block's [data](crate::types::Data), the [hash of the data](crate::types::CryptoHash),
-/// the [app state updates](crate::types::AppStateUpdates) associated with the block (if any),
-/// and the [validator set updates](crate::types::ValidatorSetUpdates) associated with the block (if any).
+/// Contains the new block's [data](crate::types::basic::Data), the 
+/// [hash of the data](crate::types::basic::CryptoHash),
+/// the [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any),
+/// and the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with the
+/// block (if any).
 pub struct ProduceBlockResponse {
     pub data_hash: CryptoHash,
     pub data: Data,
@@ -83,7 +85,8 @@ pub struct ProduceBlockResponse {
 }
 
 /// Request for the app to validate a proposed block. Contains information about the proposed
-/// [block](crate::types::Block), and the relevant [state of the Block Tree](crate::state::AppBlockTreeView).
+/// [block](crate::types::block::Block), and the relevant 
+/// [state of the Block Tree](crate::state::AppBlockTreeView).
 pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
     proposed_block: &'a Block,
     block_tree_view: AppBlockTreeView<'b, K>,
@@ -108,8 +111,10 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
 
 /// Response from the app upon receiving a [request to validate a block](ValidateBlockRequest). 
 /// The response can either:
-/// 1. Assert that the block is valid, and return the [app state updates](crate::types::AppStateUpdates) associated with the block (if any),
-///    as well as the [validator set updates](crate::types::ValidatorSetUpdates) associated with the block (if any), or
+/// 1. Assert that the block is valid, and return the 
+///    [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any), as
+///    well as the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with
+///    the block (if any), or
 /// 2. Assert that the block is invalid.
 pub enum ValidateBlockResponse {
     Valid {

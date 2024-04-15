@@ -6,9 +6,10 @@
 //! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and 
 //! functions that replicas use to interact with the network.
 //!
-//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their [VerifyingKey](ed25519_dalek::VerifyingKey). 
-//! Networking providers interact with HotStuff-rs' threads through implementations of the [Network] trait. 
-//! This trait has five methods that collectively allow peers to exchange progress protocol and sync protocol messages.  
+//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their
+//! [VerifyingKey](ed25519_dalek::VerifyingKey). Networking providers interact with HotStuff-rs' threads
+//! through implementations of the [Network] trait. This trait has five methods that collectively allow
+//! peers to exchange progress protocol and sync protocol messages.  
 
 use std::collections::{BTreeMap, VecDeque};
 use std::mem;
@@ -40,9 +41,11 @@ pub trait Network: Clone + Send {
     fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
 }
 
-/// Spawn the poller thread, which polls the [Network] for messages and distributes them into receivers for:
+/// Spawn the poller thread, which polls the [Network] for messages and distributes them into receivers
+/// for:
 /// 1. Progress messages (processed by the [Algorithm][crate::algorithm::Algorithm]'s execute loop), and
-/// 2. Block sync requests (processed by [BlockSyncServer][crate::block_sync::server::BlockSyncServer]), and 
+/// 2. Block sync requests (processed by [BlockSyncServer][crate::block_sync::server::BlockSyncServer]),
+///    and 
 /// 3. Block sync responses (processed by [BlockSyncClient][crate::block_sync::client::BlockSyncClient]).
 pub(crate) fn start_polling<N: Network + 'static>(
     mut network: N,
@@ -129,22 +132,22 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
     }
 }
 
-/// A receiving end for progress messages. Performs pre-processing of the received messages, returning the
-/// messages immediately or storing them in the buffer.
+/// A receiving end for progress messages. Performs pre-processing of the received messages, returning
+/// the messages immediately or storing them in the buffer.
 ///
 /// All messages must match the chain id passed to the receiver to be accepted.
 ///
 /// ### HotStuff Messages
 /// 
-/// This type's recv method only returns hotstuff messages for the current view, and caches messages from
-/// future views for future consumption. This helps prevent interruptions to progress when replicas' views
-/// are mostly synchronized but they enter views at slightly different times.
+/// This type's recv method only returns hotstuff messages for the current view, and caches messages
+/// from future views for future consumption. This helps prevent interruptions to progress when
+/// replicas' views are mostly synchronized but they enter views at slightly different times.
 /// 
 /// ### Pacemaker Messages
 /// 
-/// This type's recv method returns pacemaker messages for any view greater or equal to the current view.
-/// It also caches all messages for view greater than the current view, for processing in the appropriate view
-/// in case immediate processing is not possible.
+/// This type's recv method returns pacemaker messages for any view greater or equal to the current
+/// view. It also caches all messages for view greater than the current view, for processing in the
+/// appropriate view in case immediate processing is not possible.
 ///
 /// ### BlockSyncTrigger Messages
 /// 
@@ -172,10 +175,10 @@ impl ProgressMessageStub {
         }
     }
 
-    /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or return
-    /// immediately, depending on the message type. Messages older than current view are dropped immediately.
-    /// [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage] messages do not have 
-    /// a view, and so they are returned immediately.
+    /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or
+    /// return immediately, depending on the message type. Messages older than current view are dropped
+    /// immediately. [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage]
+    /// messages are not associated with a view, and so they are returned immediately.
     pub(crate) fn recv(
         &mut self,
         chain_id: ChainID,
@@ -239,8 +242,9 @@ pub(crate) enum ProgressMessageReceiveError {
     Disconnected,
 }
 
-/// Message buffer intended for storing received [ProgressMessage]s for future views. Its size is bounded
-/// by its capacity, and when the capacity is reached messages for highest views may be removed.
+/// Message buffer intended for storing received [ProgressMessage]s for future views. Its size is
+/// bounded by its capacity, and when the capacity is reached messages for highest views may be
+/// removed.
 struct ProgressMessageBuffer {
     buffer_capacity: BufferSize,
     buffer: BTreeMap<ViewNumber, VecDeque<(VerifyingKey, ProgressMessage)>>,
@@ -304,7 +308,8 @@ impl ProgressMessageBuffer {
         false
     }
 
-    /// If there are messages for this view in the buffer, remove and return the message at the front of the queue.
+    /// If there are messages for this view in the buffer, remove and return the message at the front
+    /// of the queue.
     fn get_msg(&mut self, view: &ViewNumber) -> Option<(VerifyingKey, ProgressMessage)> {
         self.buffer.get_mut(view).map(|msg_queue| msg_queue.pop_front()).flatten()
     }
@@ -370,8 +375,8 @@ impl BlockSyncClientStub {
         BlockSyncClientStub { responses }
     }
 
-    /// Receive a [BlockSyncResponse] from a given peer. Waits for the response until the deadline is reached, 
-    /// and if no response is received it returns [BlockSyncResponseReceiveError::Timeout].
+    /// Receive a [BlockSyncResponse] from a given peer. Waits for the response until the deadline is
+    /// reached, and if no response is received it returns [BlockSyncResponseReceiveError::Timeout].
     pub(crate) fn recv_response(
         &self,
         peer: VerifyingKey,
@@ -400,8 +405,8 @@ pub enum BlockSyncResponseReceiveError {
     Timeout,
 }
 
-/// A receiving end for sync requests. The [BlockSyncServerStub::recv_request] method returns the received
-/// request.
+/// A receiving end for sync requests. The [BlockSyncServerStub::recv_request] method returns the
+/// received request.
 pub(crate) struct BlockSyncServerStub<N: Network> {
     network: N,
     requests: Receiver<(VerifyingKey, BlockSyncRequest)>,

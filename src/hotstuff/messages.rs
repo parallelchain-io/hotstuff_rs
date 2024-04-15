@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! Definitions for structured messages that are sent between replicas as part of the
+//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
 
 use std::mem;
 

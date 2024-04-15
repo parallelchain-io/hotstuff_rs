@@ -5,27 +5,32 @@
 
 //! Functions that log out [events](crate::events).
 //!
-//! The logs defined in this module are printed if the user enabled them via replica's [config](crate::replica::Configuration).
+//! The logs defined in this module are printed if the user enabled them via replica's
+//! [config](crate::replica::Configuration).
 //! 
-//! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages printed onto a terminal or
-//! to a file, set up a [logging implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
+//! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
+//! printed onto a terminal or to a file, set up a 
+//! [logging implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
 //! 
 //! ## Log message format
 //! 
-//! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are always:
+//! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are
+//! always:
 //! 1. The name of the event in PascalCase (defined in this module as constants).
 //! 2. The time the event was emitted (as number of seconds since the Unix Epoch).
 //! 
-//! The rest of the values differ depending on the kind of event. For example, the following snippet is how a 
-//! [ReceiveProposal](crate::events::ReceiveProposalEvent) is printed:
+//! The rest of the values differ depending on the kind of event. For example, the following snippet
+//! is how a [ReceiveProposal](crate::events::ReceiveProposalEvent) is printed:
 //! 
 //! ```text
 //! ReceiveProposal, 1701329264, Id5u7f6, fNGCJyk, 0
 //! ```
 //! 
 //! In the snippet:
-//! - The third value is the first seven characters of the Base64 encoding of the public address of the origin of the proposal.
-//! - The fourth value is the first seven characters of the Base64 encoding of the hash of the proposed block.
+//! - The third value is the first seven characters of the Base64 encoding of the public address of the
+//!   origin of the proposal.
+//! - The fourth value is the first seven characters of the Base64 encoding of the hash of the proposed
+//!   block.
 //! - The fifth value is the height of the proposed block.
 
 use std::time::SystemTime;

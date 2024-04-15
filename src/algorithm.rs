@@ -138,7 +138,6 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             self.hotstuff.on_receive_view_info(view_info.clone(), &mut self.block_tree, &mut self.app);
 
             // 5. Poll the network for incoming messages.
-            //let deadline = self.pacemaker.view_deadline(self.cur_view).expect("The deadline for this view has not been set!");
             match self.pm_stub.recv(self.chain_id, view_info.view, view_info.deadline) {
                 Ok((origin, msg)) => {
                     match msg {
