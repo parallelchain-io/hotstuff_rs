@@ -136,7 +136,9 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
 /// the messages immediately or storing them in the buffer.
 ///
 /// All messages must match the chain id passed to the receiver to be accepted.
-///
+/// 
+/// ## View-aware buffering
+/// 
 /// ### HotStuff Messages
 /// 
 /// This type's recv method only returns hotstuff messages for the current view, and caches messages
@@ -153,7 +155,7 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
 /// 
 /// This type's recv method returns block sync trigger messages immediately without caching.
 ///
-/// ### Buffer management
+/// ## Buffer management
 /// 
 /// If a message buffer grows beyond its maximum capacity, some highest-viewed messages might be removed 
 /// from the buffer to make space for the new message.
