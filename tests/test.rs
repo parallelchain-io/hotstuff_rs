@@ -1,8 +1,6 @@
 /*
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-
-    Authors: Alice Lim
 */
 
 //! The test suite for HotStuff-rs involves an [app](NumberApp) that keeps track of a single number in its state, which

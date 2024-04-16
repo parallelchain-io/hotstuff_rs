@@ -14,7 +14,7 @@ use ed25519_dalek::ed25519::Error;
 use rand::seq::SliceRandom;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 
-use super::basic::{Power, TotalPower, UpdateSet};
+use super::basic::{BlockHeight, CryptoHash, Power, TotalPower, UpdateSet};
 
 /// Internal type used for serializing and deserializing values of type [VerifyingKey].
 type VerifyingKeyBytes = [u8; 32];
@@ -131,7 +131,7 @@ impl ValidatorSet {
 
         TotalPower::new(
         (self.total_power()
-            .get_int()
+            .int()
             .checked_mul(2)
             .expect(TOTAL_POWER_OVERFLOW)
             / 3
@@ -235,5 +235,65 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
             inserts: new_inserts,
             deletes: new_deletes,
         }
+    }
+}
+
+/// Read-only interface for obtaining information about the current (i.e., committed) validator set, and 
+/// the validator set history. It is a protocol invariant that a hotstuff-rs replica only needs to know 
+/// the previous validator set to validate QCs and TCs, hence we only store the previous validator set 
+/// in the history.
+#[derive(Clone)]
+pub struct ValidatorSetState {
+    committed_validator_set: ValidatorSet,
+    validator_set_history: ValidatorSetHistory,
+}
+
+// TODO: add a block_tree method that returns ValidatorSetState. This method shall replace the calls
+// to block_tree.committed_validator_set() in most places.
+
+impl ValidatorSetState {
+    pub(crate) fn new(committed_validator_set: ValidatorSet, validator_set_history: ValidatorSetHistory) -> Self {
+        Self { 
+            committed_validator_set, 
+            validator_set_history
+        }
+    }
+
+    pub fn committed_validator_set(&self) -> &ValidatorSet {
+        &self.committed_validator_set
+    }
+
+    pub fn validator_set_history(&self) -> &ValidatorSetHistory {
+        &self.validator_set_history
+    }
+}
+
+/// Read-only interface for obtaining information about the previous validator set, and whether it is still active.
+/// Intended only for use in validating QCs and TCs.
+#[derive(Clone)]
+pub struct ValidatorSetHistory {
+    validator_set: ValidatorSet,
+    active: bool,
+    final_block_height: BlockHeight,
+}
+
+impl ValidatorSetHistory {
+    pub(crate) fn new(validator_set: ValidatorSet, active: bool, final_block_height: BlockHeight) -> Self {
+        Self { 
+            validator_set, 
+            active, 
+            final_block_height,
+        }
+    }
+    fn validator_set(&self) -> &ValidatorSet {
+        &self.validator_set
+    }
+
+    fn active(&self) -> bool {
+        self.active
+    }
+
+    fn final_block_height(&self) -> BlockHeight {
+        self.final_block_height
     }
 }

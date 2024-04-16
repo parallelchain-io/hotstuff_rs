@@ -3,19 +3,22 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The types and traits defined in [crate::types] are either common across the sub-protocols used by hotstuff-rs. 
-//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in the respetive directories.
+//! The types and traits defined in [crate::types] are either common across the sub-protocols used by
+//! Hotstuff-rs. 
+//! 
+//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in 
+//! the respective directories.
 //! 
 //! The types defined in [crate::types::basic] include:
-//! 1. Inert' types, i.e., those that are sent around and inspected, but have no active behavior. These types follow
-//!    the newtype pattern and the API for using these types is defined in this module.
-//! 2. The [UpdateSet] type, which represents generic-type state updates associated with committing a block.
+//! 1. "Inert" types, i.e., those that are sent around and inspected, but have no active behavior. These
+//!    types follow the newtype pattern and the API for using these types is defined in this module.
+//! 2. The [UpdateSet] type, which represents generic-type state updates associated with committing a 
+//!    block.
 
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
     fmt::{self, Display, Formatter}, 
-    hash::Hash,
-    ops::{Add, AddAssign}
+    hash::Hash, ops::{Add, AddAssign, SubAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -28,7 +31,7 @@ impl ChainID {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
@@ -42,7 +45,7 @@ impl BlockHeight {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 
@@ -72,7 +75,7 @@ impl ChildrenList {
         Self(blocks)
     }
 
-    pub const fn get_vec(&self) -> &Vec<CryptoHash> {
+    pub const fn vec(&self) -> &Vec<CryptoHash> {
         &self.0
     }
 
@@ -95,7 +98,7 @@ impl CryptoHash {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> [u8; 32] {
+    pub const fn bytes(&self) -> [u8; 32] {
         self.0
     }
 }
@@ -109,7 +112,7 @@ impl Data {
         Self(datum_vec)
     }
 
-    pub const fn get_vec(&self) -> &Vec<Datum> {
+    pub const fn vec(&self) -> &Vec<Datum> {
         &self.0
     }
 
@@ -127,7 +130,7 @@ impl Data {
 pub struct DataLen(u32);
 
 impl DataLen {
-    pub const fn get_int(&self) -> u32 {
+    pub const fn int(&self) -> u32 {
         self.0
     }
 }
@@ -141,7 +144,7 @@ impl Datum {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> &Vec<u8> {
+    pub const fn bytes(&self) -> &Vec<u8> {
         &self.0
     }
 }
@@ -151,7 +154,7 @@ impl Datum {
 pub struct Power(u64);
 
 impl Power {
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
@@ -165,7 +168,7 @@ impl TotalPower {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u128 {
+    pub const fn int(&self) -> u128 {
         self.0
     }
 }
@@ -185,7 +188,7 @@ impl SignatureBytes {
         Self(bytes)
     }
 
-    pub const fn get_bytes(&self) -> [u8; 64] {
+    pub const fn bytes(&self) -> [u8; 64] {
         self.0
     }
 }
@@ -206,7 +209,7 @@ impl SignatureSet {
         Self(vec![None; len])
     }
 
-    pub const fn get_vec(&self) -> &Vec<Option<SignatureBytes>> {
+    pub const fn vec(&self) -> &Vec<Option<SignatureBytes>> {
         &self.0
     }
 
@@ -233,11 +236,15 @@ impl SignatureSet {
 pub struct ViewNumber(u64);
 
 impl ViewNumber {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+    
     pub const fn init() -> Self {
         Self(0)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
     }
 }
@@ -265,7 +272,7 @@ impl EpochLength {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u32 {
+    pub const fn int(&self) -> u32 {
         self.0
     }
 }
@@ -279,8 +286,20 @@ impl BufferSize {
         Self(int)
     }
 
-    pub const fn get_int(&self) -> u64 {
+    pub const fn int(&self) -> u64 {
         self.0
+    }
+}
+
+impl AddAssign<u64> for BufferSize {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0.add_assign(rhs)
+    }
+}
+
+impl SubAssign<u64> for BufferSize {
+    fn sub_assign(&mut self, rhs: u64) {
+        self.0.sub_assign(rhs)
     }
 }
 

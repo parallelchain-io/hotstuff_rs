@@ -5,9 +5,10 @@
 
 //! Methods to build, run, and initialize the storage of a replica.
 //!
-//! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, these processes are
-//! called 'replicas', and therefore the set of all replicas is called the 'replica set'. Each replica is uniquely identified
-//! by an [Ed25519 public key](ed25519_dalek::VerifyingKey).
+//! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology, 
+//! these processes are called 'replicas', and therefore the set of all replicas is called the
+//! 'replica set'. Each replica is uniquely identified by an
+//! [Ed25519 public key](ed25519_dalek::VerifyingKey).
 //! 
 //! They key components of this module are:
 //! - The builder-pattern interface to construct a [specification of the replica](ReplicaSpec) with:
@@ -20,16 +21,18 @@
 //! 
 //! ## Validators and Listeners
 //!
-//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely keep up with consensus
-//! decisions, without having weight in them. We call these replicas 'listeners', and call the replicas that vote in
-//! consensus 'validators'.
+//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely
+//! keep up with consensus decisions, without having weight in them. We call these replicas 'listeners',
+//! and call the replicas that vote in consensus 'validators'.
 //!
-//! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need to know the identity
-//! of listeners. But for listeners to keep up with consensus decisions, they also need to receive progress messages.
+//! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need
+//! to know the identity of listeners. But for listeners to keep up with consensus decisions, they also
+//! need to receive progress messages.
 //!
-//! Concretely, this requires that the library user's [networking provider's](crate::networking) broadcast method send progress
-//! messages to all peers it is connected to, and not only the validators. The library user is free to design and implement
-//! their own mechanism for deciding which peers, besides those in the validator set, should be connected to the network.
+//! Concretely, this requires that the library user's [networking provider's](crate::networking)
+//! broadcast method send progress messages to all peers it is connected to, and not only the
+//! validators. The library user is free to design and implement their own mechanism for deciding which
+//! peers, besides those in the validator set, should be connected to the network.
 //! 
 //! ## Starting a replica
 //! 
@@ -125,33 +128,38 @@ use std::sync::mpsc::{self, Sender};
 /// Stores the user-defined parameters required to start the replica, that is:
 /// 1. The replica's [keypair](ed25519_dalek::SigningKey).
 /// 2. The [chain ID](crate::types::basic::ChainID) of the target blockchain.
-/// 3. The sync request limit, which determines how many blocks should the replica request from its peer when syncing.
-/// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the replica should wait for a sync response.
-/// 5. The progress message buffer capacity, which defines the maximum allowed capacity of the progress message buffer. If this capacity
-///    is about to be exceeded, some messages might be removed to make space for new messages.
-/// 6. The length of an "epoch", i.e., a sequence of views such that at the end of every such sequence replica should try to synchronise views with others
-///    via an all-to-all broadcast.
-/// 7. The maximum view time, which defines the duration after which the replica should timeout in the current view and move to the next view 
-///    (unless the replica is synchronising views with other replicas at the end of an epoch).
+/// 3. The sync request limit, which determines how many blocks should the replica request from its peer
+///    when syncing.
+/// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the
+///    replica should wait for a sync response.
+/// 5. The progress message buffer capacity, which defines the maximum allowed capacity of the progress
+///    message buffer. If this capacity is about to be exceeded, some messages might be removed to make
+///    space for new messages.
+/// 6. The length of an "epoch", i.e., a sequence of views such that at the end of every such sequence
+///    replica should try to synchronise views with others via an all-to-all broadcast.
+/// 7. The maximum view time, which defines the duration after which the replica should timeout in the
+///    current view and move to the next view (unless the replica is synchronising views with other 
+///    replicas at the end of an epoch).
 /// 8. The "Log Events" flag, if set to "true" then logs should be printed. 
 /// 
 /// ## Chain ID
 /// 
 /// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::basic::ChainID). This
 /// is included in votes and other messages so that replicas don't mistake messages and blocks for
-/// one HotStuff-rs blockchain does not get mistaken for those for another blockchain.
-/// In most cases, having a chain ID that collides with another blockchain is harmless. But
-/// if your application is a Proof of Stake public blockchain, this may cause a slashable offence
-/// if you operate validators in two chains that use the same keypair. So ensure that you don't
-/// operate a validator in two blockchains with the same keypair.
+/// one HotStuff-rs blockchain does not get mistaken for those for another blockchain. In most cases, 
+/// having a chain ID that collides with another blockchain is harmless. But if your application is a
+/// Proof of Stake public blockchain, this may cause a slashable offence if you operate validators in
+/// two chains that use the same keypair. So ensure that you don't operate a validator in two
+/// blockchains with the same keypair.
 ///
 /// ## Sync response timeout
 /// 
 /// Durations stored in [Configuration::block_sync_response_timeout] must be "well below"
 /// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
 /// 
-/// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping returned
-/// durations lower than [u64::MAX] avoids overflows in calling code, which may add to the returned duration.
+/// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping
+/// returned durations lower than [u64::MAX] avoids overflows in calling code, which may add to the
+/// returned duration.
 /// 
 /// ## Log Events
 /// 
@@ -447,8 +455,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
     }
 }
 
-/// A handle to the background threads of a HotStuff-rs replica. When this value is dropped, all background threads are
-/// gracefully shut down.
+/// A handle to the background threads of a HotStuff-rs replica. When this value is dropped, all
+/// background threads are gracefully shut down.
 pub struct Replica<K: KVStore> {
     block_tree_camera: BlockTreeCamera<K>,
     poller: Option<JoinHandle<()>>,
@@ -463,7 +471,8 @@ pub struct Replica<K: KVStore> {
 
 impl<K: KVStore> Replica<K> {
     /// Initializes the replica's [Block Tree](crate::state::BlockTree) with the intial
-    /// [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates).
+    /// [app state updates](crate::types::basic::AppStateUpdates) and
+    /// [validator set updates](crate::types::validators::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
@@ -482,9 +491,9 @@ impl<K: KVStore> Replica<K> {
 
 impl<K: KVStore> Drop for Replica<K> {
     fn drop(&mut self) {
-        // Safety: the order of thread shutdown in this function is important, as the threads make assumptions about
-        // the validity of their channels based on this. The algorithm and sync server threads receive messages from
-        // the poller, and assumes that the poller will live longer than them.
+        // Safety: the order of thread shutdown in this function is important, as the threads make assumptions
+        // about the validity of their channels based on this. The algorithm and sync server threads receive
+        // messages from the poller, and assumes that the poller will live longer than them.
 
         self.event_bus_shutdown.iter().for_each(|shutdown| shutdown.send(()).unwrap());
         if self.event_bus.is_some() {

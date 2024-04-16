@@ -3,14 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! Definitions for structured messages that are sent between replicas as part of the
+//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
 
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Verifier};
 
-use crate::messages::{Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     block::*, 
@@ -117,9 +118,19 @@ impl HotStuffMessage {
     }
 }
 
-impl Into<Message> for HotStuffMessage {
-    fn into(self) -> Message {
-        Message::ProgressMessage(ProgressMessage::HotStuffMessage(self))
+impl Cacheable for HotStuffMessage {
+    fn size(&self) -> u64 {
+        self.size()
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view()
+    }
+}
+
+impl Into<ProgressMessage> for HotStuffMessage {
+    fn into(self) -> ProgressMessage {
+        ProgressMessage::HotStuffMessage(self)
     }
 }
 

@@ -16,9 +16,11 @@ use crate::types::{
 };
 use super::messages::Vote;
 
-/// Proof that at least a quorum of validators have voted for a given [proposal][crate::hotstuff::messages::Proposal] or [nudge][crate::hotstuff::messages::Nudge].
-/// Required for extending a block in the [HotStuff][crate::hotstuff::protocol::HotStuff], and for optimistic advance to a new view as part of the 
-/// [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+/// Proof that at least a quorum of validators have voted for a given 
+/// [proposal][crate::hotstuff::messages::Proposal] or [nudge][crate::hotstuff::messages::Nudge].
+/// Required for extending a block in the [HotStuff][crate::hotstuff::protocol::HotStuff], and for
+/// optimistic advance to a new view as part of the [pacemaker][crate::pacemaker::protocol::Pacemaker]
+/// protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct QuorumCertificate {
     pub chain_id: ChainID,
@@ -29,7 +31,8 @@ pub struct QuorumCertificate {
 }
 
 impl QuorumCertificate {
-    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms a quorum.
+    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
+    /// a quorum.
     ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
@@ -49,7 +52,7 @@ impl QuorumCertificate {
                 .zip(validator_set.validators_and_powers())
             {
                 if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(&signature.get_bytes()) {
+                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
                         if signer
                             .verify(
                                 &(self.chain_id, self.view, self.block, self.phase)
@@ -108,12 +111,12 @@ pub enum Phase {
     // ↓↓↓ For phased flow ↓↓↓ //
     Prepare,
 
-    // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered the
-    // vote containing this phase.
+    // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered
+    // the vote containing this phase.
     Precommit(ViewNumber),
 
-    // The inner view number is the view number of the *precommit* qc contained in the nudge which triggered the
-    // vote containing this phase.
+    // The inner view number is the view number of the *precommit* qc contained in the nudge which 
+    // triggered the vote containing this phase.
     Commit(ViewNumber),
 
     //TODO
@@ -141,8 +144,8 @@ impl Phase {
     //is_decide
 }
 
-/// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view, block, and phase by replicas
-/// from a given [validator set](ValidatorSet).
+/// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view,
+/// block, and phase by replicas from a given [validator set](ValidatorSet).
 pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
@@ -166,11 +169,11 @@ impl VoteCollector {
         }
     }
 
-    /// Adds the vote to a signature set for the specified view, block, and phase. Returning a quorum certificate
-    /// if adding the vote allows for one to be created.
+    /// Adds the vote to a signature set for the specified view, block, and phase. Returning a Quorum
+    /// Certificate if adding the vote allows for one to be created.
     ///
-    /// If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not part
-    /// of its validator set, then this is a no-op.
+    /// If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not
+    /// part of its validator set, then this is a no-op.
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
@@ -197,12 +200,13 @@ impl VoteCollector {
                 .get_mut(&(vote.block, vote.phase))
                 .unwrap();
 
-            // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the signature set.
+            // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the 
+            // signature set.
             if signature_set.get(pos).is_none() {
                 signature_set.set(pos, Some(vote.signature));
                 *signature_set_power += *self.validator_set.power(signer).unwrap();
 
-                // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
+                // If inserting the vote makes the signature set form a quorum, then create a Quorum Certificate.
                 if *signature_set_power >= self.validator_set.quorum() {
                     let (signatures, _) = self
                         .signature_sets
@@ -244,9 +248,10 @@ impl NewViewCollector {
         }
     }
 
-    /// Notes that we have collected a new view message from the specified replica in the given view. Then, returns whether
-    /// by collecting this message we have collected new view messages from a quorum of validators in this view. If the sender
-    /// is not part of the validator set, then this function does nothing and returns false.
+    /// Notes that we have collected a new view message from the specified replica in the given view. Then,
+    /// returns whether by collecting this message we have collected new view messages from a quorum of 
+    /// validators in this view. If the sender is not part of the validator set, then this function does 
+    /// nothing and returns false.
     pub(crate) fn collect(&mut self, sender: &VerifyingKey) -> bool {
         if !self.validator_set.contains(sender) {
             return false;

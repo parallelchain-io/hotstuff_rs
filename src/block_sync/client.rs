@@ -22,7 +22,7 @@ use super::messages::{BlockSyncRequest, BlockSyncTriggerMessage};
 
 pub(crate) struct BlockSyncClient<N: Network> {
     config: BlockSyncClientConfiguration,
-    receiver: BlockSyncClientStub<N>,
+    receiver: BlockSyncClientStub,
     sender: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     block_sync_client_state: BlockSyncClientState,
@@ -33,7 +33,7 @@ impl<N: Network> BlockSyncClient<N> {
 
     pub(crate) fn new(
         config: BlockSyncClientConfiguration,
-        receiver: BlockSyncClientStub<N>,
+        receiver: BlockSyncClientStub,
         sender: SenderHandle<N>,
         validator_set_update_handle: ValidatorSetUpdateHandle<N>,
         event_publisher: Option<Sender<Event>>,
@@ -48,7 +48,7 @@ impl<N: Network> BlockSyncClient<N> {
         }
     }
 
-    pub(crate) fn on_receive_msg<K: KVStore>(&mut self, msg: BlockSyncTriggerMessage, origin: VerifyingKey, block_tree: &BlockTree<K>) {
+    pub(crate) fn on_receive_msg<K: KVStore>(&mut self, msg: BlockSyncTriggerMessage, origin: &VerifyingKey, block_tree: &BlockTree<K>) {
         todo!()
     }
 
