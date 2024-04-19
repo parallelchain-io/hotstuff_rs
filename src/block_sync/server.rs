@@ -12,9 +12,8 @@ use std::{sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::Event;
+use crate::{events::Event, state::{block_tree_camera::BlockTreeCamera, kv_store::KVStore}};
 use crate::networking::{BlockSyncServerStub, Network, SenderHandle};
-use crate::state::{BlockTreeCamera, KVStore};
 use crate::types::{basic::ChainID, keypair::Keypair};
 
 use super::messages::{AdvertiseBlock, BlockSyncRequest, BlockSyncResponse};
