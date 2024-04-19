@@ -25,6 +25,9 @@ use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration, ViewInfo};
 use crate::state::*;
 use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 
+use self::block_tree::BlockTree;
+use self::kv_store::KVStore;
+
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,
     pm_stub: ProgressMessageStub,
@@ -60,7 +63,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         let validator_set_update_handle = ValidatorSetUpdateHandle::new(network);
 
         let init_view = 
-            match block_tree.highest_view_with_progress().int() {
+            match block_tree.highest_view_with_progress().expect("Cannot retrieve the highest view with progress!").int() {
                 0 => ViewNumber::new(0),
                 v => ViewNumber::new(v+1)
             };
@@ -69,7 +72,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             pacemaker_config,
             msg_sender.clone(),
             init_view,
-            &block_tree.committed_validator_set(),
+            &block_tree.committed_validator_set().expect("Cannot retrieve the committed validator set!"),
             event_publisher.clone()
         ).expect("Failed to create a new Pacemaker!");
 
@@ -80,7 +83,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             init_view_info.clone(),
             msg_sender.clone(),
             validator_set_update_handle.clone(),
-            block_tree.committed_validator_set().clone(),
+            block_tree.committed_validator_set().expect("Cannot retrieve the committed validator set!").clone(),
             event_publisher.clone()
         );
 

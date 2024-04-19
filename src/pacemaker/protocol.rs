@@ -50,9 +50,11 @@ use ed25519_dalek::VerifyingKey;
 use crate::events::Event;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
-use crate::state::{BlockTree, BlockTreeWriteBatch, KVStore};
+use crate::state::block_tree::{BlockTree, BlockTreeError};
+use crate::state::kv_store::KVStore;
+use crate::state::write_batch::BlockTreeWriteBatch;
 use crate::types::basic::EpochLength;
-use crate::types::validators::ValidatorSet;
+use crate::types::validators::{self, ValidatorSet};
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
     keypair::Keypair
@@ -134,13 +136,13 @@ impl<N: Network> Pacemaker<N> {
         // 1. Check if the current view has timed out, and proceed accordingly.
         if Instant::now() > self.view_info.deadline {
             if is_epoch_change_view(&cur_view, self.config.epoch_length) {
-                if block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
+                if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
                     let pacemaker_message = 
                         PacemakerMessage::timeout_vote(
                             &self.config.keypair, 
                             self.config.chain_id, 
                             cur_view, 
-                            block_tree.highest_tc()
+                            block_tree.highest_tc()?,
                         );
                     self.sender.broadcast(Message::from(pacemaker_message));
                 }
@@ -152,10 +154,10 @@ impl<N: Network> Pacemaker<N> {
 
         // 2. Check if a QC for the current view is available and if I am a validator, and if so 
         //    broadcast an advance view message.
-        if block_tree.highest_qc().view == cur_view && block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
+        if block_tree.highest_qc()?.view == cur_view && block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
             let pacemaker_message = 
                 PacemakerMessage::advance_view(
-                    ProgressCertificate::QuorumCertificate(block_tree.highest_qc())
+                    ProgressCertificate::QuorumCertificate(block_tree.highest_qc()?)
                 );
             self.sender.broadcast(Message::from(pacemaker_message))
         }
@@ -195,22 +197,23 @@ impl<N: Network> Pacemaker<N> {
         timeout_vote: TimeoutVote,
         signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) -> Result<(), UpdateViewError> { 
-        if !block_tree.committed_validator_set().contains(signer) {return Ok(())};
+    ) -> Result<(), PacemakerError> { 
+        if !block_tree.committed_validator_set()?.contains(signer) {return Ok(())};
 
         if timeout_vote.is_correct(signer) && is_epoch_change_view(&timeout_vote.view, self.config.epoch_length) {
+            let validator_set = &block_tree.committed_validator_set()?;
             let fallback_tc = 
-                timeout_vote.highest_tc.clone().filter(|tc| tc.is_correct(&block_tree.committed_validator_set()));
+                timeout_vote.highest_tc.clone().filter(|tc| tc.is_correct(validator_set));
 
             if let Some(new_tc) = self.state.timeout_vote_collector.collect(signer, timeout_vote) {
 
                 // If a new TC for the current view is collected the replica should (possibly) update its highest_tc 
                 // and broadcast the collected TC.
-                if block_tree.highest_tc().is_none() || new_tc.view > block_tree.highest_tc().unwrap().view {
+                if block_tree.highest_tc()?.is_none() || new_tc.view > block_tree.highest_tc()?.unwrap().view {
                     let mut wb = BlockTreeWriteBatch::new();
                     wb.set_highest_tc(&new_tc);
                     block_tree.write(wb);
-                    if block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
+                    if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
                         let pacemaker_msg = PacemakerMessage::advance_view(ProgressCertificate::TimeoutCertificate(new_tc));
                         self.sender.broadcast(Message::from(pacemaker_msg))
                     }
@@ -219,7 +222,7 @@ impl<N: Network> Pacemaker<N> {
 
                 // In case the replica is behind, the "fallback tc" contained in the timeout vote message
                 // serves to prove to it that a quorum is ahead and lets the replica catch up.
-                if block_tree.highest_tc().is_none() || tc.view > block_tree.highest_tc().unwrap().view {
+                if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
                     let mut wb = BlockTreeWriteBatch::new();
                     wb.set_highest_tc(&tc);
                     block_tree.write(wb);
@@ -242,19 +245,19 @@ impl<N: Network> Pacemaker<N> {
         advance_view: AdvanceView,
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) -> Result<(), UpdateViewError>{ 
-        if !block_tree.committed_validator_set().contains(origin) {return Ok(())};
+    ) -> Result<(), PacemakerError>{ 
+        if !block_tree.committed_validator_set()?.contains(origin) {return Ok(())};
 
         let progress_certificate = advance_view.progress_certificate.clone();
         let valid = match &progress_certificate {
-            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(&block_tree.committed_validator_set()),
+            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(&block_tree.committed_validator_set()?),
             ProgressCertificate::TimeoutCertificate(tc) => 
-                tc.is_correct(&block_tree.committed_validator_set()) && is_epoch_change_view(&tc.view, self.config.epoch_length) 
+                tc.is_correct(&block_tree.committed_validator_set()?) && is_epoch_change_view(&tc.view, self.config.epoch_length) 
         };
 
         if valid {
             // If I am a validator, re-broadcast the received advance view message.
-            if block_tree.committed_validator_set().contains(&self.config.keypair.public()) {
+            if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
                 self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view)))
             }
 
@@ -276,11 +279,11 @@ impl<N: Network> Pacemaker<N> {
         &mut self, 
         next_view: ViewNumber, 
         block_tree: &BlockTree<K>) 
-        -> Result<(), UpdateViewError>{
+        -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
         if next_view <= cur_view {
-            return Err(UpdateViewError::NonIncreasingViewError{cur_view, next_view})
+            return Err(UpdateViewError::NonIncreasingViewError{cur_view, next_view}.into())
         }
 
         // If about to enter a new epoch, set timeouts for the new epoch.
@@ -292,7 +295,7 @@ impl<N: Network> Pacemaker<N> {
         self.view_info = ViewInfo::new(
             next_view, 
             *self.state.timeouts.get(&next_view).ok_or(UpdateViewError::GetViewTimeoutError{view: next_view})?, 
-            &block_tree.committed_validator_set()
+            &block_tree.committed_validator_set()?
         );
 
         Ok(())
@@ -399,6 +402,13 @@ impl PacemakerState {
 pub enum PacemakerError {
     UpdateViewError(UpdateViewError),
     ExtendViewError(ExtendViewError),
+    BlockTreeError(BlockTreeError),
+}
+
+impl From<BlockTreeError> for PacemakerError {
+    fn from(value: BlockTreeError) -> Self {
+        PacemakerError::BlockTreeError(value)
+    }
 }
 
 impl From<UpdateViewError> for PacemakerError {

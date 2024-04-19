@@ -24,12 +24,11 @@
 //!    with the [app state updates](crate::types::AppStateUpdates) and [validator set updates](crate::types::ValidatorSetUpdates)\
 //!    that executing the block causes.
 
-use crate::state::{AppBlockTreeView, KVStore};
-use crate::types::{
+use crate::{state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore}, types::{
     basic::{AppStateUpdates, CryptoHash, Data, ViewNumber},
     block::Block,
     validators::ValidatorSetUpdates,
-};
+}};
 
 pub trait App<K: KVStore>: Send {
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;

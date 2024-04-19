@@ -245,17 +245,26 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
 #[derive(Clone)]
 pub struct ValidatorSetState {
     committed_validator_set: ValidatorSet,
-    validator_set_history: ValidatorSetHistory,
+    previous_validator_set: ValidatorSet,
+    update_height: BlockHeight,
+    update_complete: bool,
 }
 
 // TODO: add a block_tree method that returns ValidatorSetState. This method shall replace the calls
 // to block_tree.committed_validator_set() in most places.
 
 impl ValidatorSetState {
-    pub(crate) fn new(committed_validator_set: ValidatorSet, validator_set_history: ValidatorSetHistory) -> Self {
+    pub(crate) fn new(
+        committed_validator_set: ValidatorSet, 
+        previous_validator_set: ValidatorSet,
+        update_height: BlockHeight,
+        update_complete: bool,
+    ) -> Self {
         Self { 
             committed_validator_set, 
-            validator_set_history
+            previous_validator_set,
+            update_height,
+            update_complete,
         }
     }
 
@@ -263,37 +272,17 @@ impl ValidatorSetState {
         &self.committed_validator_set
     }
 
-    pub fn validator_set_history(&self) -> &ValidatorSetHistory {
-        &self.validator_set_history
+    pub fn previous_validator_set(&self) -> &ValidatorSet {
+        &self.previous_validator_set
     }
+
+    pub fn update_height(&self) -> &BlockHeight {
+        &self.update_height
+    }
+
+    pub fn update_complete(&self) -> bool {
+        self.update_complete
+    }
+
 }
 
-/// Read-only interface for obtaining information about the previous validator set, and whether it is still active.
-/// Intended only for use in validating QCs and TCs.
-#[derive(Clone)]
-pub struct ValidatorSetHistory {
-    validator_set: ValidatorSet,
-    active: bool,
-    final_block_height: BlockHeight,
-}
-
-impl ValidatorSetHistory {
-    pub(crate) fn new(validator_set: ValidatorSet, active: bool, final_block_height: BlockHeight) -> Self {
-        Self { 
-            validator_set, 
-            active, 
-            final_block_height,
-        }
-    }
-    fn validator_set(&self) -> &ValidatorSet {
-        &self.validator_set
-    }
-
-    fn active(&self) -> bool {
-        self.active
-    }
-
-    fn final_block_height(&self) -> BlockHeight {
-        self.final_block_height
-    }
-}

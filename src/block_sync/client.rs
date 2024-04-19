@@ -13,9 +13,8 @@ use std::{collections::{HashMap, HashSet}, sync::mpsc::Sender, time::Duration};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::Event;
+use crate::{events::Event, state::{block_tree::BlockTree, kv_store::KVStore}};
 use crate::networking::{BlockSyncClientStub, Network, SenderHandle, ValidatorSetUpdateHandle};
-use crate::state::{BlockTree, KVStore};
 use crate::types::basic::ChainID;
 
 use super::messages::{BlockSyncRequest, BlockSyncTriggerMessage};

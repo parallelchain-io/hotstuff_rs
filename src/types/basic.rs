@@ -13,7 +13,7 @@
 
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
-    fmt::{self, Display, Formatter}, 
+    fmt::{self, Debug, Display, Formatter}, 
     hash::Hash, ops::{Add, AddAssign, SubAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -33,7 +33,7 @@ impl ChainID {
 }
 
 /// Height of an existing block in the blockchain.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct BlockHeight(u64);
 
 impl BlockHeight {
@@ -52,7 +52,7 @@ impl BlockHeight {
 
 impl Display for BlockHeight {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 
@@ -96,6 +96,18 @@ impl CryptoHash {
 
     pub const fn bytes(&self) -> [u8; 32] {
         self.0
+    }
+}
+
+impl Display for CryptoHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Debug for CryptoHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -247,7 +259,7 @@ impl ViewNumber {
 
 impl fmt::Display for ViewNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 

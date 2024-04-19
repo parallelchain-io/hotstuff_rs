@@ -116,7 +116,9 @@ use crate::events::*;
 use crate::hotstuff::protocol::HotStuffConfiguration;
 use crate::networking::{start_polling, Network};
 use crate::pacemaker::protocol::PacemakerConfiguration;
-use crate::state::{BlockTree, BlockTreeCamera, KVStore};
+use crate::state::block_tree::BlockTree;
+use crate::state::block_tree_camera::BlockTreeCamera;
+use crate::state::kv_store::KVStore;
 use crate::types::basic::AppStateUpdates;
 use crate::types::basic::BufferSize;
 use crate::types::basic::ChainID;
@@ -351,7 +353,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
     /// Starts all threads and channels associated with running a replica, and returns the handles to them in a [Replica] struct.
     pub fn start(mut self) -> Replica<K> {
         let block_tree = BlockTree::new(self.kv_store.clone());
-        self.network.init_validator_set(block_tree.committed_validator_set().clone());
+        self.network.init_validator_set(block_tree.committed_validator_set().expect("No validator set is committed!").clone());
 
         let chain_id = self.configuration.chain_id;
         let progress_msg_buffer_capacity = self.configuration.progress_msg_buffer_capacity;
