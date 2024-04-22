@@ -11,7 +11,7 @@ use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
 use crate::types::basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber};
 use crate::types::block::Block;
-use crate::types::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
+use crate::types::validators::{BlockValidatorSetUpdatesBytes, ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
 
 use super::kv_store::{Key, WriteBatch};
 use super::paths;
@@ -158,18 +158,32 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         validator_set_updates: &ValidatorSetUpdates,
     ) -> Result<(), KVSetError>
     {
-        let validator_set_updates_bytes: ValidatorSetUpdatesBytes = validator_set_updates.into();
+        let block_vs_updates_bytes = BlockValidatorSetUpdatesBytes::Pending(validator_set_updates.into());
         Ok(
             self.0.set(
-                &combine(&paths::PENDING_VALIDATOR_SET_UPDATES, &block.bytes()),
-                &validator_set_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::PendingValidatorSetUpdates{block: block.clone()}, source: err})?,
+                &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
+                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?,
             )
         )
     }
 
-    pub fn delete_pending_validator_set_updates(&mut self, block: &CryptoHash) {
+    pub fn set_completed_validator_set_updates(
+        &mut self, block: &CryptoHash, 
+        validator_set_updates: &ValidatorSetUpdates
+    ) -> Result<(), KVSetError> 
+    {
+        let block_vs_updates_bytes = BlockValidatorSetUpdatesBytes::Completed(validator_set_updates.into());
+        Ok(
+            self.0.set(
+                &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
+                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?,
+            )
+        )
+    }
+
+    pub fn delete_block_validator_set_updates(&mut self, block: &CryptoHash) {
         self.0
-            .delete(&combine(&paths::PENDING_VALIDATOR_SET_UPDATES, &block.bytes()))
+            .delete(&combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()))
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */

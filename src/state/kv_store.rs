@@ -9,6 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
+use crate::types::validators::{BlockValidatorSetUpdates, BlockValidatorSetUpdatesBytes};
 use crate::types::{
     basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber}, 
     block::Block, validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdates, 
@@ -516,19 +517,17 @@ pub trait KVGet {
 
     /* ↓↓↓ Pending Validator Set Updates */
 
-    fn pending_validator_set_updates(&self, block: &CryptoHash) -> Result<Option<ValidatorSetUpdates>, KVGetError> {
-        if let Some(bytes) = self.get(&combine(&paths::PENDING_VALIDATOR_SET_UPDATES, &block.bytes())) {
-            let validator_set_updates_bytes = ValidatorSetUpdatesBytes::deserialize(&mut &*bytes)
-                                              .map_err(|err| KVGetError::DeserializeValueError{key: Key::PendingValidatorSetUpdates{block: block.clone()}, source: err})?;
-            Ok(
-                Some(
-                    ValidatorSetUpdates::try_from(validator_set_updates_bytes)
-                    .map_err(|err| KVGetError::Ed25519DalekError{key: Key::PendingAppStateUpdates{block: block.clone()}, source: err})?
-                )
-            )
-        } else {
-            Ok(None)
-        }
+    fn block_validator_set_updates(&self, block: &CryptoHash) -> Result<BlockValidatorSetUpdates, KVGetError> {
+        let block_validator_set_updates_bytes = 
+            match self.get(&combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes())) {
+                None => BlockValidatorSetUpdatesBytes::None,
+                Some(bytes) => {
+                    BlockValidatorSetUpdatesBytes::deserialize(&mut &*bytes)
+                    .map_err(|err| KVGetError::DeserializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?
+                }
+            };
+        BlockValidatorSetUpdates::try_from(block_validator_set_updates_bytes)
+            .map_err(|err| KVGetError::Ed25519DalekError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */
@@ -654,7 +653,7 @@ pub enum Key {
     CommittedAppState{key: Vec<u8>},
     PendingAppStateUpdates{block: CryptoHash},
     CommittedValidatorSet,
-    PendingValidatorSetUpdates{block: CryptoHash},
+    BlockValidatorSetUpdates{block: CryptoHash},
     LockedView,
     HighestViewEntered,
     HighestQC,
@@ -689,7 +688,7 @@ impl Display for Key {
                 write!(f, "Pending App State Updates for block {}", block),
             &Key::CommittedValidatorSet =>
                 write!(f, "Committed Validator Set"),
-            &Key::PendingValidatorSetUpdates{block} => 
+            &Key::BlockValidatorSetUpdates{block} => 
                 write!(f, "Pending Validator Set Updates for block {}", block),
             &Key::LockedView => 
                 write!(f, "Locked View"),

@@ -45,8 +45,8 @@ impl HotStuffMessage {
         justify: QuorumCertificate,
     ) -> HotStuffMessage {
         match justify.phase {
-            Phase::Generic | Phase::Commit(_) => panic!(),
-            Phase::Prepare | Phase::Precommit(_) => HotStuffMessage::Nudge(Nudge {
+            Phase::Generic | Phase::Decide => panic!(),
+            Phase::Prepare | Phase::Precommit | Phase::Commit => HotStuffMessage::Nudge(Nudge {
                 chain_id,
                 view,
                 justify,

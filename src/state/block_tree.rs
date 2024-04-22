@@ -68,7 +68,7 @@ use crate::hotstuff::types::{QuorumCertificate, Phase};
 
 use self::basic::{AppStateUpdates, BlockHeight, Data, DataLen, Datum};
 use self::block::Block;
-use self::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
+use self::validators::{BlockValidatorSetUpdates, ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
 
 use super::app_block_tree_view::AppBlockTreeView;
 use super::block_tree_camera::BlockTreeSnapshot;
@@ -194,7 +194,7 @@ impl<K: KVStore> BlockTree<K> {
                 self.commit_block(&mut wb, &great_grandparent)
             }
 
-            Phase::Commit(_) => {
+            Phase::Commit => {
 
                 let parent = block.justify.block;
 
@@ -340,15 +340,15 @@ impl<K: KVStore> BlockTree<K> {
             }
 
             // Apply pending validator set updates.
-            if let Some(pending_validator_set_updates) = self.pending_validator_set_updates(b)? {
+            if let BlockValidatorSetUpdates::Pending(validator_set_updates) = self.block_validator_set_updates(b)? {
 
                 let mut committed_validator_set = self.committed_validator_set()?;
-                committed_validator_set.apply_updates(&pending_validator_set_updates);
+                committed_validator_set.apply_updates(&validator_set_updates);
 
                 wb.set_committed_validator_set(&committed_validator_set)?;
-                wb.delete_pending_validator_set_updates(block);
+                wb.set_completed_validator_set_updates(block, &validator_set_updates);
 
-                committed_blocks.push((*b, Some(pending_validator_set_updates.clone())));
+                committed_blocks.push((*b, Some(validator_set_updates.clone())));
             } else {
                 committed_blocks.push((*b, None));
             }
@@ -404,7 +404,7 @@ impl<K: KVStore> BlockTree<K> {
         for block in self.blocks_in_branch(*root) {
             wb.delete_children(&block);
             wb.delete_pending_app_state_updates(&block);
-            wb.delete_pending_validator_set_updates(&block);
+            wb.delete_block_validator_set_updates(&block);
 
             if let Ok(Some(data_len)) = self.block_data_len(&block) {
                 wb.delete_block(&block, data_len)
@@ -574,8 +574,8 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.committed_validator_set()?)
     }
 
-    pub(crate) fn pending_validator_set_updates(&self, block: &CryptoHash) -> Result<Option<ValidatorSetUpdates>, BlockTreeError> {
-        Ok(self.0.pending_validator_set_updates(block)?)
+    pub(crate) fn block_validator_set_updates(&self, block: &CryptoHash) -> Result<BlockValidatorSetUpdates, BlockTreeError> {
+        Ok(self.0.block_validator_set_updates(block)?)
     }
 
     pub(crate) fn locked_qc(&self) -> Result<QuorumCertificate, BlockTreeError> {

@@ -6,8 +6,7 @@
 //! Definitions for the [ValidatorSet] and [ValidatorSetUpdates] types and their associated methods.
 
 use std::{
-    collections::{HashMap, HashSet},
-    slice,
+    collections::{HashMap, HashSet}, future::Pending, slice
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
@@ -286,3 +285,51 @@ impl ValidatorSetState {
 
 }
 
+/// Wraps around [ValidatorSetUpdates], providing additional information on whether the updates have
+/// already been applied or not. The [BlockTree][crate::state::block_tree::BlockTree] should store a
+/// mapping from blocks to their associated [BlockValidatorSetUpdates].
+pub enum BlockValidatorSetUpdates {
+    None,
+    Pending(ValidatorSetUpdates),
+    Completed(ValidatorSetUpdates),
+}
+
+impl BlockValidatorSetUpdates {
+    pub fn is_some(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Pending(_) | Self::Completed(_) => true,
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        match self {
+            Self::None => true,
+            Self::Pending(_) | Self::Completed(_) => false,
+        }
+    }
+}
+
+/// [BlockValidatorSetUpdates] where public keys of validators are stored as bytes.
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
+pub enum BlockValidatorSetUpdatesBytes {
+    None,
+    Pending(ValidatorSetUpdatesBytes),
+    Completed(ValidatorSetUpdatesBytes),
+}
+
+impl TryFrom<BlockValidatorSetUpdatesBytes> for BlockValidatorSetUpdates {
+    type Error = ed25519_dalek::SignatureError;
+
+    fn try_from(value: BlockValidatorSetUpdatesBytes) -> Result<Self, Self::Error> {
+        Ok(
+            match value {
+                BlockValidatorSetUpdatesBytes::None => BlockValidatorSetUpdates::None,
+                BlockValidatorSetUpdatesBytes::Pending(vs_updates_bytes) => 
+                    BlockValidatorSetUpdates::Pending(ValidatorSetUpdates::try_from(vs_updates_bytes)?),
+                BlockValidatorSetUpdatesBytes::Completed(vs_updates_bytes) => 
+                    BlockValidatorSetUpdates::Completed(ValidatorSetUpdates::try_from(vs_updates_bytes)?)
+            }
+        )
+    }
+}

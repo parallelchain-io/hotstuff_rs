@@ -94,11 +94,11 @@ impl QuorumCertificate {
     }
 
     pub fn is_block_justify(&self) -> bool {
-        self.phase.is_generic() || self.phase.is_commit()
+        self.phase.is_generic() || self.phase.is_decide()
     }
 
     pub fn is_nudge_justify(&self) -> bool {
-        self.phase.is_prepare() || self.phase.is_precommit()
+        self.phase.is_prepare() || self.phase.is_precommit() || self.phase.is_commit()
     }
 
 }
@@ -111,16 +111,14 @@ pub enum Phase {
     // ↓↓↓ For phased flow ↓↓↓ //
     Prepare,
 
-    // The inner view number is the view number of the *prepare* qc contained in the nudge which triggered
-    // the vote containing this phase.
-    Precommit(ViewNumber),
 
-    // The inner view number is the view number of the *precommit* qc contained in the nudge which 
-    // triggered the vote containing this phase.
-    Commit(ViewNumber),
+    Precommit,
 
-    //TODO
-    //Decide(ViewNumber)
+
+    Commit,
+
+
+    Decide,
 }
 
 impl Phase {
@@ -133,15 +131,16 @@ impl Phase {
     }
 
     pub fn is_precommit(self) -> bool {
-        matches!(self, Phase::Precommit(_))
+        matches!(self, Phase::Precommit)
     }
 
     pub fn is_commit(self) -> bool {
-        matches!(self, Phase::Commit(_))
+        matches!(self, Phase::Commit)
     }
 
-    //TODO
-    //is_decide
+    pub fn is_decide(self) -> bool {
+        matches!(self, Phase::Decide)
+    }
 }
 
 /// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view,

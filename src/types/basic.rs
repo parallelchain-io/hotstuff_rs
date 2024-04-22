@@ -18,7 +18,7 @@
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet}, 
     fmt::{self, Debug, Display, Formatter}, 
-    hash::Hash, ops::{Add, AddAssign, SubAssign}
+    hash::Hash, ops::{Add, AddAssign, Sub, SubAssign}
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -272,6 +272,14 @@ impl Add<u64> for ViewNumber {
 
     fn add(self, rhs: u64) -> Self::Output {
         ViewNumber(self.0.add(rhs))
+    }
+}
+
+impl Sub<u64> for ViewNumber {
+    type Output = ViewNumber;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        ViewNumber(self.0.sub(rhs))
     }
 }
 
