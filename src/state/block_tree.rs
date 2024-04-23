@@ -172,7 +172,6 @@ impl<K: KVStore> BlockTree<K> {
 
                 // Get great-grandparent.
                 let great_grandparent = {
-                    let parent_justify = self.block_justify(&parent).unwrap();
                     if parent_justify.is_genesis_qc() {
                         self.write(wb);
                         publish_insert_block_events(event_publisher, block.clone(), update_highest_qc, update_locked_view, &Vec::new());
