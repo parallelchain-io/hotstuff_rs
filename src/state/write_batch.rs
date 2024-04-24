@@ -11,8 +11,9 @@ use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
 use crate::types::basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber};
 use crate::types::block::Block;
-use crate::types::validators::{BlockValidatorSetUpdatesBytes, ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes};
+use crate::types::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes, ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
 
+use super::block_tree::BlockTreeError;
 use super::kv_store::{Key, WriteBatch};
 use super::paths;
 use super::utilities::combine;
@@ -27,7 +28,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Block ↓↓↓  */
 
-    pub fn set_block(&mut self, block: &Block) -> Result<(), KVSetError> {
+    pub fn set_block(&mut self, block: &Block) -> Result<(), BlockTreeError> {
         let block_prefix = combine(&paths::BLOCKS, &block.hash.bytes());
 
         self.0.set(
@@ -75,7 +76,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Block at Height ↓↓↓ */
 
-    pub fn set_block_at_height(&mut self, height: BlockHeight, block: &CryptoHash) -> Result<(), KVSetError> {
+    pub fn set_block_at_height(&mut self, height: BlockHeight, block: &CryptoHash) -> Result<(), BlockTreeError> {
         Ok(
             self.0.set(
                 &combine(&BLOCK_AT_HEIGHT, &height.try_to_vec().unwrap()),
@@ -86,7 +87,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Block to Children ↓↓↓ */
 
-    pub fn set_children(&mut self, block: &CryptoHash, children: &ChildrenList) -> Result<(), KVSetError> {
+    pub fn set_children(&mut self, block: &CryptoHash, children: &ChildrenList) -> Result<(), BlockTreeError> {
         Ok(
             self.0.set(
             &combine(&BLOCK_TO_CHILDREN, &block.bytes()),
@@ -140,7 +141,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Commmitted Validator Set */
 
-    pub fn set_committed_validator_set(&mut self, validator_set: &ValidatorSet) -> Result<(), KVSetError> {
+    pub fn set_committed_validator_set(&mut self, validator_set: &ValidatorSet) -> Result<(), BlockTreeError> {
         let validator_set_bytes: ValidatorSetBytes = validator_set.into();
         Ok(
             self.0.set(
@@ -156,27 +157,24 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         &mut self,
         block: &CryptoHash,
         validator_set_updates: &ValidatorSetUpdates,
-    ) -> Result<(), KVSetError>
+    ) -> Result<(), BlockTreeError>
     {
-        let block_vs_updates_bytes = BlockValidatorSetUpdatesBytes::Pending(validator_set_updates.into());
+        let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Pending(validator_set_updates.into());
         Ok(
             self.0.set(
                 &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
-                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?,
+                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})?,
             )
         )
     }
 
-    pub fn set_completed_validator_set_updates(
-        &mut self, block: &CryptoHash, 
-        validator_set_updates: &ValidatorSetUpdates
-    ) -> Result<(), KVSetError> 
+    pub fn set_committed_validator_set_updates(&mut self, block: &CryptoHash) -> Result<(), BlockTreeError> 
     {
-        let block_vs_updates_bytes = BlockValidatorSetUpdatesBytes::Completed(validator_set_updates.into());
+        let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Committed;
         Ok(
             self.0.set(
                 &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
-                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?,
+                &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})?,
             )
         )
     }
@@ -188,13 +186,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Locked View ↓↓↓ */
 
-    pub fn set_locked_qc(&mut self, qc: &QuorumCertificate) -> Result<(), KVSetError> {
+    pub fn set_locked_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(&paths::LOCKED_QC, &qc.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::LockedView, source: err})?))
     }
 
     /* ↓↓↓ Highest View Entered ↓↓↓ */
 
-    pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), KVSetError>{
+    pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError>{
         Ok(
             self.0
             .set(&paths::HIGHEST_VIEW_ENTERED, &view.try_to_vec()
@@ -204,13 +202,13 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
 
-    pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), KVSetError>{
+    pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError>{
         Ok(self.0.set(&paths::HIGHEST_QC, &qc.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::HighestTC, source: err})?))
     }
 
     /* ↓↓↓ Highest Committed Block ↓↓↓ */
 
-    pub fn set_highest_committed_block(&mut self, block: &CryptoHash) -> Result<(), KVSetError> {
+    pub fn set_highest_committed_block(&mut self, block: &CryptoHash) -> Result<(), BlockTreeError> {
         Ok(
             self.0
             .set(&paths::HIGHEST_COMMITTED_BLOCK, &block.try_to_vec()
@@ -220,16 +218,49 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Newest Block ↓↓↓ */
 
-    pub fn set_newest_block(&mut self, block: &CryptoHash) -> Result<(), KVSetError> {
+    pub fn set_newest_block(&mut self, block: &CryptoHash) -> Result<(), BlockTreeError> {
         Ok(self.0.set(&paths::NEWEST_BLOCK, &block.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::NewestBlock, source: err})?))
     }
 
     /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
 
-    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), KVSetError> {
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(&paths::HIGHEST_TC, &tc.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::HighestTC, source: err})?))
     }
 
+    /* ↓↓↓ Previous Validator Set  */
+    pub fn set_previous_validator_set(&mut self, validator_set: &ValidatorSet) -> Result<(), BlockTreeError> {
+        let validator_set_bytes: ValidatorSetBytes = validator_set.into();
+        Ok(
+            self.0.set(
+            &paths::PREVIOUS_VALIDATOR_SET,
+            &validator_set_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::PreviousValidatorSet, source: err})?,
+            )
+        )
+    }
+
+    /* ↓↓↓ Validator Set Update Block Height */
+    pub fn set_validator_set_update_block_height(&mut self, height: BlockHeight) -> Result<(), BlockTreeError> {
+        Ok(
+            self.0.set(
+                &paths::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT, 
+                &height.try_to_vec()
+                       .map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdateHeight, source: err})?
+            )
+        )
+    }
+
+    /* ↓↓↓ Validator Set Update Complete */
+
+    pub fn set_validator_set_update_complete(&mut self, update_complete: bool) -> Result<(), BlockTreeError> {
+        Ok(
+            self.0.set(
+                &paths::VALIDATOR_SET_UPDATE_COMPLETE, 
+                &update_complete.try_to_vec()
+                       .map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdateComplete, source: err})?
+            )
+        )
+    }
 }
 
 #[derive(Debug)]

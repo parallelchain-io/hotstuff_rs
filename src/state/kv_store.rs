@@ -9,14 +9,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::validators::{BlockValidatorSetUpdates, BlockValidatorSetUpdatesBytes};
+use crate::types::validators::{ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
 use crate::types::{
     basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber}, 
-    block::Block, validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdates, 
-    ValidatorSetUpdatesBytes}
+    block::Block, 
+    validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState}
 };
-use super::block_tree_camera::BlockTreeSnapshot;
-use super::block_tree::BlockTree;
 
 use super::paths;
 use super::utilities::combine;
@@ -503,7 +501,7 @@ pub trait KVGet {
         }
     }
 
-    /* ↓↓↓ Commmitted Validator Set */
+    /* ↓↓↓ Committed Validator Set ↓↓↓ */
 
     fn committed_validator_set(&self) -> Result<ValidatorSet, KVGetError> {
         let committed_validator_set_bytes = 
@@ -515,19 +513,19 @@ pub trait KVGet {
             .map_err(|err| KVGetError::Ed25519DalekError{key: Key::CommittedValidatorSet, source: err})
     }
 
-    /* ↓↓↓ Pending Validator Set Updates */
+    /* ↓↓↓ Validator Set Updates Status ↓↓↓ */
 
-    fn block_validator_set_updates(&self, block: &CryptoHash) -> Result<BlockValidatorSetUpdates, KVGetError> {
-        let block_validator_set_updates_bytes = 
+    fn validator_set_updates_status(&self, block: &CryptoHash) -> Result<ValidatorSetUpdatesStatus, KVGetError> {
+        let validator_set_updates_status_bytes = 
             match self.get(&combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes())) {
-                None => BlockValidatorSetUpdatesBytes::None,
+                None => ValidatorSetUpdatesStatusBytes::None,
                 Some(bytes) => {
-                    BlockValidatorSetUpdatesBytes::deserialize(&mut &*bytes)
-                    .map_err(|err| KVGetError::DeserializeValueError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})?
+                    ValidatorSetUpdatesStatusBytes::deserialize(&mut &*bytes)
+                    .map_err(|err| KVGetError::DeserializeValueError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})?
                 }
             };
-        BlockValidatorSetUpdates::try_from(block_validator_set_updates_bytes)
-            .map_err(|err| KVGetError::Ed25519DalekError{key: Key::BlockValidatorSetUpdates{block: block.clone()}, source: err})
+        ValidatorSetUpdatesStatus::try_from(validator_set_updates_status_bytes)
+            .map_err(|err| KVGetError::Ed25519DalekError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */
@@ -653,7 +651,7 @@ pub enum Key {
     CommittedAppState{key: Vec<u8>},
     PendingAppStateUpdates{block: CryptoHash},
     CommittedValidatorSet,
-    BlockValidatorSetUpdates{block: CryptoHash},
+    ValidatorSetUpdatesStatus{block: CryptoHash},
     LockedView,
     HighestViewEntered,
     HighestQC,
@@ -688,8 +686,8 @@ impl Display for Key {
                 write!(f, "Pending App State Updates for block {}", block),
             &Key::CommittedValidatorSet =>
                 write!(f, "Committed Validator Set"),
-            &Key::BlockValidatorSetUpdates{block} => 
-                write!(f, "Pending Validator Set Updates for block {}", block),
+            &Key::ValidatorSetUpdatesStatus{block} => 
+                write!(f, "Validator Set Updates Status for block {}", block),
             &Key::LockedView => 
                 write!(f, "Locked View"),
             &Key::HighestViewEntered =>

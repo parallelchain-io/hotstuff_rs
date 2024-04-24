@@ -295,9 +295,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest QC. Optional."))]
     on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedViewEvent>),
-    doc = "Register a handler closure to be invoked after the replica updates its locked view. Optional."))]
-    on_update_locked_view: Option<HandlerPtr<UpdateLockedViewEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedQCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its locked QC. Optional."))]
+    on_update_locked_view: Option<HandlerPtr<UpdateLockedQCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateValidatorSetEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateValidatorSetEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its validator set. Optional."))]
     on_update_validator_set: Option<HandlerPtr<UpdateValidatorSetEvent>>,

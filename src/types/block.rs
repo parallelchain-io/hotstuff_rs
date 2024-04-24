@@ -10,6 +10,8 @@ pub use sha2::Sha256 as CryptoHasher;
 use sha2::Digest;
 
 use crate::hotstuff::types::QuorumCertificate;
+use crate::state::block_tree::{self, BlockTree, BlockTreeError};
+use crate::state::kv_store::KVStore;
 use crate::types::basic::*;
 use crate::types::validators::ValidatorSet;
 
@@ -52,8 +54,8 @@ impl Block {
     }
 
     /// Checks if hash and justify are cryptographically correct.
-    pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-        self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
-            && self.justify.is_correct(validator_set)
+    pub fn is_correct<K : KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+        Ok(self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
+            && self.justify.is_correct(block_tree)?)
     }
 }

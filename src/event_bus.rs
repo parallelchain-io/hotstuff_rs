@@ -67,7 +67,7 @@ pub(crate) struct EventHandlers {
     pub(crate) commit_block_handlers: HandlerPair<CommitBlockEvent>,
     pub(crate) prune_block_handlers: HandlerPair<PruneBlockEvent>,
     pub(crate) update_highest_qc_handlers: HandlerPair<UpdateHighestQCEvent>,
-    pub(crate) update_locked_view_handlers: HandlerPair<UpdateLockedViewEvent>,
+    pub(crate) update_locked_qc_handlers: HandlerPair<UpdateLockedQCEvent>,
     pub(crate) update_validator_set_handlers: HandlerPair<UpdateValidatorSetEvent>,
 
     pub(crate) propose_handlers: HandlerPair<ProposeEvent>,
@@ -100,7 +100,7 @@ impl EventHandlers {
         commit_block_handler: Option<HandlerPtr<CommitBlockEvent>>,
         prune_block_handler: Option<HandlerPtr<PruneBlockEvent>>,
         update_highest_qc_handler: Option<HandlerPtr<UpdateHighestQCEvent>>,
-        update_locked_view_handler: Option<HandlerPtr<UpdateLockedViewEvent>>,
+        update_locked_qc_handler: Option<HandlerPtr<UpdateLockedQCEvent>>,
         update_validator_set_handler: Option<HandlerPtr<UpdateValidatorSetEvent>>,
         propose_handler: Option<HandlerPtr<ProposeEvent>>,
         nudge_handler: Option<HandlerPtr<NudgeEvent>>,
@@ -124,7 +124,7 @@ impl EventHandlers {
             commit_block_handlers: HandlerPair::new(log, commit_block_handler),
             prune_block_handlers: HandlerPair::new(log, prune_block_handler),
             update_highest_qc_handlers: HandlerPair::new(log, update_highest_qc_handler),
-            update_locked_view_handlers: HandlerPair::new(log, update_locked_view_handler),
+            update_locked_qc_handlers: HandlerPair::new(log, update_locked_qc_handler),
             update_validator_set_handlers: HandlerPair::new(log, update_validator_set_handler),
             propose_handlers: HandlerPair::new(log, propose_handler),
             nudge_handlers: HandlerPair::new(log, nudge_handler),
@@ -152,7 +152,7 @@ impl EventHandlers {
         && self.commit_block_handlers.is_empty()
         && self.prune_block_handlers.is_empty()
         && self.update_highest_qc_handlers.is_empty()
-        && self.update_locked_view_handlers.is_empty()
+        && self.update_locked_qc_handlers.is_empty()
         && self.update_validator_set_handlers.is_empty()
         && self.propose_handlers.is_empty()
         && self.nudge_handlers.is_empty()
@@ -192,9 +192,9 @@ impl EventHandlers {
                 self.update_highest_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
                 self.update_highest_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
             }
-            Event::UpdateLockedView(update_locked_view_event) => {
-                self.update_locked_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_locked_view_event));
-                self.update_locked_view_handlers.logging_handler.iter().for_each(|handler| handler(&update_locked_view_event));
+            Event::UpdateLockedQC(update_locked_qc_event) => {
+                self.update_locked_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
+                self.update_locked_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
             }
             Event::UpdateValidatorSet(update_validator_set_event) => {
                 self.update_validator_set_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_validator_set_event));

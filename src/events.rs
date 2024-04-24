@@ -51,7 +51,7 @@ pub enum Event {
     CommitBlock(CommitBlockEvent),
     PruneBlock(PruneBlockEvent),
     UpdateHighestQC(UpdateHighestQCEvent),
-    UpdateLockedView(UpdateLockedViewEvent),
+    UpdateLockedQC(UpdateLockedQCEvent),
     UpdateValidatorSet(UpdateValidatorSetEvent),
 
     // Events that involve broadcasting or sending a Progress Message.
@@ -116,11 +116,11 @@ pub struct UpdateHighestQCEvent {
     pub highest_qc: QuorumCertificate,
 }
 
-/// The Locked View stored in the [Block Tree](crate::state::BlockTree) was updated.
-/// Includes the [view number](crate::types::ViewNumber) of the new Locked View.
-pub struct UpdateLockedViewEvent {
+/// The Locked QC stored in the [Block Tree](crate::state::BlockTree) was updated.
+/// Includes the new locked [quorum certificate](crate::hotstuff::types::QuorumCertificate).
+pub struct UpdateLockedQCEvent {
     pub timestamp: SystemTime,
-    pub locked_view: ViewNumber,
+    pub locked_qc: QuorumCertificate,
 }
 
 /// The committed validator set, stored in the [Block Tree](crate::state::BlockTree), was updated.

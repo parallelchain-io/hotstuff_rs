@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet};
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use crate::types::{
+use crate::{state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore}, types::{
     basic::*,
     validators::*,
-};
+}};
 use super::messages::Vote;
 
 /// Proof that at least a quorum of validators have voted for a given 
@@ -31,52 +31,87 @@ pub struct QuorumCertificate {
 }
 
 impl QuorumCertificate {
-    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
-    /// a quorum.
+    /// Computes the appropriate validator set that the QC should be checked against, and checks if the
+    /// signatures in the certificate are correct and form a quorum.
     ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
-    pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-        if self.is_genesis_qc() {
-            true
-        } else {
-            // Check whether the size of the signature set is the same as the size of the validator set.
-            if self.signatures.len() != validator_set.len() {
-                return false;
-            }
+    pub(crate) fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+        if self.is_genesis_qc() {return Ok(true)};
 
-            // Check whether every signature is correct and tally up their powers.
-            let mut total_power: TotalPower = TotalPower::new(0);
-            for (signature, (signer, power)) in self
-                .signatures
-                .iter()
-                .zip(validator_set.validators_and_powers())
-            {
-                if let Some(signature) = signature {
-                    if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
-                        if signer
-                            .verify(
-                                &(self.chain_id, self.view, self.block, self.phase)
-                                    .try_to_vec()
-                                    .unwrap(),
-                                &signature,
-                            )
-                            .is_ok()
-                        {
-                            total_power += power;
-                        } else {
-                            // qc contains incorrect signature.
-                            return false;
-                        }
+        let block_height = block_tree.block_height(&self.block)?;
+        if block_height.is_none() {return Ok(false)};
+
+        let validator_set_state = block_tree.validator_set_state()?;
+
+        if &block_height.unwrap() < validator_set_state.update_height() {
+            Ok(self.is_correctly_signed(validator_set_state.previous_validator_set()))
+        } else if &block_height.unwrap() > validator_set_state.update_height() {
+            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
+        } else {
+            match self.phase {
+                Phase::Decide => {
+                    // Check if the validator set updates associated with this block have been committed.
+                    match block_tree.validator_set_updates_status(&self.block)? {
+                        ValidatorSetUpdatesStatus::Committed => {
+                            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
+                        },
+                        ValidatorSetUpdatesStatus::Pending(vs_updates) => {
+                            // This may be the case if the block justified by this QC is received via sync,
+                            // hence the updates have not been applied yet.
+                            let mut new_validator_set = block_tree.committed_validator_set()?;
+                            new_validator_set.apply_updates(&vs_updates);
+                            Ok(self.is_correctly_signed(&new_validator_set))
+                        },
+                        ValidatorSetUpdatesStatus::None => panic!()
+                    }
+                },
+                Phase::Prepare | Phase::Precommit | Phase::Commit =>
+                    Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
+                _ => Ok(false) // Note: cannot panic here, since safe_qc has not been checked yet.
+            }
+        }
+    }
+
+    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
+    /// a quorum.
+    pub(crate) fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
+        // Check whether the size of the signature set is the same as the size of the validator set.
+        if self.signatures.len() != validator_set.len() {
+            return false;
+        }
+
+        // Check whether every signature is correct and tally up their powers.
+        let mut total_power: TotalPower = TotalPower::new(0);
+        for (signature, (signer, power)) in self
+            .signatures
+            .iter()
+            .zip(validator_set.validators_and_powers())
+        {
+            if let Some(signature) = signature {
+                if let Ok(signature) = Signature::from_slice(&signature.bytes()) {
+                    if signer
+                        .verify(
+                            &(self.chain_id, self.view, self.block, self.phase)
+                                .try_to_vec()
+                                .unwrap(),
+                            &signature,
+                        )
+                        .is_ok()
+                    {
+                        total_power += power;
                     } else {
                         // qc contains incorrect signature.
                         return false;
                     }
+                } else {
+                    // qc contains incorrect signature.
+                    return false;
                 }
             }
-
-            // Check if the signatures form a quorum.
-            total_power >= validator_set.quorum()
         }
+
+        // Check if the signatures form a quorum.
+        total_power >= validator_set.quorum()
     }
 
     pub const fn genesis_qc() -> QuorumCertificate {

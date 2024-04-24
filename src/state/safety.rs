@@ -128,8 +128,9 @@ pub fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>, ch
         /* 1 */ (qc.chain_id == chain_id || qc.is_genesis_qc()) &&
         /* 2 */ (block_tree.contains(&qc.block) || qc.is_genesis_qc()) &&
         /* 3 */ (qc.view > block_tree.locked_qc()?.view || extends_locked_qc_block(qc, block_tree)?) &&
-        /* 4 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit() || qc.phase.is_decide()) && block_tree.block_validator_set_updates(&qc.block)?.is_some()) ||
-        /* 5 */ (qc.phase.is_generic() && block_tree.block_validator_set_updates(&qc.block)?.is_none()))
+        /* 4 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit() || qc.phase.is_decide()) && 
+                   block_tree.validator_set_updates_status(&qc.block)?.contains_updates()) ||
+        /* 5 */ (qc.phase.is_generic() && !block_tree.validator_set_updates_status(&qc.block)?.contains_updates()))
     )
 }
 
@@ -203,7 +204,7 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 /// consecutive views.
 /// 
 /// This method implements the following rule:
-/// 1. If a decide qc is seen, then the qc's block should be committed - if not committed yet. 
+/// 1. If a commit or decide qc is seen, then the qc's block should be committed - if not committed yet. 
 /// 2. If a generic qc is seen, then the great-grandparent block, i.e., the block referenced by the generic
 ///    qc's grandparent qc, should be committed - if not committed yet and if the commit rule holds.
 /// 
@@ -225,7 +226,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
     if justify.is_genesis_qc() {return Ok(None)};
 
     match justify.phase {
-        Phase::Decide => {
+        Phase::Commit | Phase::Decide => {
             let commit_block_height = 
                 block_tree.block_height(&justify.block)?
                 .ok_or(BlockTreeError::BlockExpectedButNotFound{block: justify.block.clone()})?;
@@ -265,7 +266,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
             }
 
         },
-        _ => panic!() // Safety: a safe_nudge or safe_block must have appropriate justify phase.
+        _ => Ok(None)
     }
 }
 

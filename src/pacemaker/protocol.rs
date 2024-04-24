@@ -201,9 +201,11 @@ impl<N: Network> Pacemaker<N> {
         if !block_tree.committed_validator_set()?.contains(signer) {return Ok(())};
 
         if timeout_vote.is_correct(signer) && is_epoch_change_view(&timeout_vote.view, self.config.epoch_length) {
-            let validator_set = &block_tree.committed_validator_set()?;
             let fallback_tc = 
-                timeout_vote.highest_tc.clone().filter(|tc| tc.is_correct(validator_set));
+                match &timeout_vote.highest_tc {
+                    Some(tc) if tc.is_correct(block_tree)? => Some(tc.clone()),
+                    _ => None
+                };
 
             if let Some(new_tc) = self.state.timeout_vote_collector.collect(signer, timeout_vote) {
 
@@ -211,7 +213,7 @@ impl<N: Network> Pacemaker<N> {
                 // and broadcast the collected TC.
                 if block_tree.highest_tc()?.is_none() || new_tc.view > block_tree.highest_tc()?.unwrap().view {
                     let mut wb = BlockTreeWriteBatch::new();
-                    wb.set_highest_tc(&new_tc);
+                    wb.set_highest_tc(&new_tc)?;
                     block_tree.write(wb);
                     if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
                         let pacemaker_msg = PacemakerMessage::advance_view(ProgressCertificate::TimeoutCertificate(new_tc));
@@ -224,7 +226,7 @@ impl<N: Network> Pacemaker<N> {
                 // serves to prove to it that a quorum is ahead and lets the replica catch up.
                 if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
                     let mut wb = BlockTreeWriteBatch::new();
-                    wb.set_highest_tc(&tc);
+                    wb.set_highest_tc(&tc)?;
                     block_tree.write(wb);
                     
                     // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
@@ -250,9 +252,9 @@ impl<N: Network> Pacemaker<N> {
 
         let progress_certificate = advance_view.progress_certificate.clone();
         let valid = match &progress_certificate {
-            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(&block_tree.committed_validator_set()?),
+            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(block_tree)?,
             ProgressCertificate::TimeoutCertificate(tc) => 
-                tc.is_correct(&block_tree.committed_validator_set()?) && is_epoch_change_view(&tc.view, self.config.epoch_length) 
+                tc.is_correct(&block_tree)? && is_epoch_change_view(&tc.view, self.config.epoch_length) 
         };
 
         if valid {

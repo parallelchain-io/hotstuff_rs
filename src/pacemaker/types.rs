@@ -8,6 +8,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
+use crate::state::block_tree::{self, BlockTree, BlockTreeError};
+use crate::state::kv_store::KVStore;
 use crate::types::{
     basic::*,
     validators::*,
@@ -27,9 +29,26 @@ pub struct TimeoutCertificate {
 
 impl TimeoutCertificate {
 
+    /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
+    /// 
+    /// During the speculation phase, i.e., when the new validator set has been committed, but the old
+    /// validator set is still active, a TC is correct is it is correctly signed by a quorum from either
+    /// of the two validator sets.
+    pub(crate) fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+        let validator_set_state = block_tree.validator_set_state()?;
+        if validator_set_state.update_complete() {
+            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
+        } else {
+            Ok(
+                self.is_correctly_signed(validator_set_state.committed_validator_set()) ||
+                self.is_correctly_signed(validator_set_state.previous_validator_set())
+            )
+        }
+    }
+
     /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
     /// a quorum.
-    pub(crate) fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
+    pub(crate) fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
 
             // Check whether the size of the signature set is the same as the size of the validator set.
             if self.signatures.len() != validator_set.len() {

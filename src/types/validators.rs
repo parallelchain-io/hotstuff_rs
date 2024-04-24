@@ -6,14 +6,15 @@
 //! Definitions for the [ValidatorSet] and [ValidatorSetUpdates] types and their associated methods.
 
 use std::{
-    collections::{HashMap, HashSet}, future::Pending, slice
+    collections::{HashMap, HashSet}, 
+    slice
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
 use rand::seq::SliceRandom;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 
-use super::basic::{BlockHeight, CryptoHash, Power, TotalPower, UpdateSet};
+use super::basic::{BlockHeight, Power, TotalPower, UpdateSet};
 
 /// Internal type used for serializing and deserializing values of type [VerifyingKey].
 type VerifyingKeyBytes = [u8; 32];
@@ -249,9 +250,6 @@ pub struct ValidatorSetState {
     update_complete: bool,
 }
 
-// TODO: add a block_tree method that returns ValidatorSetState. This method shall replace the calls
-// to block_tree.committed_validator_set() in most places.
-
 impl ValidatorSetState {
     pub(crate) fn new(
         committed_validator_set: ValidatorSet, 
@@ -288,47 +286,39 @@ impl ValidatorSetState {
 /// Wraps around [ValidatorSetUpdates], providing additional information on whether the updates have
 /// already been applied or not. The [BlockTree][crate::state::block_tree::BlockTree] should store a
 /// mapping from blocks to their associated [BlockValidatorSetUpdates].
-pub enum BlockValidatorSetUpdates {
+pub enum ValidatorSetUpdatesStatus {
     None,
     Pending(ValidatorSetUpdates),
-    Completed(ValidatorSetUpdates),
+    Committed,
 }
 
-impl BlockValidatorSetUpdates {
-    pub fn is_some(&self) -> bool {
+impl ValidatorSetUpdatesStatus {
+    pub fn contains_updates(&self) -> bool {
         match self {
             Self::None => false,
-            Self::Pending(_) | Self::Completed(_) => true,
-        }
-    }
-
-    pub fn is_none(&self) -> bool {
-        match self {
-            Self::None => true,
-            Self::Pending(_) | Self::Completed(_) => false,
+            Self::Pending(_) | Self::Committed => true,
         }
     }
 }
 
-/// [BlockValidatorSetUpdates] where public keys of validators are stored as bytes.
+/// [ValidatorSetUpdatesStatus] where public keys of validators are stored as bytes.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum BlockValidatorSetUpdatesBytes {
+pub enum ValidatorSetUpdatesStatusBytes {
     None,
     Pending(ValidatorSetUpdatesBytes),
-    Completed(ValidatorSetUpdatesBytes),
+    Committed,
 }
 
-impl TryFrom<BlockValidatorSetUpdatesBytes> for BlockValidatorSetUpdates {
+impl TryFrom<ValidatorSetUpdatesStatusBytes> for ValidatorSetUpdatesStatus {
     type Error = ed25519_dalek::SignatureError;
 
-    fn try_from(value: BlockValidatorSetUpdatesBytes) -> Result<Self, Self::Error> {
+    fn try_from(value: ValidatorSetUpdatesStatusBytes) -> Result<Self, Self::Error> {
         Ok(
             match value {
-                BlockValidatorSetUpdatesBytes::None => BlockValidatorSetUpdates::None,
-                BlockValidatorSetUpdatesBytes::Pending(vs_updates_bytes) => 
-                    BlockValidatorSetUpdates::Pending(ValidatorSetUpdates::try_from(vs_updates_bytes)?),
-                BlockValidatorSetUpdatesBytes::Completed(vs_updates_bytes) => 
-                    BlockValidatorSetUpdates::Completed(ValidatorSetUpdates::try_from(vs_updates_bytes)?)
+                ValidatorSetUpdatesStatusBytes::None => ValidatorSetUpdatesStatus::None,
+                ValidatorSetUpdatesStatusBytes::Pending(vs_updates_bytes) => 
+                    ValidatorSetUpdatesStatus::Pending(ValidatorSetUpdates::try_from(vs_updates_bytes)?),
+                ValidatorSetUpdatesStatusBytes::Committed => ValidatorSetUpdatesStatus::Committed
             }
         )
     }

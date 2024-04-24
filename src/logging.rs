@@ -43,7 +43,7 @@ pub const INSERT_BLOCK: &str = "InsertBlock";
 pub const COMMIT_BLOCK: &str = "CommitBlock";
 pub const PRUNE_BLOCK: &str = "PruneBlock";
 pub const UPDATE_HIGHEST_QC: &str = "UpdateHighestQC";
-pub const UPDATE_LOCKED_VIEW: &str = "UpdateLockedView";
+pub const UPDATE_LOCKED_QC: &str = "UpdateLockedQC";
 pub const UPDATE_VALIDATOR_SET: &str = "UpdateValidatorSet";
 
 pub const PROPOSE: &str = "Propose";
@@ -120,14 +120,16 @@ impl Logger for UpdateHighestQCEvent {
     }
 }
 
-impl Logger for UpdateLockedViewEvent {
+impl Logger for UpdateLockedQCEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |update_locked_view_event: &UpdateLockedViewEvent| {
+        let logger = |update_locked_qc_event: &UpdateLockedQCEvent| {
             log::info!(
-                "{}, {}, {}",
-                UPDATE_LOCKED_VIEW,
-                secs_since_unix_epoch(update_locked_view_event.timestamp),
-                update_locked_view_event.locked_view
+                "{}, {}, {}, {}, {:?}",
+                UPDATE_LOCKED_QC,
+                secs_since_unix_epoch(update_locked_qc_event.timestamp),
+                first_seven_base64_chars(&update_locked_qc_event.locked_qc.block.bytes()),
+                update_locked_qc_event.locked_qc.view,
+                update_locked_qc_event.locked_qc.phase
             )
         };
         Box::new(logger)
