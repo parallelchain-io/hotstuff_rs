@@ -285,7 +285,7 @@ impl ValidatorSetState {
 
 /// Wraps around [ValidatorSetUpdates], providing additional information on whether the updates have
 /// already been applied or not. The [BlockTree][crate::state::block_tree::BlockTree] should store a
-/// mapping from blocks to their associated [BlockValidatorSetUpdates].
+/// mapping from blocks to their associated [ValidatorSetUpdatesStatus].
 pub enum ValidatorSetUpdatesStatus {
     None,
     Pending(ValidatorSetUpdates),

@@ -481,7 +481,7 @@ impl ViewInfo {
 
 /// Implements the [Interleaved Weighted Round Robin](https://en.wikipedia.org/wiki/Weighted_round_robin#Interleaved_WRR)
 /// algorithm for selecting a view leader. For internal use by the [Pacemaker] and [PacemakerState] methods.
-fn select_leader(
+pub fn select_leader(
     view: ViewNumber,
     validator_set: &ValidatorSet,
 ) -> VerifyingKey {
