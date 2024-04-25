@@ -510,6 +510,10 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.validator_set_state()?)
     }
 
+    pub(crate) fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
+        Ok(self.0.highest_view_voted()?)
+    }
+
 }
 
 #[derive(Debug)]

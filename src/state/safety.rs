@@ -88,7 +88,10 @@ use crate::types::{
     block::Block
 };
 
-use super::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore};
+use super::{
+    block_tree::{BlockTree, BlockTreeError},
+    kv_store::KVStore
+};
 
 /// Returns whether a block can be considered safe, and thus cause updates to the block tree. 
 /// For this, it is necessary that:
@@ -105,7 +108,7 @@ use super::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore};
 pub fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
         /* 1 */ safe_qc(&block.justify, block_tree, chain_id)? &&
-        /* 2 */ (block.justify.is_block_justify())
+        /* 2 */ block.justify.is_block_justify()
     )
 }
 

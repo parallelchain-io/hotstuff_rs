@@ -20,6 +20,7 @@ pub(super) const HIGHEST_TC: [u8; 1] = [12];
 pub(super) const PREVIOUS_VALIDATOR_SET: [u8; 1] = [13];
 pub(super) const VALIDATOR_SET_UPDATE_BLOCK_HEIGHT: [u8; 1] = [14];
 pub(super) const VALIDATOR_SET_UPDATE_COMPLETE: [u8; 1] = [15];
+pub(super) const HIGHEST_VIEW_VOTED: [u8; 1] = [16];
 
 // Fields of Block
 pub(super) const BLOCK_HEIGHT: [u8; 1] = [0];

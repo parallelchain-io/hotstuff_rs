@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the [HotStuff] protocol.
+//! Definitions of types specific to the Pacemaker protocol.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
@@ -32,7 +32,7 @@ impl TimeoutCertificate {
     /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
     /// 
     /// During the speculation phase, i.e., when the new validator set has been committed, but the old
-    /// validator set is still active, a TC is correct is it is correctly signed by a quorum from either
+    /// validator set is still active, a TC is correct if it is correctly signed by a quorum from either
     /// of the two validator sets.
     pub(crate) fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         let validator_set_state = block_tree.validator_set_state()?;

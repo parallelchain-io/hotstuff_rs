@@ -14,9 +14,16 @@ use crate::types::block::Block;
 use crate::types::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes, ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
 
 use super::block_tree::BlockTreeError;
-use super::kv_store::{Key, WriteBatch};
+use super::kv_store::Key;
 use super::paths;
 use super::utilities::combine;
+
+pub trait WriteBatch {
+    fn new() -> Self;
+    fn set(&mut self, key: &[u8], value: &[u8]);
+    fn delete(&mut self, key: &[u8]);
+}
+
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {
         BlockTreeWriteBatch(W::new())
@@ -228,7 +235,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         Ok(self.0.set(&paths::HIGHEST_TC, &tc.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::HighestTC, source: err})?))
     }
 
-    /* ↓↓↓ Previous Validator Set  */
+    /* ↓↓↓ Previous Validator Set  ↓↓↓ */
     pub fn set_previous_validator_set(&mut self, validator_set: &ValidatorSet) -> Result<(), BlockTreeError> {
         let validator_set_bytes: ValidatorSetBytes = validator_set.into();
         Ok(
@@ -239,7 +246,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         )
     }
 
-    /* ↓↓↓ Validator Set Update Block Height */
+    /* ↓↓↓ Validator Set Update Block Height ↓↓↓ */
     pub fn set_validator_set_update_block_height(&mut self, height: BlockHeight) -> Result<(), BlockTreeError> {
         Ok(
             self.0.set(
@@ -250,7 +257,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         )
     }
 
-    /* ↓↓↓ Validator Set Update Complete */
+    /* ↓↓↓ Validator Set Update Complete ↓↓↓ */
 
     pub fn set_validator_set_update_complete(&mut self, update_complete: bool) -> Result<(), BlockTreeError> {
         Ok(
@@ -258,6 +265,18 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
                 &paths::VALIDATOR_SET_UPDATE_COMPLETE, 
                 &update_complete.try_to_vec()
                        .map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdateComplete, source: err})?
+            )
+        )
+    }
+
+    /* ↓↓↓ Highest View Voted ↓↓↓ */
+
+    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        Ok(
+            self.0.set(
+                &paths::HIGHEST_VIEW_VOTED,
+                &view.try_to_vec()
+                       .map_err(|err| KVSetError::SerializeValueError{key: Key::HighestViewVoted, source: err})?
             )
         )
     }
