@@ -5,3 +5,5 @@ pub mod block;
 pub mod validators;
 
 pub mod keypair;
+
+pub mod collectors;

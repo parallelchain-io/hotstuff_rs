@@ -14,6 +14,8 @@ use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::types::basic::*;
 
+use super::collectors::Certificate;
+
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {

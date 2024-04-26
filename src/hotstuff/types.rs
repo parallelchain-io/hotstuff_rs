@@ -11,8 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
 use crate::{state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore}, types::{
-    basic::*,
-    validators::*,
+    basic::*, collectors::Certificate, validators::*
 }};
 use super::messages::Vote;
 
@@ -30,12 +29,12 @@ pub struct QuorumCertificate {
     pub signatures: SignatureSet,
 }
 
-impl QuorumCertificate {
+impl Certificate for QuorumCertificate {
     /// Computes the appropriate validator set that the QC should be checked against, and checks if the
     /// signatures in the certificate are correct and form a quorum.
     ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
-    pub(crate) fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+    fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         if self.is_genesis_qc() {return Ok(true)};
 
         let block_height = block_tree.block_height(&self.block)?;
@@ -74,7 +73,7 @@ impl QuorumCertificate {
 
     /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
     /// a quorum.
-    pub(crate) fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
+    fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
         // Check whether the size of the signature set is the same as the size of the validator set.
         if self.signatures.len() != validator_set.len() {
             return false;
@@ -113,7 +112,9 @@ impl QuorumCertificate {
         // Check if the signatures form a quorum.
         total_power >= validator_set.quorum()
     }
+}
 
+impl QuorumCertificate {
     pub const fn genesis_qc() -> QuorumCertificate {
         QuorumCertificate {
             chain_id: ChainID::new(0),
@@ -135,7 +136,6 @@ impl QuorumCertificate {
     pub fn is_nudge_justify(&self) -> bool {
         self.phase.is_prepare() || self.phase.is_precommit() || self.phase.is_commit()
     }
-
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]

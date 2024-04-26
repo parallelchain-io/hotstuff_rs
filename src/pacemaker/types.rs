@@ -8,8 +8,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use crate::state::block_tree::{self, BlockTree, BlockTreeError};
+use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
+use crate::types::collectors::{Certificate, Collector};
 use crate::types::{
     basic::*,
     validators::*,
@@ -27,14 +28,14 @@ pub struct TimeoutCertificate {
     pub signatures: SignatureSet,
 }
 
-impl TimeoutCertificate {
+impl Certificate for TimeoutCertificate {
 
     /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
     /// 
     /// During the speculation phase, i.e., when the new validator set has been committed, but the old
     /// validator set is still active, a TC is correct if it is correctly signed by a quorum from either
     /// of the two validator sets.
-    pub(crate) fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+    fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         let validator_set_state = block_tree.validator_set_state()?;
         if validator_set_state.update_complete() {
             Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
@@ -48,7 +49,7 @@ impl TimeoutCertificate {
 
     /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
     /// a quorum.
-    pub(crate) fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
+    fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
 
             // Check whether the size of the signature set is the same as the size of the validator set.
             if self.signatures.len() != validator_set.len() {
@@ -94,6 +95,7 @@ impl TimeoutCertificate {
 
 /// Helps leaders incrementally form [TimeoutCertificate]s by combining votes for the same chain_id and
 /// view by replicas in a given [validator set](ValidatorSet).
+#[derive(Clone, PartialEq)]
 pub(crate) struct TimeoutVoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
@@ -102,9 +104,11 @@ pub(crate) struct TimeoutVoteCollector {
     signature_set: SignatureSet,
 }
 
-impl TimeoutVoteCollector {
+impl Collector for TimeoutVoteCollector {
+    type S = TimeoutVote;
+    type C = TimeoutCertificate;
     
-    pub(crate) fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
+    fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         let n = validator_set.len();
         Self { 
             chain_id, 
@@ -115,6 +119,18 @@ impl TimeoutVoteCollector {
         }
     }
 
+    fn validator_set(&self) -> &ValidatorSet {
+        &self.validator_set
+    }
+
+    fn chain_id(&self) -> ChainID {
+        self.chain_id
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view
+    }
+
     /// Adds the timeout vote to a signature set if it has the correct view and chain id. Returning a Quorum
     /// Certificate if adding the vote allows for one to be created.
     ///
@@ -123,7 +139,7 @@ impl TimeoutVoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    pub(crate) fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
+    fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
         
         if self.chain_id != vote.chain_id || self.view != vote.view {
             return None

@@ -27,7 +27,7 @@ type VerifyingKeyBytes = [u8; 32];
 /// # Limits to total power
 /// 
 /// The total power of a validator set must not exceed `u128::MAX/2`.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ValidatorSet {
     // The verifying keys of validators are included here in ascending order.
     validators: Vec<VerifyingKey>,

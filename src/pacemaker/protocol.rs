@@ -48,13 +48,16 @@ use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
 use ed25519_dalek::VerifyingKey;
 
 use crate::events::Event;
+use crate::hotstuff::types::VoteCollector;
+use crate::hotstuff::voting::is_validator;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
 use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::state::write_batch::BlockTreeWriteBatch;
 use crate::types::basic::EpochLength;
-use crate::types::validators::{self, ValidatorSet};
+use crate::types::collectors::{Certificate, Collector};
+use crate::types::validators::{ValidatorSet, ValidatorSetState};
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
     keypair::Keypair
@@ -101,7 +104,7 @@ impl<N: Network> Pacemaker<N> {
         let state = PacemakerState::initialize(&config, init_view, init_validator_set.clone());
         let timeout = state.timeouts.get(&init_view).clone()
                                .ok_or(UpdateViewError::GetViewTimeoutError{view: init_view})?;
-        let view_info = ViewInfo::new(init_view, *timeout, &init_validator_set);
+        let view_info = ViewInfo::new(init_view, *timeout);
         Ok(
             Self {
                 config,
@@ -132,11 +135,12 @@ impl<N: Network> Pacemaker<N> {
     pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
+        let validator_set_state = block_tree.validator_set_state()?;
 
         // 1. Check if the current view has timed out, and proceed accordingly.
         if Instant::now() > self.view_info.deadline {
             if is_epoch_change_view(&cur_view, self.config.epoch_length) {
-                if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
+                if is_validator(&self.config.keypair.public(), &validator_set_state) {
                     let pacemaker_message = 
                         PacemakerMessage::timeout_vote(
                             &self.config.keypair, 
@@ -148,13 +152,13 @@ impl<N: Network> Pacemaker<N> {
                 }
                 self.extend_view()?
             } else {
-                self.update_view(cur_view + 1 , block_tree)?
+                self.update_view(cur_view + 1)?
             }
         }
 
         // 2. Check if a QC for the current view is available and if I am a validator, and if so 
         //    broadcast an advance view message.
-        if block_tree.highest_qc()?.view == cur_view && block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
+        if block_tree.highest_qc()?.view == cur_view && is_validator(&self.config.keypair.public(), &validator_set_state) {
             let pacemaker_message = 
                 PacemakerMessage::advance_view(
                     ProgressCertificate::QuorumCertificate(block_tree.highest_qc()?)
@@ -198,7 +202,8 @@ impl<N: Network> Pacemaker<N> {
         signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), PacemakerError> { 
-        if !block_tree.committed_validator_set()?.contains(signer) {return Ok(())};
+        let validator_set_state = block_tree.validator_set_state()?;
+        if !is_validator(signer, &validator_set_state) {return Ok(())};
 
         if timeout_vote.is_correct(signer) && is_epoch_change_view(&timeout_vote.view, self.config.epoch_length) {
             let fallback_tc = 
@@ -215,7 +220,7 @@ impl<N: Network> Pacemaker<N> {
                     let mut wb = BlockTreeWriteBatch::new();
                     wb.set_highest_tc(&new_tc)?;
                     block_tree.write(wb);
-                    if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
+                    if is_validator(&self.config.keypair.public(), &validator_set_state) {
                         let pacemaker_msg = PacemakerMessage::advance_view(ProgressCertificate::TimeoutCertificate(new_tc));
                         self.sender.broadcast(Message::from(pacemaker_msg))
                     }
@@ -231,7 +236,7 @@ impl<N: Network> Pacemaker<N> {
                     
                     // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
                     let next_view = tc.view + 1;
-                    self.update_view(next_view, block_tree)?
+                    self.update_view(next_view)?
                 }
             }
         }
@@ -259,13 +264,13 @@ impl<N: Network> Pacemaker<N> {
 
         if valid {
             // If I am a validator, re-broadcast the received advance view message.
-            if block_tree.committed_validator_set()?.contains(&self.config.keypair.public()) {
+            if is_validator(&self.config.keypair.public(), &block_tree.validator_set_state()?) {
                 self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view)))
             }
 
             // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
             let next_view = progress_certificate.view() + 1;
-            self.update_view(next_view, block_tree)?
+            self.update_view(next_view)?
         }
 
         Ok(())
@@ -277,11 +282,7 @@ impl<N: Network> Pacemaker<N> {
     /// Note: this method, by being the unique method used to update the pacemaker [ViewInfo], and checking 
     /// if the next view is greater than the current view, guarantees monotonically increasing views. If it 
     /// is applied to a next view lesser or equal to the current view an [UpdateViewError] will be returned.
-    fn update_view<K: KVStore>(
-        &mut self, 
-        next_view: ViewNumber, 
-        block_tree: &BlockTree<K>) 
-        -> Result<(), PacemakerError>{
+    fn update_view(&mut self, next_view: ViewNumber) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
         if next_view <= cur_view {
@@ -296,8 +297,7 @@ impl<N: Network> Pacemaker<N> {
         // Update the view.
         self.view_info = ViewInfo::new(
             next_view, 
-            *self.state.timeouts.get(&next_view).ok_or(UpdateViewError::GetViewTimeoutError{view: next_view})?, 
-            &block_tree.committed_validator_set()?
+            *self.state.timeouts.get(&next_view).ok_or(UpdateViewError::GetViewTimeoutError{view: next_view})?,
         );
 
         Ok(())
@@ -454,27 +454,21 @@ pub enum ExtendViewError {
 pub(crate) struct ViewInfo {
     pub(crate) view: ViewNumber,
     pub(crate) deadline: Instant,
-    pub(crate) leader: VerifyingKey,
-    pub(crate) next_leader: VerifyingKey,
 }
 
 impl ViewInfo {
-    pub(crate) fn new(view: ViewNumber, deadline: Instant, validator_set: &ValidatorSet) -> Self {
+    pub(crate) fn new(view: ViewNumber, deadline: Instant) -> Self {
         Self {
             view, 
             deadline, 
-            leader: select_leader(view, validator_set), 
-            next_leader: select_leader(view+1, validator_set), 
         }
     }
 
     /// Return a given [ViewInfo] with updated timeout.
     pub(crate) fn with_new_timeout(&self, new_deadline: Instant) -> Self {
         Self { 
-            view: self.view.clone(), 
+            view: self.view, 
             deadline: new_deadline,
-            leader: self.leader.clone(), 
-            next_leader: self.next_leader.clone(), 
         }
     }
 }
