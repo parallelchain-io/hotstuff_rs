@@ -8,17 +8,22 @@
 //! in the respective modules. The [Collectors] groups collectors for all active validator sets into
 //! a single struct, which can be easily updated on view or validator set state updates.
 
-use ed25519_dalek::Verifier;
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;
 
-use crate::{messages::SignedMessage, state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore}};
+use crate::messages::SignedMessage;
+use crate::state::{
+    block_tree::{BlockTree, BlockTreeError}, 
+    kv_store::KVStore
+};
 
 use super::{
-    basic::{ChainID, SignatureBytes, TotalPower, ViewNumber}, 
+    basic::{ChainID, TotalPower, ViewNumber}, 
     validators::{ValidatorSet, ValidatorSetState}
 };
 
+/// Evidence that a quorum of validators from a given validator set supports a given decision. The 
+/// evidence comes in the form of a set of signatures of the validators.
 pub trait Certificate {
 
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError>;
@@ -56,83 +61,79 @@ pub(crate) trait Collector: Clone {
     fn collect(&mut self, signer: &VerifyingKey, message: Self::S) -> Option<Self::C>;
 }
 
-/// Combines the collectors for the two potentially active validator sets.
-struct Collectors<C: Collector> {
-    committed_validator_set_collector: C,
-    prev_validator_set_collector: Option<C>,
+/// Combines the collectors for the two potentially active validator sets:
+/// 1. The committed validator set, 
+/// 2. The previous validator set (only during the validator set update period).
+pub(crate) struct Collectors<CL: Collector> {
+    committed_validator_set_collector: CL,
+    prev_validator_set_collector: Option<CL>,
 }
 
-impl<C:Collector> Collectors<C> {
+impl<CL:Collector> Collectors<CL> {
 
     /// Create fresh collectors for given view, chain id, and validator set state.
-    fn new(chain_id: ChainID, view: ViewNumber, validator_set_state: &ValidatorSetState) -> Self {
+    pub(crate) fn new(chain_id: ChainID, view: ViewNumber, validator_set_state: &ValidatorSetState) -> Self {
         Self{
-            committed_validator_set_collector: C::new(chain_id, view, validator_set_state.committed_validator_set().clone()),
+            committed_validator_set_collector: CL::new(chain_id, view, validator_set_state.committed_validator_set().clone()),
             prev_validator_set_collector: 
                 if validator_set_state.update_complete() {
                     None
                 } else {
-                    Some(C::new(chain_id, view, validator_set_state.previous_validator_set().clone()))
+                    Some(CL::new(chain_id, view, validator_set_state.previous_validator_set().clone()))
                 }
         }
     }
 
-    /// Called from update view. Creates new collectors.
-    // fn update_view(&mut self, view: ViewNumber) {
-    //     let chain_id = self.committed_validator_set_collector.chain_id();
-    //     let committed_validator_set = self.committed_validator_set_collector.validator_set();
-        
-    //     self.committed_validator_set_collector = C::new(chain_id, view, committed_validator_set.clone());
-    //     self.prev_validator_set_collector = 
-    //         match &self.prev_validator_set_collector {
-    //             None => None,
-    //             Some(collector) => {
-    //                 Some(C::new(chain_id, view, collector.validator_set().clone()))
-    //             }
-    //         }
-    // }
-
     /// Update the collectors in response to an update of the [validator set state](ValidatorSetState).
-    /// 
-    /// Note: might delete this later, for simplicity we might instead call the new method above.
-    // fn update_validator_sets(&mut self, validator_set_state: &ValidatorSetState) {
+    pub(crate) fn update_validator_sets(&mut self, validator_set_state: &ValidatorSetState) {
         
-    //     let chain_id = self.committed_validator_set_collector.chain_id();
-    //     let view = self.committed_validator_set_collector.view();
+        let chain_id = self.committed_validator_set_collector.chain_id();
+        let view = self.committed_validator_set_collector.view();
 
-    //     // If a validator set update has been initiated but no vote collector has been assigned for
-    //     // the previous validator set. In this case, the previous validator set must be equal to the
-    //     // committed validator set stored by the vote collectors.
-    //     if self.prev_validator_set_collector.is_none() & !validator_set_state.update_complete() {
-    //         if validator_set_state.previous_validator_set() == self.committed_validator_set_collector.validator_set() {
-    //             self.prev_validator_set_collector = Some(self.committed_validator_set_collector.clone())
-    //         } else {
-    //             panic!() // Safety: as explained above.
-    //         }
-    //     }
+        // If a validator set update has been initiated but no vote collector has been assigned for
+        // the previous validator set. In this case, the previous validator set must be equal to the
+        // committed validator set stored by the vote collectors.
+        if self.prev_validator_set_collector.is_none() & !validator_set_state.update_complete() {
+            if validator_set_state.previous_validator_set() == self.committed_validator_set_collector.validator_set() {
+                self.prev_validator_set_collector = Some(self.committed_validator_set_collector.clone())
+            } else {
+                panic!() // Safety: as explained above.
+            }
+        }
 
-    //     // If the committed validator set has been updated.
-    //     if self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() {
-    //         self.committed_validator_set_collector = C::new(
-    //             chain_id, 
-    //             view, 
-    //             validator_set_state.committed_validator_set().clone(),
-    //         )
-    //     }
+        // If the committed validator set has been updated.
+        if self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() {
+            self.committed_validator_set_collector = CL::new(
+                chain_id, 
+                view, 
+                validator_set_state.committed_validator_set().clone(),
+            )
+        }
 
-    //     // If the validator set update has been marked as complete. In this case, a collector
-    //     // for the previous validator set is not required anymore.
-    //     if self.prev_validator_set_collector.is_some() && validator_set_state.update_complete() {
-    //         self.prev_validator_set_collector = None
-    //     }
+        // If the validator set update has been marked as complete. In this case, a collector
+        // for the previous validator set is not required anymore.
+        if self.prev_validator_set_collector.is_some() && validator_set_state.update_complete() {
+            self.prev_validator_set_collector = None
+        }
 
-    // }
+    }
 
     /// Checks if the collectors should be updated given possible updates to the validator
     /// set state.
-    fn should_update_validator_sets(&self, validator_set_state: &ValidatorSetState) -> bool {
+    pub(crate) fn should_update_validator_sets(&self, validator_set_state: &ValidatorSetState) -> bool {
         self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() ||
         (self.prev_validator_set_collector.is_some() && validator_set_state.update_complete()) ||
         (self.prev_validator_set_collector.is_none() && !validator_set_state.update_complete())
+    }
+
+    pub(crate) fn collect(&mut self, signer: &VerifyingKey, message: CL::S) -> Option<CL::C> {
+        if let Some(certificate) = self.committed_validator_set_collector.collect(signer, message.clone()) {
+            return Some(certificate)
+        } else if let Some(ref mut collector) = self.prev_validator_set_collector {
+            if let Some(certificate) = collector.collect(signer, message) {
+                return Some(certificate)
+            }
+        }
+        None
     }
 }

@@ -72,7 +72,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             pacemaker_config,
             msg_sender.clone(),
             init_view,
-            &block_tree.committed_validator_set().expect("Cannot retrieve the committed validator set!"),
+            &block_tree.validator_set_state().expect("Cannot retrieve the validator set state!"),
             event_publisher.clone()
         ).expect("Failed to create a new Pacemaker!");
 

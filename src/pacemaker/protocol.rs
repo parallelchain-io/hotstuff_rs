@@ -48,7 +48,6 @@ use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
 use ed25519_dalek::VerifyingKey;
 
 use crate::events::Event;
-use crate::hotstuff::types::VoteCollector;
 use crate::hotstuff::voting::is_validator;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
@@ -56,7 +55,7 @@ use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::state::write_batch::BlockTreeWriteBatch;
 use crate::types::basic::EpochLength;
-use crate::types::collectors::{Certificate, Collector};
+use crate::types::collectors::{Certificate, Collectors};
 use crate::types::validators::{ValidatorSet, ValidatorSetState};
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
@@ -98,10 +97,10 @@ impl<N: Network> Pacemaker<N> {
         config: PacemakerConfiguration,
         sender: SenderHandle<N>,
         init_view: ViewNumber,
-        init_validator_set: &ValidatorSet,
+        init_validator_set_state: &ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Result<Self, PacemakerError> {
-        let state = PacemakerState::initialize(&config, init_view, init_validator_set.clone());
+        let state = PacemakerState::initialize(&config, init_view, init_validator_set_state);
         let timeout = state.timeouts.get(&init_view).clone()
                                .ok_or(UpdateViewError::GetViewTimeoutError{view: init_view})?;
         let view_info = ViewInfo::new(init_view, *timeout);
@@ -132,6 +131,9 @@ impl<N: Network> Pacemaker<N> {
     /// Additionally, tick should check if there is a QC for the current view (whether an epoch-change 
     /// view or not) available in the block tree, and if so it should broadcast the QC in an advance 
     /// view message.
+    /// 
+    /// It should also check of the validator set state has been updated, and if so it should update the
+    /// timeout vote collectors accordingly.
     pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &BlockTree<K>) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
@@ -152,11 +154,17 @@ impl<N: Network> Pacemaker<N> {
                 }
                 self.extend_view()?
             } else {
-                self.update_view(cur_view + 1)?
+                self.update_view(cur_view + 1, &validator_set_state)?
             }
         }
 
-        // 2. Check if a QC for the current view is available and if I am a validator, and if so 
+        // 2. Check if the timeout vote collectors need to be updated in response to a validator set
+        //    state update. 
+        if self.state.timeout_vote_collectors.should_update_validator_sets(&validator_set_state) {
+            self.state.timeout_vote_collectors.update_validator_sets(&validator_set_state)
+        }
+
+        // 3. Check if a QC for the current view is available and if I am a validator, and if so 
         //    broadcast an advance view message.
         if block_tree.highest_qc()?.view == cur_view && is_validator(&self.config.keypair.public(), &validator_set_state) {
             let pacemaker_message = 
@@ -212,7 +220,7 @@ impl<N: Network> Pacemaker<N> {
                     _ => None
                 };
 
-            if let Some(new_tc) = self.state.timeout_vote_collector.collect(signer, timeout_vote) {
+            if let Some(new_tc) = self.state.timeout_vote_collectors.collect(signer, timeout_vote) {
 
                 // If a new TC for the current view is collected the replica should (possibly) update its highest_tc 
                 // and broadcast the collected TC.
@@ -236,7 +244,7 @@ impl<N: Network> Pacemaker<N> {
                     
                     // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
                     let next_view = tc.view + 1;
-                    self.update_view(next_view)?
+                    self.update_view(next_view, &validator_set_state)?
                 }
             }
         }
@@ -253,7 +261,8 @@ impl<N: Network> Pacemaker<N> {
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), PacemakerError>{ 
-        if !block_tree.committed_validator_set()?.contains(origin) {return Ok(())};
+        let validator_set_state = block_tree.validator_set_state()?;
+        if !is_validator(origin, &validator_set_state) {return Ok(())}
 
         let progress_certificate = advance_view.progress_certificate.clone();
         let valid = match &progress_certificate {
@@ -270,7 +279,7 @@ impl<N: Network> Pacemaker<N> {
 
             // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
             let next_view = progress_certificate.view() + 1;
-            self.update_view(next_view)?
+            self.update_view(next_view, &validator_set_state)?
         }
 
         Ok(())
@@ -282,7 +291,7 @@ impl<N: Network> Pacemaker<N> {
     /// Note: this method, by being the unique method used to update the pacemaker [ViewInfo], and checking 
     /// if the next view is greater than the current view, guarantees monotonically increasing views. If it 
     /// is applied to a next view lesser or equal to the current view an [UpdateViewError] will be returned.
-    fn update_view(&mut self, next_view: ViewNumber) -> Result<(), PacemakerError>{
+    fn update_view(&mut self, next_view: ViewNumber, validator_set_state: &ValidatorSetState) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
         if next_view <= cur_view {
@@ -299,6 +308,9 @@ impl<N: Network> Pacemaker<N> {
             next_view, 
             *self.state.timeouts.get(&next_view).ok_or(UpdateViewError::GetViewTimeoutError{view: next_view})?,
         );
+
+        // Update the timeout vote collectors.
+        self.state.timeout_vote_collectors = <Collectors<TimeoutVoteCollector>>::new(self.config.chain_id, next_view, validator_set_state);
 
         Ok(())
     }
@@ -331,7 +343,7 @@ pub(crate) struct PacemakerConfiguration {
 /// (if any), and the [timeout votes][TimeoutVote] collected for the current view.
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
-    timeout_vote_collector: TimeoutVoteCollector,
+    timeout_vote_collectors: Collectors<TimeoutVoteCollector>,
 }
 
 impl PacemakerState {
@@ -341,11 +353,11 @@ impl PacemakerState {
     fn initialize(
         config: &PacemakerConfiguration,
         init_view: ViewNumber,
-        validator_set: ValidatorSet,
+        validator_set_state: &ValidatorSetState,
     ) -> Self {
         Self {
             timeouts: Self::initial_timeouts(init_view, config),
-            timeout_vote_collector: TimeoutVoteCollector::new(config.chain_id, init_view, validator_set),
+            timeout_vote_collectors: <Collectors<TimeoutVoteCollector>>::new(config.chain_id, init_view, validator_set_state),
         }
     }
 

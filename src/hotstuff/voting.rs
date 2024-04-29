@@ -52,6 +52,8 @@ pub fn is_proposer(validator: &VerifyingKey, view: ViewNumber, validator_set_sta
 /// during the validator set update period the leader of the previous validator set for the next view
 /// is tasked with collecting all kinds of votes other than decide-phase votes, which are addressed to
 /// the next leader of the committed validator set.
+/// 
+/// TODO: consider renaming to is_collecting to avoid confusion with the Collector trait.
 pub fn collector(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
     if validator_set_state.update_complete() {
         select_leader(vote.view+1, validator_set_state.committed_validator_set())

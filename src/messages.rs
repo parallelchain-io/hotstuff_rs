@@ -66,7 +66,7 @@ impl ProgressMessage {
 /// 2. Signature bytes [SignedMessage::signature_bytes]: the signature in bytes.
 /// Given the two values satisfying the above, and a public key of the signer, 
 /// the signature can be verified against the message.
-pub(crate) trait SignedMessage {
+pub(crate) trait SignedMessage: Clone {
     
     // The values contained in the message that should be signed (represented as a vector of bytes).
     // A signed message must have a vector of bytes to sign over.
