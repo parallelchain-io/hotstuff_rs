@@ -7,7 +7,7 @@ use crate::hotstuff::types::QuorumCertificate;
 use crate::types::{basic::BlockHeight, block::Block};
 
 use super::block_tree::BlockTreeError;
-use super::kv_store::{KVGet, KVGetError, KVStore};
+use super::kv_store::{KVGet, KVStore};
 
 #[derive(Clone)]
 pub struct BlockTreeCamera<K: KVStore>(K);

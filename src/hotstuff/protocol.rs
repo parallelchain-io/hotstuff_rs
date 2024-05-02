@@ -5,7 +5,51 @@
 
 //! Implementation of the HotStuff protocol for Byzantine Fault Tolerant State Machine Replication,
 //! adapted for dynamic validator sets.
-//! TODO: describe how it works for dynamic validator sets.
+//! 
+//! The base protocol for consensus on blocks that do not update the validator set implements the
+//! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes 
+//! for its ancestors too. Thus, the base protocol consists of exchanging [Proposal], [Vote], and
+//! [NewView] messages, where the votes are from [Phase::Generic] phase. 
+//! 
+//! A view in this protocol generally proceeds as follows:
+//! 1. The leader of the view proposes a block with its highestQC as the justify of the block.
+//! 2. Replicas process the proposal: check if it is well-formed and cryptographically correct,
+//!    query the [App] to validate the block, if so then they insert the block and apply the
+//!    state updates associated with the block's justify. This may include updating the highestQC,
+//!    updating the lockedQC, and committing a great-grandparent block. They also vote for the
+//!    proposal.
+//! 3. The next leader collect the votes into a QC, and saves it as its highestQC.
+//! 
+//! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
+//! associated validator set updates. This is because in a dynamic validator sets setting one may need 
+//! immediacy - if B updates the validator set from vs to vs', then its child shall be proposed and 
+//! voted for by replicas from vs'.
+//! 
+//! ## HotStuff for dynamic validator sets
+//! 
+//! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is 
+//! supplemented with a non-pipelined version of HotStuff with an additional "decide" phase.
+//! This means that the voting for a validator-set-updating block proceeds in 4 phases, through
+//! which the validators are only voting for the block, but not for its ancestors. If this 4-phase
+//! consensus is interrupted, then the block has to be re-proposed, which guarantees safety.
+//! 
+//! The consensus phases for a validator-set-updating block B proceed as follows:
+//! 1. "Prepare" phase: the leader broadcasts a proposal for B, replicas send [Phase::Prepare] votes.
+//! 2. "Precommit" phase: the leader broadcasts a [Nudge] with a [Phase::Prepare] QC for B, replicas
+//!     send [Phase::Precommit] votes.
+//! 3. "Commit" phase: the leader broadcasts a [Nudge] with a [Phase::Precommit] QC for B, replicas
+//!     send [Phase::Commit] votes.
+//! 4. "Decide" phase: the leader broadcasts a [Nudge] with a [Phase::Commit] QC for B, replicas 
+//!     send [Phase::Decide] votes.
+//! 
+//! The "decide" phase is special as it enforces a liveness-preserving transition between the two
+//! validator sets. Concretely, on seeing a commitQC replicas from the resigning validator set the
+//! new validator set becomes committed and its members vote "decide" for the block, with the goal
+//! of producing a decideQC. However, in case they fail to do so, the resigning validator set is
+//! still active and ready to re-initiate the "decide" phase by broadcasting the commitQC if needed
+//! - the resigning validators only completely de-activate themselves on seeing a decideQC for the
+//! block. This guarantees the invariant that if a decideQC exists, a quorum from the new validator
+//! set has committed the validator set update and is ready to make progress.
 
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
@@ -51,6 +95,7 @@ pub(crate) struct HotStuff<N: Network> {
 
 impl<N: Network> HotStuff<N> {
 
+    /// Create a new HotStuff instance.
     pub(crate) fn new(
         config: HotStuffConfiguration,
         view_info: ViewInfo,
@@ -59,7 +104,8 @@ impl<N: Network> HotStuff<N> {
         init_validator_set_state: ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let vote_collectors = <Collectors<VoteCollector>>::new(config.chain_id, view_info.view, &init_validator_set_state);
+        let vote_collectors = 
+            <Collectors<VoteCollector>>::new(config.chain_id, view_info.view, &init_validator_set_state);
         let view_status = ViewStatus::ViewInProgress;
         Self { 
             config,
@@ -72,6 +118,20 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
+    pub(crate) fn view_info(&self) -> &ViewInfo {
+        &self.view_info
+    }
+
+    /// Send messages and perform state updates associated with exiting the current view and enter a new
+    /// view given by view info. 
+    /// 
+    /// This involves the following steps:
+    /// 1. Exit the current view: send a NewView message to the leader of the next view.
+    /// 2. Update the internal view info and view status, as well as the vote collectors. 
+    /// 3. If serving as a leader of the newly entered view, propose or nudge.
+    /// 
+    /// ## Precondition
+    /// The [Pacemaker](crate::pacemaker::protocol::Pacemaker) updated the view info.
     pub(crate) fn on_receive_view_info<K: KVStore>(
         &mut self, 
         view_info: ViewInfo,
@@ -81,7 +141,7 @@ impl<N: Network> HotStuff<N> {
 
         let validator_set_state = block_tree.validator_set_state()?;
 
-        // 1. Broadcast a NewView message for the current view to the next leader(s).
+        // 1. Send a NewView message for the current view to the next leader(s).
         let new_view_msg = 
             HotStuffMessage::new_view(self.config.chain_id, self.view_info.view, block_tree.highest_qc()?);
 
@@ -96,8 +156,14 @@ impl<N: Network> HotStuff<N> {
         // 2. Update current view info and status.
         self.view_info = view_info;
         self.view_status = ViewStatus::ViewInProgress;
+        
 
-        // 3. If I am a proposer for this view then broadcast a nudge or a proposal.
+        // 3. Update the vote collectors to collect votes for the updated view.
+        self.vote_collectors = <Collectors<VoteCollector>>::new(self.config.chain_id, self.view_info.view, &validator_set_state);
+
+        block_tree.set_highest_view_entered(self.view_info.view)?;
+
+        // 4. If I am a proposer for this view then broadcast a nudge or a proposal.
         if is_proposer(&self.config.keypair.public(), self.view_info.view, &validator_set_state) {
 
             // Check if I need to re-propose a block. This may be required in case a chain of consecutive views
@@ -162,6 +228,7 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
+    /// Process the newly received message for the current view according to the protocol.
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: HotStuffMessage,
@@ -195,6 +262,7 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
+    /// Process the received proposal.
     fn on_receive_proposal<K: KVStore>(
         &mut self, 
         proposal: Proposal, 
@@ -290,6 +358,7 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
+    /// Process the received nudge.
     fn on_receive_nudge<K: KVStore>(
         &mut self, 
         nudge: Nudge, 
@@ -369,6 +438,7 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
+    /// Process the received vote.
     fn on_receive_vote<K: KVStore>(
         &mut self, 
         vote: Vote, 
@@ -401,6 +471,7 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
+    /// Process the received NewView.
     fn on_receive_new_view<K: KVStore>(
         &mut self, 
         new_view: NewView, 
@@ -413,7 +484,7 @@ impl<N: Network> HotStuff<N> {
 
             // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
             let committed_validator_set_updates = 
-            update_block_tree(&new_view.highest_qc, block_tree, &self.event_publisher)?;
+                update_block_tree(&new_view.highest_qc, block_tree, &self.event_publisher)?;
 
             if let Some(vs_updates) = committed_validator_set_updates {
                 self.validator_set_update_handle.update_validator_set(vs_updates)

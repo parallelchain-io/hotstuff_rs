@@ -51,9 +51,12 @@
 //! |---|---|
 //! |Committed App State|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
 //! |Committed Validator Set|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Locked View|0|
+//! |Previous Validator Set| Same as Committed Validator Set.|
+//! |Validator Set Update Block Height| 0.|
+//! | Validator Set Update Complete| true.|
+//! |LockedQC | The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 //! |Highest View Entered|0|
-//! |Highest Quorum Certificate|The [genesis QC](crate::types::QuorumCertificate::genesis_qc)|
+//! |Highest Quorum Certificate|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 
 use std::cmp::max;
 use std::iter::successors;
@@ -97,6 +100,9 @@ impl<K: KVStore> BlockTree<K> {
         let mut validator_set = ValidatorSet::new();
         validator_set.apply_updates(initial_validator_set);
         wb.set_committed_validator_set(&validator_set)?;
+        wb.set_previous_validator_set(&validator_set)?;
+        wb.set_validator_set_update_block_height(BlockHeight::new(0))?;
+        wb.set_validator_set_update_completed(true)?;
 
         wb.set_locked_qc(&QuorumCertificate::genesis_qc())?;
 
@@ -104,7 +110,9 @@ impl<K: KVStore> BlockTree<K> {
 
         wb.set_highest_qc(&QuorumCertificate::genesis_qc())?;
 
-        Ok(self.write(wb))
+        self.write(wb);
+
+        Ok(())
     }
 
     /// Insert a block into the block tree. This includes:

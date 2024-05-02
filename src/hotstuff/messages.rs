@@ -9,9 +9,8 @@
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{Verifier};
 
-use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
+use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
 use crate::types::{
     basic::*, 
     block::*, 

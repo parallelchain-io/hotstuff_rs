@@ -5,7 +5,7 @@
 
 //! Definitions of types specific to the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
