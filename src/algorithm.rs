@@ -83,7 +83,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             init_view_info.clone(),
             msg_sender.clone(),
             validator_set_update_handle.clone(),
-            block_tree.committed_validator_set().expect("Cannot retrieve the committed validator set!").clone(),
+            block_tree.validator_set_state().expect("Cannot retrieve the validator set state!").clone(),
             event_publisher.clone()
         );
 
@@ -144,7 +144,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             match self.pm_stub.recv(self.chain_id, view_info.view, view_info.deadline) {
                 Ok((origin, msg)) => {
                     match msg {
-                        ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app),
+                        ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app).expect("HotStuff failure!"),
                         ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, &origin, &mut self.block_tree).expect("Pacemaker failure!"),
                         ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &self.block_tree),
                     }

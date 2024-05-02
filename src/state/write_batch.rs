@@ -259,10 +259,10 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     /* ↓↓↓ Validator Set Update Complete ↓↓↓ */
 
-    pub fn set_validator_set_update_complete(&mut self, update_complete: bool) -> Result<(), BlockTreeError> {
+    pub fn set_validator_set_update_completed(&mut self, update_complete: bool) -> Result<(), BlockTreeError> {
         Ok(
             self.0.set(
-                &paths::VALIDATOR_SET_UPDATE_COMPLETE, 
+                &paths::VALIDATOR_SET_UPDATE_COMPLETED, 
                 &update_complete.try_to_vec()
                        .map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdateComplete, source: err})?
             )

@@ -12,33 +12,38 @@ use std::time::SystemTime;
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::app::App;
+use crate::app::{App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse};
 use crate::events::{CommitBlockEvent, Event, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent};
+use crate::hotstuff::voting::{is_proposer, is_voter, leaders};
+use crate::messages::SignedMessage;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::pacemaker::protocol::ViewInfo;
-use crate::state::block_tree::{self, BlockTree, BlockTreeError};
+use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
-use crate::state::safety;
+use crate::state::safety::{self, repropose_block, safe_block, safe_nudge, safe_qc};
 use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::CryptoHash;
-use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
+use crate::types::basic::{BlockHeight, CryptoHash};
+use crate::types::block::Block;
+use crate::types::collectors::{Certificate, Collectors};
+use crate::types::validators::{ValidatorSetState, ValidatorSetUpdates};
 use crate::types::{
-    basic::{ChainID, ViewNumber}, 
+    basic::ChainID, 
     keypair::Keypair
 };
 use crate::hotstuff::messages::{Vote, HotStuffMessage, NewView, Nudge, Proposal};
-use crate::hotstuff::types::{NewViewCollector, VoteCollector};
+use crate::hotstuff::types::{Phase, VoteCollector};
 
 use super::types::QuorumCertificate;
+use super::voting::vote_recipient;
 
 /// An implementation of the HotStuff protocol (https://arxiv.org/abs/1803.05069), adapted to enable
 /// dynamic validator sets. The protocol operates on a per-view basis, where in each view the validator
-/// exchanges messages with other validators, and updates the [block tree][BlockTree]. The 
-/// [HotStuffState] reflects the view-specific parameters that define how the validator communicates.
+/// exchanges messages with other validators, and updates the [block tree][BlockTree].
 pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
-    state: HotStuffState,
     view_info: ViewInfo,
+    view_status: ViewStatus,
+    vote_collectors: Collectors<VoteCollector>,
     sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     event_publisher: Option<Sender<Event>>,
@@ -51,19 +56,17 @@ impl<N: Network> HotStuff<N> {
         view_info: ViewInfo,
         sender_handle: SenderHandle<N>,
         validator_set_update_handle: ValidatorSetUpdateHandle<N>,
-        init_validator_set: ValidatorSet,
+        init_validator_set_state: ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let state = HotStuffState::new(
-            config.clone(), 
-            view_info.view, 
-            init_validator_set
-        );
+        let vote_collectors = <Collectors<VoteCollector>>::new(config.chain_id, view_info.view, &init_validator_set_state);
+        let view_status = ViewStatus::ViewInProgress;
         Self { 
             config,
             view_info,
-            state,
-            sender_handle, 
+            view_status,
+            vote_collectors,
+            sender_handle,
             validator_set_update_handle, 
             event_publisher,
         }
@@ -74,15 +77,89 @@ impl<N: Network> HotStuff<N> {
         view_info: ViewInfo,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
-    ) {
+    ) -> Result<(), HotStuffError>{
 
-        // 1. Broadcast a NewView message for self.cur_view to leader.
+        let validator_set_state = block_tree.validator_set_state()?;
 
-        // 2. Update cur_view and cur_leader to view and leader, next_leader tp next_leader.
+        // 1. Broadcast a NewView message for the current view to the next leader(s).
+        let new_view_msg = 
+            HotStuffMessage::new_view(self.config.chain_id, self.view_info.view, block_tree.highest_qc()?);
 
-        // 3. If I am cur_leader then broadcast a nudge or a proposal.
+        match leaders(self.view_info.view+1, &validator_set_state) {
+            (committed_vs_leader, None) => self.sender_handle.send(committed_vs_leader, new_view_msg),
+            (committed_vs_leader, Some(prev_vs_leader)) => {
+                self.sender_handle.send(committed_vs_leader, new_view_msg.clone());
+                self.sender_handle.send(prev_vs_leader, new_view_msg)
+            }
+        }
 
-        todo!()
+        // 2. Update current view info and status.
+        self.view_info = view_info;
+        self.view_status = ViewStatus::ViewInProgress;
+
+        // 3. If I am a proposer for this view then broadcast a nudge or a proposal.
+        if is_proposer(&self.config.keypair.public(), self.view_info.view, &validator_set_state) {
+
+            // Check if I need to re-propose a block. This may be required in case a chain of consecutive views
+            // of voting for a validator-set-updating block has been interrupted.
+            if let Some(block_hash) = repropose_block(self.view_info.view, block_tree)? {
+                let block = 
+                    block_tree.block(&block_hash)?
+                    .ok_or(BlockTreeError::BlockExpectedButNotFound{block: block_hash})?;
+
+                let proposal_msg = HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
+                self.sender_handle.broadcast(proposal_msg);
+                return Ok(())
+            }
+
+            // Otherwise, propose or nudge based on highest_qc.
+            let highest_qc = block_tree.highest_qc()?;
+            match highest_qc.phase {
+                // Produce a block proposal.
+                Phase::Generic | Phase::Decide => {
+                    let (parent_block, child_height) = if highest_qc.is_genesis_qc() {
+                        (None, BlockHeight::new(0))
+                    } else {
+                        let parent_height = 
+                            block_tree.block_height(&highest_qc.block)?
+                            .ok_or(BlockTreeError::BlockExpectedButNotFound{block: highest_qc.block})?;
+                        (
+                            Some(highest_qc.block),
+                            parent_height + 1,
+                        )
+                    };
+                    
+                    let produce_block_request = ProduceBlockRequest::new(
+                        self.view_info.view,
+                        parent_block,
+                        block_tree.app_view(parent_block.as_ref())?,
+                    );
+        
+                    let ProduceBlockResponse {
+                        data,
+                        data_hash,
+                        app_state_updates: _,
+                        validator_set_updates: _,
+                    } = app.produce_block(produce_block_request);
+        
+                    let block = Block::new(child_height, highest_qc, data_hash, data);
+
+                    let proposal_msg = HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
+
+                    self.sender_handle.broadcast(proposal_msg)
+
+                },
+                // Produce a nudge.
+                _ => {
+                    let nudge_msg = HotStuffMessage::nudge(self.config.chain_id, self.view_info.view, highest_qc);
+
+                    self.sender_handle.broadcast(nudge_msg)
+                }
+            }
+
+        }
+
+        Ok(())
     }
 
     pub(crate) fn on_receive_msg<K: KVStore>(
@@ -91,45 +168,267 @@ impl<N: Network> HotStuff<N> {
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
-    ) {
-        todo!()
+    ) -> Result<(), HotStuffError> {
+
+        // If nudge or proposal received, check if the sender is a proposer for this view,
+        // and check if the replica is still accepting nudges and proposals. If the checks
+        // fail, ignore the message.
+        if msg.is_nudge() || msg.is_proposal() {
+            let validator_set_state = block_tree.validator_set_state()?;
+
+            if !is_proposer(origin, self.view_info.view, &validator_set_state) {
+                return Ok(())
+            }
+
+            if self.view_status.is_leader_proposed(origin) || self.view_status.is_view_completed() {
+                return Ok(())
+            }
+
+        }
+
+        // If the check above passes, process the message.
+        match msg {
+            HotStuffMessage::Proposal(proposal) => self.on_receive_proposal(proposal, origin, block_tree, app),
+            HotStuffMessage::Nudge(nudge) => self.on_receive_nudge(nudge, origin, block_tree),
+            HotStuffMessage::Vote(vote) => self.on_receive_vote(vote, origin, block_tree),
+            HotStuffMessage::NewView(new_view) => self.on_receive_new_view(new_view, origin, block_tree),
+        }
     }
 
     fn on_receive_proposal<K: KVStore>(
         &mut self, 
-        proposal: &Proposal, 
+        proposal: Proposal, 
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
-    ) {
-        todo!()
+    ) -> Result<(), HotStuffError> {
+
+        // 1. Check if block is correct and safe.
+        if !proposal.block.is_correct(block_tree)? || !safe_block(&proposal.block, block_tree, self.config.chain_id)? {
+            // Take note that proposals or nudges from this leader should no longer be accepted in this view.
+            match self.view_status {
+                ViewStatus::ViewInProgress => {
+                    self.view_status = ViewStatus::LeaderProposed{leader: *origin}
+                },
+                ViewStatus::LeaderProposed{leader: _} => {
+                    self.view_status = ViewStatus::ViewCompleted
+                },
+                _ => {}
+            }
+            return Ok(())
+        }
+
+        // 2. Validate the block, and insert if valid.
+        let parent_block = if proposal.block.justify.is_genesis_qc() {
+            None
+        } else {
+            Some(&proposal.block.justify.block)
+        };
+        let validate_block_request =
+            ValidateBlockRequest::new(&proposal.block, block_tree.app_view(parent_block)?);
+    
+        if let ValidateBlockResponse::Valid {
+            app_state_updates,
+            validator_set_updates,
+        } = app.validate_block(validate_block_request) {
+
+            block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref())?;
+
+            // 3. Trigger block tree updates: update highestQC, lock, commit.
+            let committed_validator_set_updates = update_block_tree(&proposal.block.justify, block_tree, &self.event_publisher)?;
+
+            if let Some(vs_updates) = committed_validator_set_updates {
+                self.validator_set_update_handle.update_validator_set(vs_updates)
+            }
+
+            // 4. Access the possibly updated validator set state, and update the vote collectors if needed.
+            let validator_set_state = block_tree.validator_set_state()?;
+
+            if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
+                self.vote_collectors.update_validator_sets(&validator_set_state)
+            }
+
+            // 5. Vote, if I am allowed to vote and if I haven't voted in this view yet.
+            if is_voter(&self.config.keypair.public(), &validator_set_state, &proposal.block.justify) 
+                && (block_tree.highest_view_voted()?.is_none() || block_tree.highest_view_voted()?.unwrap() < self.view_info.view) {
+
+                    let vote_phase = if validator_set_updates.is_some() {
+                        Phase::Prepare
+                    } else {
+                        Phase::Generic
+                    };
+
+                    let vote_msg = 
+                        HotStuffMessage::vote(
+                            &self.config.keypair,
+                            self.config.chain_id, 
+                            self.view_info.view, 
+                            proposal.block.hash, 
+                            vote_phase
+                        );
+
+                    if let HotStuffMessage::Vote(vote) = &vote_msg {
+                        let vote_recipient = vote_recipient(&vote, &validator_set_state);
+                        self.sender_handle.send(vote_recipient, vote_msg);
+                        block_tree.set_highest_view_voted(self.view_info.view)?
+                    }
+            }
+
+        }
+
+        // 6. Stop accepting proposals or nudges from this leader in this view.
+        match self.view_status {
+            ViewStatus::ViewInProgress => {
+                self.view_status = ViewStatus::LeaderProposed{leader: *origin}
+            },
+            ViewStatus::LeaderProposed{leader: _} => {
+                self.view_status = ViewStatus::ViewCompleted
+            },
+            _ => {}
+        }
+
+        Ok(())
     }
 
     fn on_receive_nudge<K: KVStore>(
         &mut self, 
-        nudge: &Nudge, 
+        nudge: Nudge, 
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) {
-        todo!()
+    ) -> Result<(), HotStuffError> {
+
+        // 1. Check if the nudge is correct and safe.
+        if !nudge.justify.is_correct(block_tree)? || !safe_nudge(&nudge, self.view_info.view, block_tree, self.config.chain_id)? {
+            // Take note that proposals or nudges from this leader should no longer be accepted in this view.
+            match self.view_status {
+                ViewStatus::ViewInProgress => {
+                    self.view_status = ViewStatus::LeaderProposed{leader: *origin}
+                },
+                ViewStatus::LeaderProposed{leader: _} => {
+                    self.view_status = ViewStatus::ViewCompleted
+                },
+                _ => {}
+            }
+            return Ok(())
+        }
+
+        // 2. Trigger block tree updates: update highestQC, lock, commit.
+        let committed_validator_set_updates = 
+            update_block_tree(&nudge.justify, block_tree, &self.event_publisher)?;
+
+        if let Some(vs_updates) = committed_validator_set_updates {
+            self.validator_set_update_handle.update_validator_set(vs_updates)
+        }
+
+        // 3. Access the possibly updated validator set state, and update the vote collectors if needed.
+        let validator_set_state = block_tree.validator_set_state()?;
+
+        if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
+            self.vote_collectors.update_validator_sets(&validator_set_state)
+        }
+
+        // 4. Vote, if I am allowed to vote and if I haven't voted in this view yet.
+        if is_voter(&self.config.keypair.public(), &validator_set_state, &nudge.justify) 
+            && (block_tree.highest_view_voted()?.is_none() || block_tree.highest_view_voted()?.unwrap() < self.view_info.view) {
+
+                let vote_phase = match nudge.justify.phase {
+                    Phase::Prepare => Phase::Precommit,
+                    Phase::Precommit => Phase::Commit,
+                    Phase::Commit => Phase::Decide,
+                    _ => panic!() // Safety: if safe_nudge check passed this cannot be the case.
+                };
+
+
+                let vote_msg = 
+                    HotStuffMessage::vote(
+                        &self.config.keypair,
+                        self.config.chain_id, 
+                        self.view_info.view, 
+                        nudge.justify.block, 
+                        vote_phase
+                    );
+
+                if let HotStuffMessage::Vote(vote) = &vote_msg {
+                    let vote_recipient = vote_recipient(&vote, &validator_set_state);
+                    self.sender_handle.send(vote_recipient, vote_msg);
+                    block_tree.set_highest_view_voted(self.view_info.view)?
+                }
+        }
+
+        // 5. Stop accepting proposals or nudges from this leader in this view.
+        match self.view_status {
+            ViewStatus::ViewInProgress => {
+                self.view_status = ViewStatus::LeaderProposed{leader: *origin}
+            },
+            ViewStatus::LeaderProposed{leader: _} => {
+                self.view_status = ViewStatus::ViewCompleted
+            },
+            _ => {}
+        }
+
+        Ok(())
     }
 
     fn on_receive_vote<K: KVStore>(
         &mut self, 
-        vote: &Vote, 
-        origin: &VerifyingKey,
+        vote: Vote, 
+        signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) {
-        todo!()
+    ) -> Result<(), HotStuffError> {
+
+        // 1. Collect the vote if correct.
+        if vote.is_correct(signer) {
+            if let Some(new_qc) = self.vote_collectors.collect(signer, vote) {
+
+                // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
+                let committed_validator_set_updates = 
+                update_block_tree(&new_qc, block_tree, &self.event_publisher)?;
+
+                if let Some(vs_updates) = committed_validator_set_updates {
+                    self.validator_set_update_handle.update_validator_set(vs_updates)
+                }
+
+                // 3. Access the possibly updated validator set state, and update the vote collectors if needed
+                // (if new QC collected).
+                let validator_set_state = block_tree.validator_set_state()?;
+
+                if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
+                    self.vote_collectors.update_validator_sets(&validator_set_state)
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     fn on_receive_new_view<K: KVStore>(
         &mut self, 
-        new_view: &NewView, 
+        new_view: NewView, 
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
-    ) {
-        todo!()
+    ) -> Result<(), HotStuffError> {
+        
+        // 1. Check if the highest_qc is the NewView message is correct and safe.
+        if new_view.highest_qc.is_correct(block_tree)? && safe_qc(&new_view.highest_qc, block_tree, self.config.chain_id)? {
+
+            // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
+            let committed_validator_set_updates = 
+            update_block_tree(&new_view.highest_qc, block_tree, &self.event_publisher)?;
+
+            if let Some(vs_updates) = committed_validator_set_updates {
+                self.validator_set_update_handle.update_validator_set(vs_updates)
+            }
+
+            // 3. Access the possibly updated validator set state, and update the vote collectors if needed
+            // (if new QC collected).
+            let validator_set_state = block_tree.validator_set_state()?;
+
+            if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
+                self.vote_collectors.update_validator_sets(&validator_set_state)
+            }
+        }
+
+        Ok(())
     }
 
 }
@@ -141,27 +440,6 @@ pub(crate) struct HotStuffConfiguration {
     pub(crate) keypair: Keypair,
 }
 
-/// Internal state of the [HotStuff] protocol. Stores the [Vote] and [NewView] messages collected
-/// in the current view. This state should always be updated on entering a view.
-struct HotStuffState {
-    vote_collector: VoteCollector,
-    new_view_collector: NewViewCollector,
-}
-
-impl HotStuffState {
-    /// Returns a fresh [HotStuffState] for a given view, leader, and validator set.
-    fn new(
-        config: HotStuffConfiguration,
-        view: ViewNumber,
-        validator_set: ValidatorSet,
-    ) -> Self {
-        Self {
-            vote_collector: VoteCollector::new(config.chain_id, view, validator_set.clone()),
-            new_view_collector: NewViewCollector::new(validator_set),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum HotStuffError {
     BlockTreeError(BlockTreeError)
@@ -170,6 +448,46 @@ pub enum HotStuffError {
 impl From<BlockTreeError> for HotStuffError {
     fn from(value: BlockTreeError) -> Self {
         HotStuffError::BlockTreeError(value)
+    }
+}
+
+/// Captures the state of progress in a view. Keeping track of the [ViewStatus] is important for
+/// ensuring that a leader can only propose once in a view - any subsequent proposals will be
+/// ignored.
+/// 
+/// The [ViewStatus] can signal either of the above:
+/// 1. The view is in progress: proposals and nudges from a valid leader (proposer) can be accepted.
+/// 2. The leader with a given public key has already proposed or nudged: no more proposals or nudges
+///    from this leader can be accepted.
+/// 3. The view is completed (for use during the validator set update period): all leaders for the
+///    view have proposed or nudged, hence no more proposals or nudges can be accepted in this view.
+/// 
+/// Note that a variable of this type is stored in memory allocated to the program at runtime, rather
+/// than persistent storage. This is because losing the information stored in [ViewStatus], unlike
+/// losing the information about the highest view the replica has voted in, cannot lead to safety
+/// violations. In the worst case, it can only enable temporary liveness violations.
+pub enum ViewStatus {
+    ViewInProgress,
+    LeaderProposed{leader: VerifyingKey},
+    ViewCompleted,
+}
+
+impl ViewStatus {
+    fn is_view_in_progress(&self) -> bool {
+        matches!(self, ViewStatus::ViewInProgress)
+    }
+
+    fn is_leader_proposed(&self, leader: &VerifyingKey) -> bool {
+        match self {
+            ViewStatus::LeaderProposed{leader: validator} => {
+                validator == leader
+            },
+            _ => false
+        }
+    }
+
+    fn is_view_completed(&self) -> bool {
+        matches!(self, ViewStatus::ViewCompleted)
     }
 }
 
@@ -216,7 +534,7 @@ fn update_block_tree<K: KVStore>(
 
     // 4. Set validator set updates as completed if needed.
     if justify.phase.is_decide() {
-        wb.set_validator_set_update_complete(true)?
+        wb.set_validator_set_update_completed(true)?
         // todo: emit an event for this
     }
 

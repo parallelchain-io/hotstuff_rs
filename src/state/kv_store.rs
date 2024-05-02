@@ -292,7 +292,7 @@ pub trait KVGet {
     /* ↓↓↓ Validator Set Update Complete ↓↓↓ */
     fn validator_set_update_complete(&self) -> Result<bool, KVGetError> {
         bool::deserialize(
-            &mut &*self.get(&paths::VALIDATOR_SET_UPDATE_COMPLETE)
+            &mut &*self.get(&paths::VALIDATOR_SET_UPDATE_COMPLETED)
             .ok_or(KVGetError::ValueNotFound{key: Key::ValidatorSetUpdateComplete})?
         ).map_err(|err| KVGetError::DeserializeValueError{key: Key::ValidatorSetUpdateComplete, source: err})
     }

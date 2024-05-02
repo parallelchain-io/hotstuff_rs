@@ -10,9 +10,15 @@ use std::collections::{HashMap, HashSet};
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use crate::{state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore}, types::{
-    basic::*, collectors::Certificate, validators::*
-}};
+use crate::state::{
+    block_tree::{BlockTree, BlockTreeError}, 
+    kv_store::KVStore
+};
+use crate::types::{
+    basic::*, 
+    collectors::{Certificate, Collector}, 
+    validators::*
+};
 use super::messages::Vote;
 
 /// Proof that at least a quorum of validators have voted for a given 
@@ -61,7 +67,7 @@ impl Certificate for QuorumCertificate {
                             new_validator_set.apply_updates(&vs_updates);
                             Ok(self.is_correctly_signed(&new_validator_set))
                         },
-                        ValidatorSetUpdatesStatus::None => panic!()
+                        ValidatorSetUpdatesStatus::None => Ok(false)
                     }
                 },
                 Phase::Prepare | Phase::Precommit | Phase::Commit =>
@@ -180,16 +186,19 @@ impl Phase {
 
 /// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view,
 /// block, and phase by replicas from a given [validator set](ValidatorSet).
+#[derive(Clone)]
 pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
-    validator_set_total_power: TotalPower,
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 
-impl VoteCollector {
-    pub(crate) fn new(
+impl Collector for VoteCollector {
+    type C = QuorumCertificate;
+    type S = Vote;
+
+    fn new(
         chain_id: ChainID,
         view: ViewNumber,
         validator_set: ValidatorSet,
@@ -197,10 +206,21 @@ impl VoteCollector {
         Self {
             chain_id,
             view,
-            validator_set_total_power: validator_set.total_power(),
             validator_set,
             signature_sets: HashMap::new(),
         }
+    }
+
+    fn chain_id(&self) -> ChainID {
+        self.chain_id
+    }
+
+    fn validator_set(&self) -> &ValidatorSet {
+        &self.validator_set
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view
     }
 
     /// Adds the vote to a signature set for the specified view, block, and phase. Returning a Quorum
@@ -211,7 +231,7 @@ impl VoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    pub(crate) fn collect(
+    fn collect(
         &mut self,
         signer: &VerifyingKey,
         vote: Vote,
@@ -260,42 +280,5 @@ impl VoteCollector {
         }
 
         None
-    }
-}
-
-/// Keeps track of the validators that have sent a [NewView][crate::hotstuff::messages::NewView]
-/// message for a given view.
-pub(crate) struct NewViewCollector {
-    validator_set: ValidatorSet,
-    total_power: TotalPower,
-    collected_from: HashSet<VerifyingKey>,
-    accumulated_power: TotalPower,
-}
-
-impl NewViewCollector {
-    pub(crate) fn new(validator_set: ValidatorSet) -> NewViewCollector {
-        Self {
-            total_power: validator_set.total_power(),
-            validator_set,
-            collected_from: HashSet::new(),
-            accumulated_power: TotalPower::new(0),
-        }
-    }
-
-    /// Notes that we have collected a new view message from the specified replica in the given view. Then,
-    /// returns whether by collecting this message we have collected new view messages from a quorum of 
-    /// validators in this view. If the sender is not part of the validator set, then this function does 
-    /// nothing and returns false.
-    pub(crate) fn collect(&mut self, sender: &VerifyingKey) -> bool {
-        if !self.validator_set.contains(sender) {
-            return false;
-        }
-
-        if !self.collected_from.contains(sender) {
-            self.collected_from.insert(*sender);
-            self.accumulated_power += *self.validator_set.power(sender).unwrap();
-        }
-
-        self.accumulated_power >= self.validator_set.quorum()
     }
 }

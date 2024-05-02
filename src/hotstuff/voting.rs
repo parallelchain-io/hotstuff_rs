@@ -46,15 +46,13 @@ pub fn is_proposer(validator: &VerifyingKey, view: ViewNumber, validator_set_sta
     validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
-/// Returns the public key of the replica tasked with collecting a given vote.
+/// Returns the public key of the replica tasked with receiving and collecting a given vote.
 /// 
-/// Usually, the collector is the leader of the committed validator set for the subsequent view. However,
-/// during the validator set update period the leader of the previous validator set for the next view
-/// is tasked with collecting all kinds of votes other than decide-phase votes, which are addressed to
-/// the next leader of the committed validator set.
-/// 
-/// TODO: consider renaming to is_collecting to avoid confusion with the Collector trait.
-pub fn collector(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
+/// Usually, the recipient of a vote is the leader of the committed validator set for the subsequent
+/// view. However, during the validator set update period the leader of the previous validator set 
+/// for the next view is tasked with collecting all kinds of votes other than decide-phase votes, which
+/// are addressed to the next leader of the committed validator set.
+pub fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
     if validator_set_state.update_complete() {
         select_leader(vote.view+1, validator_set_state.committed_validator_set())
     } else {
@@ -80,7 +78,7 @@ pub fn collector(vote: &Vote, validator_set_state: &ValidatorSetState) -> Verify
 /// justify satisfies [safe_qc](crate::state::safety::safe_qc) and 
 /// [is_correct](crate::hotstuff::types::QuorumCertificate::is_correct), and the block tree updates
 /// associated with this justify have already been applied.
-pub fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetState, justify: QuorumCertificate) -> bool {
+pub fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetState, justify: &QuorumCertificate) -> bool {
     if validator_set_state.update_complete() {
         validator_set_state.committed_validator_set().contains(&validator)
     } else {
@@ -105,5 +103,11 @@ pub fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &Validato
     validator_set_state.committed_validator_set().contains(verifying_key) ||
     (!validator_set_state.update_complete() && 
     validator_set_state.previous_validator_set().contains(verifying_key))
+}
+
+pub fn leaders(view: ViewNumber, validator_set_state: &ValidatorSetState) -> (VerifyingKey, Option<VerifyingKey>) {
+    (select_leader(view, validator_set_state.committed_validator_set()),
+     if validator_set_state.update_complete() {None} 
+     else {Some(select_leader(view, validator_set_state.previous_validator_set()))})
 }
 

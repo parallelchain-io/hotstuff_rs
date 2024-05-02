@@ -167,6 +167,13 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
+    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_view_voted(view)?;
+        self.write(wb);
+        Ok(())
+    }
+
     /* ↓↓↓ For committing a block in insert_block ↓↓↓ */
 
     /// Commits a block and its ancestors if they have not been committed already. 
@@ -237,7 +244,7 @@ impl<K: KVStore> BlockTree<K> {
                 wb.set_committed_validator_set(&committed_validator_set)?;
                 wb.set_previous_validator_set(&previous_validator_set)?;
                 wb.set_validator_set_update_block_height(block_height)?;
-                wb.set_validator_set_update_complete(false)?;
+                wb.set_validator_set_update_completed(false)?;
                 wb.set_committed_validator_set_updates(block)?;
 
                 committed_blocks.push((*b, Some(validator_set_updates.clone())));

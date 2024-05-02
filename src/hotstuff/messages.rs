@@ -67,7 +67,7 @@ impl HotStuffMessage {
     }
 
     pub(crate) fn vote(
-        me: Keypair,
+        me: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
         block: CryptoHash,
@@ -115,6 +115,14 @@ impl HotStuffMessage {
             HotStuffMessage::Vote(_) => mem::size_of::<Vote>() as u64,
             HotStuffMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
+    }
+
+    pub fn is_proposal(&self) -> bool {
+        matches!(self, HotStuffMessage::Proposal(_))
+    }
+
+    pub fn is_nudge(&self) -> bool {
+        matches!(self, HotStuffMessage::Nudge(_))
     }
 }
 

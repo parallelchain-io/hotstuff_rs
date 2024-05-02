@@ -126,6 +126,7 @@ impl<CL:Collector> Collectors<CL> {
         (self.prev_validator_set_collector.is_none() && !validator_set_state.update_complete())
     }
 
+    /// Collects the message with the appropriate collector.
     pub(crate) fn collect(&mut self, signer: &VerifyingKey, message: CL::S) -> Option<CL::C> {
         if let Some(certificate) = self.committed_validator_set_collector.collect(signer, message.clone()) {
             return Some(certificate)
