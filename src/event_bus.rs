@@ -68,21 +68,27 @@ pub(crate) struct EventHandlers {
     pub(crate) prune_block_handlers: HandlerPair<PruneBlockEvent>,
     pub(crate) update_highest_qc_handlers: HandlerPair<UpdateHighestQCEvent>,
     pub(crate) update_locked_qc_handlers: HandlerPair<UpdateLockedQCEvent>,
+    pub(crate) update_highest_tc_handlers: HandlerPair<UpdateHighestTCEvent>,
     pub(crate) update_validator_set_handlers: HandlerPair<UpdateValidatorSetEvent>,
 
     pub(crate) propose_handlers: HandlerPair<ProposeEvent>,
     pub(crate) nudge_handlers: HandlerPair<NudgeEvent>,
     pub(crate) vote_handlers: HandlerPair<VoteEvent>,
     pub(crate) new_view_handlers: HandlerPair<NewViewEvent>,
+    pub(crate) timeout_vote_handlers: HandlerPair<TimeoutVoteEvent>,
+    pub(crate) advance_view_handlers: HandlerPair<AdvanceViewEvent>,
 
     pub(crate) receive_proposal_handlers: HandlerPair<ReceiveProposalEvent>,
     pub(crate) receive_nudge_handlers: HandlerPair<ReceiveNudgeEvent>,
     pub(crate) receive_vote_handlers: HandlerPair<ReceiveVoteEvent>,
     pub(crate) receive_new_view_handlers: HandlerPair<ReceiveNewViewEvent>,
+    pub(crate) receive_timeout_vote_handlers: HandlerPair<ReceiveTimeoutVoteEvent>,
+    pub(crate) receive_advance_view_handlers: HandlerPair<ReceiveAdvanceViewEvent>,
 
     pub(crate) start_view_handlers: HandlerPair<StartViewEvent>,
     pub(crate) view_timeout_handlers: HandlerPair<ViewTimeoutEvent>,
     pub(crate) collect_qc_handlers: HandlerPair<CollectQCEvent>,
+    pub(crate) collect_tc_handlers: HandlerPair<CollectTCEvent>,
 
     pub(crate) start_sync_handlers: HandlerPair<StartSyncEvent>,
     pub(crate) end_sync_handlers: HandlerPair<EndSyncEvent>,
@@ -101,18 +107,24 @@ impl EventHandlers {
         prune_block_handler: Option<HandlerPtr<PruneBlockEvent>>,
         update_highest_qc_handler: Option<HandlerPtr<UpdateHighestQCEvent>>,
         update_locked_qc_handler: Option<HandlerPtr<UpdateLockedQCEvent>>,
+        update_highest_tc_handler: Option<HandlerPtr<UpdateHighestTCEvent>>,
         update_validator_set_handler: Option<HandlerPtr<UpdateValidatorSetEvent>>,
         propose_handler: Option<HandlerPtr<ProposeEvent>>,
         nudge_handler: Option<HandlerPtr<NudgeEvent>>,
         vote_handler: Option<HandlerPtr<VoteEvent>>,
         new_view_handler: Option<HandlerPtr<NewViewEvent>>,
+        timeout_vote_handler: Option<HandlerPtr<TimeoutVoteEvent>>,
+        advance_view_handler: Option<HandlerPtr<AdvanceViewEvent>>,
         receive_proposal_handler: Option<HandlerPtr<ReceiveProposalEvent>>,
         receive_nudge_handler: Option<HandlerPtr<ReceiveNudgeEvent>>,
         receive_vote_handler: Option<HandlerPtr<ReceiveVoteEvent>>,
         receive_new_view_handler: Option<HandlerPtr<ReceiveNewViewEvent>>,
+        receive_timeout_vote_handler: Option<HandlerPtr<ReceiveTimeoutVoteEvent>>,
+        receive_advance_view_handler: Option<HandlerPtr<ReceiveAdvanceViewEvent>>,
         start_view_handler: Option<HandlerPtr<StartViewEvent>>,
         view_timeout_handler: Option<HandlerPtr<ViewTimeoutEvent>>,
         collect_qc_handler: Option<HandlerPtr<CollectQCEvent>>,
+        collect_tc_handler: Option<HandlerPtr<CollectTCEvent>>,
         start_sync_handler: Option<HandlerPtr<StartSyncEvent>>,
         end_sync_handler: Option<HandlerPtr<EndSyncEvent>>,
         receive_sync_request_handler: Option<HandlerPtr<ReceiveSyncRequestEvent>>,
@@ -125,18 +137,24 @@ impl EventHandlers {
             prune_block_handlers: HandlerPair::new(log, prune_block_handler),
             update_highest_qc_handlers: HandlerPair::new(log, update_highest_qc_handler),
             update_locked_qc_handlers: HandlerPair::new(log, update_locked_qc_handler),
+            update_highest_tc_handlers: HandlerPair::new(log, update_highest_tc_handler),
             update_validator_set_handlers: HandlerPair::new(log, update_validator_set_handler),
             propose_handlers: HandlerPair::new(log, propose_handler),
             nudge_handlers: HandlerPair::new(log, nudge_handler),
             vote_handlers: HandlerPair::new(log, vote_handler),
             new_view_handlers: HandlerPair::new(log, new_view_handler),
+            timeout_vote_handlers: HandlerPair::new(log, timeout_vote_handler),
+            advance_view_handlers: HandlerPair::new(log, advance_view_handler),
             receive_proposal_handlers: HandlerPair::new(log, receive_proposal_handler),
             receive_nudge_handlers: HandlerPair::new(log, receive_nudge_handler),
             receive_vote_handlers: HandlerPair::new(log, receive_vote_handler),
             receive_new_view_handlers: HandlerPair::new(log, receive_new_view_handler),
+            receive_timeout_vote_handlers: HandlerPair::new(log, receive_timeout_vote_handler),
+            receive_advance_view_handlers: HandlerPair::new(log, receive_advance_view_handler),
             start_view_handlers: HandlerPair::new(log, start_view_handler),
             view_timeout_handlers: HandlerPair::new(log, view_timeout_handler),
             collect_qc_handlers: HandlerPair::new(log, collect_qc_handler),
+            collect_tc_handlers: HandlerPair::new(log, collect_tc_handler),
             start_sync_handlers: HandlerPair::new(log, start_sync_handler),
             end_sync_handlers: HandlerPair::new(log, end_sync_handler),
             receive_sync_request_handlers: HandlerPair::new(log, receive_sync_request_handler),
@@ -153,18 +171,24 @@ impl EventHandlers {
         && self.prune_block_handlers.is_empty()
         && self.update_highest_qc_handlers.is_empty()
         && self.update_locked_qc_handlers.is_empty()
+        && self.update_highest_tc_handlers.is_empty()
         && self.update_validator_set_handlers.is_empty()
         && self.propose_handlers.is_empty()
         && self.nudge_handlers.is_empty()
         && self.vote_handlers.is_empty()
         && self.new_view_handlers.is_empty()
+        && self.timeout_vote_handlers.is_empty()
+        && self.advance_view_handlers.is_empty()
         && self.receive_proposal_handlers.is_empty()
         && self.receive_nudge_handlers.is_empty()
         && self.receive_vote_handlers.is_empty()
         && self.receive_new_view_handlers.is_empty()
+        && self.receive_timeout_vote_handlers.is_empty()
+        && self.receive_advance_view_handlers.is_empty()
         && self.start_view_handlers.is_empty()
         && self.view_timeout_handlers.is_empty()
         && self.collect_qc_handlers.is_empty()
+        && self.collect_tc_handlers.is_empty()
         && self.start_sync_handlers.is_empty()
         && self.end_sync_handlers.is_empty()
         && self.receive_sync_request_handlers.is_empty()
@@ -196,6 +220,10 @@ impl EventHandlers {
                 self.update_locked_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
                 self.update_locked_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
             }
+            Event::UpdateHighestTC(update_highest_tc_event) => {
+                self.update_highest_tc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
+                self.update_highest_tc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
+            }
             Event::UpdateValidatorSet(update_validator_set_event) => {
                 self.update_validator_set_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_validator_set_event));
                 self.update_validator_set_handlers.logging_handler.iter().for_each(|handler| handler(&update_validator_set_event));
@@ -216,6 +244,14 @@ impl EventHandlers {
                 self.new_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&new_view_event));
                 self.new_view_handlers.logging_handler.iter().for_each(|handler| handler(&new_view_event));
             }
+            Event::TimeoutVote(timeout_vote_event) => {
+                self.timeout_vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&timeout_vote_event));
+                self.timeout_vote_handlers.logging_handler.iter().for_each(|handler| handler(&timeout_vote_event));
+            }
+            Event::AdvanceView(advance_view_event) => {
+                self.advance_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&advance_view_event));
+                self.advance_view_handlers.logging_handler.iter().for_each(|handler| handler(&advance_view_event));
+            }
             Event::ReceiveProposal(receive_proposal_event) => {
                 self.receive_proposal_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_proposal_event));
                 self.receive_proposal_handlers.logging_handler.iter().for_each(|handler| handler(&receive_proposal_event));
@@ -232,6 +268,14 @@ impl EventHandlers {
                 self.receive_new_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_new_view));
                 self.receive_new_view_handlers.logging_handler.iter().for_each(|handler| handler(&receive_new_view));
             }
+            Event::ReceiveTimeoutVote(receive_timeout_vote_event) => {
+                self.receive_timeout_vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_timeout_vote_event));
+                self.receive_timeout_vote_handlers.logging_handler.iter().for_each(|handler| handler(&receive_timeout_vote_event));
+            }
+            Event::ReceiveAdvanceView(receive_advance_view_event) => {
+                self.receive_advance_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_advance_view_event));
+                self.receive_advance_view_handlers.logging_handler.iter().for_each(|handler| handler(&receive_advance_view_event));
+            }
             Event::StartView(start_view_event) => {
                 self.start_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&start_view_event));
                 self.start_view_handlers.logging_handler.iter().for_each(|handler| handler(&start_view_event));
@@ -243,6 +287,10 @@ impl EventHandlers {
             Event::CollectQC(collect_qc_event) => {
                 self.collect_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&collect_qc_event));
                 self.collect_qc_handlers.logging_handler.iter().for_each(|handler| handler(&collect_qc_event));
+            }
+            Event::CollectTC(collect_tc_event) => {
+                self.collect_tc_handlers.user_defined_handler.iter().for_each(|handler| handler(&collect_tc_event));
+                self.collect_tc_handlers.logging_handler.iter().for_each(|handler| handler(&collect_tc_event));
             }
             Event::StartSync(start_sync_event) => {
                 self.start_sync_handlers.user_defined_handler.iter().for_each(|handler| handler(&start_sync_event));

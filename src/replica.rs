@@ -124,7 +124,7 @@ use crate::types::basic::BufferSize;
 use crate::types::basic::ChainID;
 use crate::types::basic::EpochLength;
 use crate::types::keypair::Keypair;
-use crate::types::validators::ValidatorSetUpdates;
+use crate::types::validators::ValidatorSetState;
 use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:
@@ -298,6 +298,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedQCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its locked QC. Optional."))]
     on_update_locked_view: Option<HandlerPtr<UpdateLockedQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestTCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its highest TC. Optional."))]
+    on_update_highest_tc: Option<HandlerPtr<UpdateHighestTCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateValidatorSetEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateValidatorSetEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its validator set. Optional."))]
     on_update_validator_set: Option<HandlerPtr<UpdateValidatorSetEvent>>,
@@ -313,6 +316,12 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&NewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica sends a new view message to the next leader. Optional."))]
     on_new_view: Option<HandlerPtr<NewViewEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&TimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<TimeoutVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica sends a timeout vote. Optional."))]
+    on_timeout_vote: Option<HandlerPtr<TimeoutVoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&AdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<AdvanceViewEvent>),
+    doc = "Register a handler closure to be invoked after the replica sends an advance view message. Optional."))]
+    on_advance_view: Option<HandlerPtr<AdvanceViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveProposalEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveProposalEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a proposal for a block. Optional."))]
     on_receive_proposal: Option<HandlerPtr<ReceiveProposalEvent>>,
@@ -325,6 +334,12 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a new view message. Optional."))]
     on_receive_new_view: Option<HandlerPtr<ReceiveNewViewEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveTimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveTimeoutVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica receives a timeout vote. Optional."))]
+    on_receive_timeout_vote: Option<HandlerPtr<ReceiveTimeoutVoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveAdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveAdvanceViewEvent>),
+    doc = "Register a handler closure to be invoked after the replica receives an advance view message. Optional."))]
+    on_receive_advance_view: Option<HandlerPtr<ReceiveAdvanceViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&StartViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<StartViewEvent>),
     doc = "Register a handler closure to be invoked after the replica enters a new view. Optional."))]
     on_start_view: Option<HandlerPtr<StartViewEvent>>,
@@ -334,6 +349,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&CollectQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectQCEvent>),
     doc = "Register a handler closure to be invoked after the replica collects a new quorum certificate. Optional."))]
     on_collect_qc: Option<HandlerPtr<CollectQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&CollectTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectTCEvent>),
+    doc = "Register a handler closure to be invoked after the replica collects a new timeout certificate. Optional."))]
+    on_collect_tc: Option<HandlerPtr<CollectTCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&StartSyncEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<StartSyncEvent>),
     doc = "Register a handler closure to be invoked after the replica starts syncing, exiting the progress mode. Optional."))]
     on_start_sync: Option<HandlerPtr<StartSyncEvent>>,
@@ -375,18 +393,24 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_prune_block,
             self.on_update_highest_qc,
             self.on_update_locked_view,
+            self.on_update_highest_tc,
             self.on_update_validator_set,
             self.on_propose,
             self.on_nudge,
             self.on_vote,
             self.on_new_view,
+            self.on_timeout_vote,
+            self.on_advance_view,
             self.on_receive_proposal,
             self.on_receive_nudge,
             self.on_receive_vote,
             self.on_receive_new_view,
+            self.on_receive_timeout_vote,
+            self.on_receive_advance_view,
             self.on_start_view,
             self.on_view_timeout,
             self.on_collect_qc,
+            self.on_collect_tc,
             self.on_start_sync,
             self.on_end_sync,
             self.on_receive_sync_request,
@@ -399,7 +423,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             } else { (None, None) };
 
         let (block_sync_server_shutdown, block_sync_server_shutdown_receiver) = mpsc::channel();
-        let mut block_sync_server = BlockSyncServer::new(
+        let block_sync_server = BlockSyncServer::new(
             block_sync_server_config, 
             BlockTreeCamera::new(self.kv_store.clone()), 
             block_sync_requests, 
@@ -410,7 +434,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
         let block_sync_server = block_sync_server.start();
 
         let (algorithm_shutdown, algorithm_shutdown_receiver) = mpsc::channel();
-        let mut algorithm = Algorithm::new(
+        let algorithm = Algorithm::new(
             chain_id,
             hotstuff_config,
             pacemaker_config,
@@ -472,20 +496,20 @@ pub struct Replica<K: KVStore> {
 }
 
 impl<K: KVStore> Replica<K> {
-    /// Initializes the replica's [Block Tree](crate::state::BlockTree) with the intial
+    /// Initializes the replica's [Block Tree](crate::state::block_tree::BlockTree) with the intial
     /// [app state updates](crate::types::basic::AppStateUpdates) and
     /// [validator set updates](crate::types::validators::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
-        initial_validator_set: ValidatorSetUpdates,
+        initial_validator_set_state: ValidatorSetState,
     ) {
         let mut block_tree = BlockTree::new(kv_store);
-        block_tree.initialize(&initial_app_state, &initial_validator_set);
+        block_tree.initialize(&initial_app_state, &initial_validator_set_state).expect("Block Tree initialization failed!")
     }
 
-    /// Returns a [Block Tree Camera](crate::state::BlockTreeCamera) which can be used to peek into
-    /// the [Block Tree](crate::state::BlockTree).
+    /// Returns a [Block Tree Camera](crate::state::block_tree_camera::BlockTreeCamera) which can be used
+    /// to peek into the [Block Tree](crate::state::block_tree::BlockTree).
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }

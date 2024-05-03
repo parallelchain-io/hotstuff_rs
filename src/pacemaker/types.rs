@@ -37,7 +37,7 @@ impl Certificate for TimeoutCertificate {
     /// of the two validator sets.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         let validator_set_state = block_tree.validator_set_state()?;
-        if validator_set_state.update_complete() {
+        if validator_set_state.update_completed() {
             Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
         } else {
             Ok(

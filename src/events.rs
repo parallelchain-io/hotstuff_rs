@@ -40,6 +40,8 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
 use crate::hotstuff::types::QuorumCertificate;
+use crate::pacemaker::messages::{AdvanceView, TimeoutVote};
+use crate::pacemaker::types::TimeoutCertificate;
 use crate::types::basic::{CryptoHash, ViewNumber};
 use crate::types::block::Block;
 use crate::types::validators::ValidatorSetUpdates;
@@ -52,6 +54,7 @@ pub enum Event {
     PruneBlock(PruneBlockEvent),
     UpdateHighestQC(UpdateHighestQCEvent),
     UpdateLockedQC(UpdateLockedQCEvent),
+    UpdateHighestTC(UpdateHighestTCEvent),
     UpdateValidatorSet(UpdateValidatorSetEvent),
 
     // Events that involve broadcasting or sending a Progress Message.
@@ -59,17 +62,22 @@ pub enum Event {
     Nudge(NudgeEvent),
     Vote(VoteEvent),
     NewView(NewViewEvent),
+    TimeoutVote(TimeoutVoteEvent),
+    AdvanceView(AdvanceViewEvent),
 
     // Events that involve receiving a Progress Message.
     ReceiveProposal(ReceiveProposalEvent),
     ReceiveNudge(ReceiveNudgeEvent),
     ReceiveVote(ReceiveVoteEvent),
     ReceiveNewView(ReceiveNewViewEvent),
+    ReceiveTimeoutVote(ReceiveTimeoutVoteEvent),
+    ReceiveAdvanceView(ReceiveAdvanceViewEvent),
 
     // Other progress mode events.
     StartView(StartViewEvent),
     ViewTimeout(ViewTimeoutEvent),
     CollectQC(CollectQCEvent),
+    CollectTC(CollectTCEvent),
 
     // Sync mode events.
     StartSync(StartSyncEvent),
@@ -109,8 +117,8 @@ pub struct PruneBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
 }
-/// The Highest Quroum Certificate, stored in the [Block Tree](crate::state::BlockTree), was updated.
-/// Includes the new Highest [Quroum Certificate](crate::types::QuorumCertificate).
+/// The Highest Quroum Certificate, stored in the [Block Tree](crate::state::block_tree::BlockTree), 
+/// was updated. Includes the new Highest [Quroum Certificate](crate::hotstuff::types::QuorumCertificate).
 pub struct UpdateHighestQCEvent {
     pub timestamp: SystemTime,
     pub highest_qc: QuorumCertificate,
@@ -121,6 +129,13 @@ pub struct UpdateHighestQCEvent {
 pub struct UpdateLockedQCEvent {
     pub timestamp: SystemTime,
     pub locked_qc: QuorumCertificate,
+}
+
+/// The Highest Timeout Certificate, stored in the [Block Tree](crate::state::block_tree::BlockTree), 
+/// was updated. Includes the new Highest [Timeout Certificate](crate::pacemaker::types::TimeoutCertificate).
+pub struct UpdateHighestTCEvent {
+    pub timestamp: SystemTime,
+    pub highest_tc: TimeoutCertificate,
 }
 
 /// The committed validator set, stored in the [Block Tree](crate::state::BlockTree), was updated.
@@ -162,7 +177,21 @@ pub struct NewViewEvent {
     pub new_view: NewView,
 }
 
-/// The replica received a [proposal](crate::messages::Proposal) for the replica's current view from the
+/// The replica broadcasted an [advance view](crate::pacemaker::messages::AdvanceView) message to all
+/// peers.
+pub struct AdvanceViewEvent {
+    pub timestamp: SystemTime,
+    pub advance_view: AdvanceView,
+}
+
+/// The replica broadcasted a [timeout vote](crate::pacemaker::messages::TimeoutVote) message to all
+/// peers.
+pub struct TimeoutVoteEvent {
+    pub timestamp: SystemTime,
+    pub timeout_vote: TimeoutVote,
+}
+
+/// The replica received a [proposal](crate::hotstuff::messages::Proposal) for the replica's current view from the
 /// leader of the view, identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct ReceiveProposalEvent {
     pub timestamp: SystemTime,
@@ -170,7 +199,7 @@ pub struct ReceiveProposalEvent {
     pub proposal: Proposal,
 }
 
-/// The replica received a [nudge](crate::messages::Nudge) for the replica's current view from the
+/// The replica received a [nudge](crate::hotstuff::messages::Nudge) for the replica's current view from the
 /// leader of the view, identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct ReceiveNudgeEvent {
     pub timestamp: SystemTime,
@@ -178,7 +207,7 @@ pub struct ReceiveNudgeEvent {
     pub nudge: Nudge,
 }
 
-/// The replica received a [vote](crate::messages::Vote) for the replica's current view from another
+/// The replica received a [vote](crate::hotstuff::messages::Vote) for the replica's current view from another
 /// replica identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct ReceiveVoteEvent {
     pub timestamp: SystemTime,
@@ -186,7 +215,7 @@ pub struct ReceiveVoteEvent {
     pub vote: Vote,
 }
 
-/// The replica received a [new view](crate::messages::NewView) message for the current view from
+/// The replica received a [new view](crate::hotstuff::messages::NewView) message for the current view from
 /// another replica identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct ReceiveNewViewEvent {
     pub timestamp: SystemTime,
@@ -194,11 +223,26 @@ pub struct ReceiveNewViewEvent {
     pub new_view: NewView,
 }
 
+/// The replica received an [adavance view](crate::pacemaker::messages::AdvanceView) message from
+/// another replica identifiable by its [public key](ed25519_dalek::VerifyingKey).
+pub struct ReceiveAdvanceViewEvent {
+    pub timestamp: SystemTime,
+    pub origin: VerifyingKey,
+    pub advance_view: AdvanceView,
+}
+
+/// The replica received a [timeout vote](crate::pacemaker::messages::TimeoutVote) for the replica's
+/// current view from another replica identifiable by its [public key](ed25519_dalek::VerifyingKey).
+pub struct ReceiveTimeoutVoteEvent {
+    pub timestamp: SystemTime,
+    pub origin: VerifyingKey,
+    pub timeout_vote: TimeoutVote,
+}
+
 /// The replica started a new view with a given [view number](crate::types::basic::ViewNumber) and
 /// a given leader identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct StartViewEvent {
     pub timestamp: SystemTime,
-    pub leader: VerifyingKey,
     pub view: ViewNumber,
 }
 
@@ -216,6 +260,14 @@ pub struct CollectQCEvent {
     pub timestamp: SystemTime,
     pub quorum_certificate: QuorumCertificate,
 }
+
+/// The replica collected a new [Timeout Certificate](crate::pacemaker::types::TimeoutCertificate) from
+/// the votes it received from the validators in the current view.
+pub struct CollectTCEvent {
+    pub timestamp: SystemTime,
+    pub timeout_certificate: TimeoutCertificate,
+}
+
 
 /// The replica entered sync mode and tried to sync with a given peer identifiable by its
 /// [public key](ed25519_dalek::VerifyingKey).

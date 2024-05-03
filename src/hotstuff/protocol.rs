@@ -57,7 +57,7 @@ use std::time::SystemTime;
 use ed25519_dalek::VerifyingKey;
 
 use crate::app::{App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse};
-use crate::events::{CommitBlockEvent, Event, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent};
+use crate::events::{CollectQCEvent, CommitBlockEvent, Event, NewViewEvent, NudgeEvent, ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent, VoteEvent};
 use crate::hotstuff::voting::{is_proposer, is_voter, leaders};
 use crate::messages::SignedMessage;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
@@ -118,6 +118,7 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
+    /// Retrieve the view info currently used by the HotStuff protocol.
     pub(crate) fn view_info(&self) -> &ViewInfo {
         &self.view_info
     }
@@ -146,11 +147,15 @@ impl<N: Network> HotStuff<N> {
             HotStuffMessage::new_view(self.config.chain_id, self.view_info.view, block_tree.highest_qc()?);
 
         match leaders(self.view_info.view+1, &validator_set_state) {
-            (committed_vs_leader, None) => self.sender_handle.send(committed_vs_leader, new_view_msg),
+            (committed_vs_leader, None) => self.sender_handle.send(committed_vs_leader, new_view_msg.clone()),
             (committed_vs_leader, Some(prev_vs_leader)) => {
                 self.sender_handle.send(committed_vs_leader, new_view_msg.clone());
-                self.sender_handle.send(prev_vs_leader, new_view_msg)
+                self.sender_handle.send(prev_vs_leader, new_view_msg.clone())
             }
+        }
+
+        if let HotStuffMessage::NewView(new_view) = new_view_msg {
+            Event::NewView(NewViewEvent{timestamp: SystemTime::now(), new_view}).publish(&self.event_publisher)
         }
 
         // 2. Update current view info and status.
@@ -160,6 +165,8 @@ impl<N: Network> HotStuff<N> {
 
         // 3. Update the vote collectors to collect votes for the updated view.
         self.vote_collectors = <Collectors<VoteCollector>>::new(self.config.chain_id, self.view_info.view, &validator_set_state);
+
+        Event::StartView(StartViewEvent{timestamp: SystemTime::now(), view: self.view_info.view.clone()}).publish(&self.event_publisher);
 
         block_tree.set_highest_view_entered(self.view_info.view)?;
 
@@ -212,14 +219,22 @@ impl<N: Network> HotStuff<N> {
 
                     let proposal_msg = HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
 
-                    self.sender_handle.broadcast(proposal_msg)
+                    self.sender_handle.broadcast(proposal_msg.clone());
+
+                    if let HotStuffMessage::Proposal(proposal) = proposal_msg {
+                        Event::Propose(ProposeEvent{timestamp: SystemTime::now(), proposal}).publish(&self.event_publisher)
+                    }
 
                 },
                 // Produce a nudge.
                 _ => {
                     let nudge_msg = HotStuffMessage::nudge(self.config.chain_id, self.view_info.view, highest_qc);
 
-                    self.sender_handle.broadcast(nudge_msg)
+                    self.sender_handle.broadcast(nudge_msg.clone());
+
+                    if let HotStuffMessage::Nudge(nudge) = nudge_msg {
+                        Event::Nudge(NudgeEvent{timestamp: SystemTime::now(), nudge}).publish(&self.event_publisher)
+                    }
                 }
             }
 
@@ -270,6 +285,9 @@ impl<N: Network> HotStuff<N> {
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
+
+        Event::ReceiveProposal(ReceiveProposalEvent{timestamp: SystemTime::now(), origin: *origin, proposal: proposal.clone()})
+        .publish(&self.event_publisher);
 
         // 1. Check if block is correct and safe.
         if !proposal.block.is_correct(block_tree)? || !safe_block(&proposal.block, block_tree, self.config.chain_id)? {
@@ -335,10 +353,11 @@ impl<N: Network> HotStuff<N> {
                             vote_phase
                         );
 
-                    if let HotStuffMessage::Vote(vote) = &vote_msg {
+                    if let HotStuffMessage::Vote(ref vote) = vote_msg {
                         let vote_recipient = vote_recipient(&vote, &validator_set_state);
-                        self.sender_handle.send(vote_recipient, vote_msg);
-                        block_tree.set_highest_view_voted(self.view_info.view)?
+                        self.sender_handle.send(vote_recipient, vote_msg.clone());
+                        block_tree.set_highest_view_voted(self.view_info.view)?;
+                        Event::Vote(VoteEvent{timestamp: SystemTime::now(), vote: vote.clone()}).publish(&self.event_publisher)
                     }
             }
 
@@ -365,6 +384,9 @@ impl<N: Network> HotStuff<N> {
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), HotStuffError> {
+
+        Event::ReceiveNudge(ReceiveNudgeEvent{timestamp: SystemTime::now(), origin: *origin, nudge: nudge.clone()})
+        .publish(&self.event_publisher);
 
         // 1. Check if the nudge is correct and safe.
         if !nudge.justify.is_correct(block_tree)? || !safe_nudge(&nudge, self.view_info.view, block_tree, self.config.chain_id)? {
@@ -417,10 +439,11 @@ impl<N: Network> HotStuff<N> {
                         vote_phase
                     );
 
-                if let HotStuffMessage::Vote(vote) = &vote_msg {
+                if let HotStuffMessage::Vote(ref vote) = &vote_msg {
                     let vote_recipient = vote_recipient(&vote, &validator_set_state);
-                    self.sender_handle.send(vote_recipient, vote_msg);
-                    block_tree.set_highest_view_voted(self.view_info.view)?
+                    self.sender_handle.send(vote_recipient, vote_msg.clone());
+                    block_tree.set_highest_view_voted(self.view_info.view)?;
+                    Event::Vote(VoteEvent{timestamp: SystemTime::now(), vote: vote.clone()}).publish(&self.event_publisher);
                 }
         }
 
@@ -446,9 +469,15 @@ impl<N: Network> HotStuff<N> {
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), HotStuffError> {
 
+        Event::ReceiveVote(ReceiveVoteEvent{timestamp: SystemTime::now(), origin: *signer, vote: vote.clone()})
+        .publish(&self.event_publisher);
+
         // 1. Collect the vote if correct.
         if vote.is_correct(signer) {
             if let Some(new_qc) = self.vote_collectors.collect(signer, vote) {
+
+                Event::CollectQC(CollectQCEvent{timestamp: SystemTime::now(), quorum_certificate: new_qc.clone()})
+                .publish(&self.event_publisher);
 
                 // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
                 let committed_validator_set_updates = 
@@ -478,8 +507,11 @@ impl<N: Network> HotStuff<N> {
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), HotStuffError> {
+
+        Event::ReceiveNewView(ReceiveNewViewEvent{timestamp: SystemTime::now(), origin: *origin, new_view: new_view.clone()})
+        .publish(&self.event_publisher);
         
-        // 1. Check if the highest_qc is the NewView message is correct and safe.
+        // 1. Check if the highest_qc in the NewView message is correct and safe.
         if new_view.highest_qc.is_correct(block_tree)? && safe_qc(&new_view.highest_qc, block_tree, self.config.chain_id)? {
 
             // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).

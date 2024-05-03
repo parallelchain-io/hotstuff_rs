@@ -51,10 +51,10 @@
 //! |---|---|
 //! |Committed App State|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
 //! |Committed Validator Set|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Previous Validator Set| Same as Committed Validator Set.|
-//! |Validator Set Update Block Height| 0.|
-//! | Validator Set Update Complete| true.|
-//! |LockedQC | The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
+//! |Previous Validator Set| Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |Validator Set Update Block Height|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |Validator Set Update Complete|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |LockedQC |The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 
@@ -91,18 +91,21 @@ impl<K: KVStore> BlockTree<K> {
     pub fn initialize(
         &mut self,
         initial_app_state: &AppStateUpdates,
-        initial_validator_set: &ValidatorSetUpdates,
+        initial_validator_set_state: &ValidatorSetState,
     ) -> Result<(), BlockTreeError>{
         let mut wb = BlockTreeWriteBatch::new();
 
         wb.apply_app_state_updates(initial_app_state);
 
-        let mut validator_set = ValidatorSet::new();
-        validator_set.apply_updates(initial_validator_set);
-        wb.set_committed_validator_set(&validator_set)?;
-        wb.set_previous_validator_set(&validator_set)?;
-        wb.set_validator_set_update_block_height(BlockHeight::new(0))?;
-        wb.set_validator_set_update_completed(true)?;
+        let committed_validator_set = initial_validator_set_state.committed_validator_set();
+        let previous_validator_set = initial_validator_set_state.previous_validator_set();
+        let update_height = initial_validator_set_state.update_height();
+        let update_completed = initial_validator_set_state.update_completed();
+
+        wb.set_committed_validator_set(&committed_validator_set)?;
+        wb.set_previous_validator_set(&previous_validator_set)?;
+        wb.set_validator_set_update_block_height(*update_height)?;
+        wb.set_validator_set_update_completed(update_completed)?;
 
         wb.set_locked_qc(&QuorumCertificate::genesis_qc())?;
 

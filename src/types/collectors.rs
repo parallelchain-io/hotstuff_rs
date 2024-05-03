@@ -76,7 +76,7 @@ impl<CL:Collector> Collectors<CL> {
         Self{
             committed_validator_set_collector: CL::new(chain_id, view, validator_set_state.committed_validator_set().clone()),
             prev_validator_set_collector: 
-                if validator_set_state.update_complete() {
+                if validator_set_state.update_completed() {
                     None
                 } else {
                     Some(CL::new(chain_id, view, validator_set_state.previous_validator_set().clone()))
@@ -93,7 +93,7 @@ impl<CL:Collector> Collectors<CL> {
         // If a validator set update has been initiated but no vote collector has been assigned for
         // the previous validator set. In this case, the previous validator set must be equal to the
         // committed validator set stored by the vote collectors.
-        if self.prev_validator_set_collector.is_none() & !validator_set_state.update_complete() {
+        if self.prev_validator_set_collector.is_none() & !validator_set_state.update_completed() {
             if validator_set_state.previous_validator_set() == self.committed_validator_set_collector.validator_set() {
                 self.prev_validator_set_collector = Some(self.committed_validator_set_collector.clone())
             } else {
@@ -112,7 +112,7 @@ impl<CL:Collector> Collectors<CL> {
 
         // If the validator set update has been marked as complete. In this case, a collector
         // for the previous validator set is not required anymore.
-        if self.prev_validator_set_collector.is_some() && validator_set_state.update_complete() {
+        if self.prev_validator_set_collector.is_some() && validator_set_state.update_completed() {
             self.prev_validator_set_collector = None
         }
 
@@ -122,8 +122,8 @@ impl<CL:Collector> Collectors<CL> {
     /// set state.
     pub(crate) fn should_update_validator_sets(&self, validator_set_state: &ValidatorSetState) -> bool {
         self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() ||
-        (self.prev_validator_set_collector.is_some() && validator_set_state.update_complete()) ||
-        (self.prev_validator_set_collector.is_none() && !validator_set_state.update_complete())
+        (self.prev_validator_set_collector.is_some() && validator_set_state.update_completed()) ||
+        (self.prev_validator_set_collector.is_none() && !validator_set_state.update_completed())
     }
 
     /// Collects the message with the appropriate collector.

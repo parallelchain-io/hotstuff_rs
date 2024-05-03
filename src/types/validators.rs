@@ -247,7 +247,7 @@ pub struct ValidatorSetState {
     committed_validator_set: ValidatorSet,
     previous_validator_set: ValidatorSet,
     update_height: BlockHeight,
-    update_complete: bool,
+    update_completed: bool,
 }
 
 impl ValidatorSetState {
@@ -255,13 +255,13 @@ impl ValidatorSetState {
         committed_validator_set: ValidatorSet, 
         previous_validator_set: ValidatorSet,
         update_height: BlockHeight,
-        update_complete: bool,
+        update_completed: bool,
     ) -> Self {
         Self { 
             committed_validator_set, 
             previous_validator_set,
             update_height,
-            update_complete,
+            update_completed,
         }
     }
 
@@ -277,8 +277,8 @@ impl ValidatorSetState {
         &self.update_height
     }
 
-    pub fn update_complete(&self) -> bool {
-        self.update_complete
+    pub fn update_completed(&self) -> bool {
+        self.update_completed
     }
 
 }
