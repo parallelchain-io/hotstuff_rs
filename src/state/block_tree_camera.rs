@@ -4,6 +4,9 @@
 */
 
 use crate::hotstuff::types::QuorumCertificate;
+use crate::pacemaker::types::TimeoutCertificate;
+use crate::types::basic::{AppStateUpdates, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber};
+use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus};
 use crate::types::{basic::BlockHeight, block::Block};
 
 use super::block_tree::BlockTreeError;
@@ -95,5 +98,103 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         }
 
         Ok(res)
+    }
+
+    /* ↓↓↓ Basic state getters ↓↓↓ */
+
+    pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {
+        Ok(self.0.block(block)?)
+    }
+
+    pub fn block_height(&self, block: &CryptoHash) -> Result<Option<BlockHeight>, BlockTreeError> {
+        Ok(self.0.block_height(block)?)
+    }
+
+    pub fn block_data_hash(&self, block: &CryptoHash) -> Result<Option<CryptoHash>, BlockTreeError> {
+        Ok(self.0.block_data_hash(block)?)
+    }
+
+    pub fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, BlockTreeError> {
+        Ok(self.0.block_justify(block)?)
+    }
+
+    pub fn block_data_len(&self, block: &CryptoHash) -> Result<Option<DataLen>, BlockTreeError> {
+        Ok(self.0.block_data_len(block)?)
+    }
+
+    pub fn block_data(&self, block: &CryptoHash) -> Result<Option<Data>, BlockTreeError> {
+        Ok(self.0.block_data(block)?)
+    }
+
+    pub fn block_datum(&self, block: &CryptoHash, datum_index: u32) -> Option<Datum> {
+        self.0.block_datum(block, datum_index)
+    }
+
+    pub fn block_at_height(&self, height: BlockHeight) -> Result<Option<CryptoHash>, BlockTreeError> {
+        Ok(self.0.block_at_height(height)?)
+    }
+
+    pub fn children(&self, block: &CryptoHash) -> Result<ChildrenList, BlockTreeError> {
+        Ok(self.0.children(block)?)
+    }
+
+    pub fn committed_app_state(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.0.committed_app_state(key)
+    }
+
+    pub fn pending_app_state_updates(&self, block: &CryptoHash) -> Result<Option<AppStateUpdates>, BlockTreeError> {
+        Ok(self.0.pending_app_state_updates(block)?)
+    }
+
+    pub fn committed_validator_set(&self) -> Result<ValidatorSet, BlockTreeError> {
+        Ok(self.0.committed_validator_set()?)
+    }
+
+    pub fn validator_set_updates_status(&self, block: &CryptoHash) -> Result<ValidatorSetUpdatesStatus, BlockTreeError> {
+        Ok(self.0.validator_set_updates_status(block)?)
+    }
+
+    pub fn locked_qc(&self) -> Result<QuorumCertificate, BlockTreeError> {
+        Ok(self.0.locked_qc()?)
+    }
+
+    pub fn highest_view_entered(&self) -> Result<ViewNumber, BlockTreeError> {
+        Ok(self.0.highest_view_entered()?)
+    }
+
+    pub fn highest_qc(&self) -> Result<QuorumCertificate, BlockTreeError> {
+        Ok(self.0.highest_qc()?)
+    }
+
+    pub fn highest_committed_block(&self) -> Result<Option<CryptoHash>, BlockTreeError> {
+        Ok(self.0.highest_committed_block()?)
+    }
+
+    pub fn newest_block(&self) -> Result<Option<CryptoHash>, BlockTreeError> {
+        Ok(self.0.newest_block()?)
+    }
+
+    pub fn highest_tc(&self) -> Result<Option<TimeoutCertificate>, BlockTreeError> {
+        Ok(self.0.highest_tc()?)
+    }
+
+    pub fn previous_validator_set(&self) -> Result<ValidatorSet, BlockTreeError> {
+        Ok(self.0.previous_validator_set()?)
+    }
+
+    pub fn validator_set_update_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+        Ok(self.0.validator_set_update_block_height()?)
+    }
+
+    pub fn validator_set_update_complete(&self) -> Result<bool, BlockTreeError> {
+        Ok(self.0.validator_set_update_complete()?)
+    }
+
+    pub fn validator_set_state(&self) -> Result<ValidatorSetState, BlockTreeError> {
+        Ok(self.0.validator_set_state()?)
+    }
+
+    pub fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
+        Ok(self.0.highest_view_voted()?)
     }
 }

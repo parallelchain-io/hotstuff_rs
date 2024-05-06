@@ -26,13 +26,16 @@ use hotstuff_rs::app::{
 use hotstuff_rs::events::InsertBlockEvent;
 use hotstuff_rs::messages::*;
 use hotstuff_rs::networking::Network;
-use hotstuff_rs::pacemaker::DefaultPacemaker;
 use hotstuff_rs::replica::{Replica, ReplicaSpec, Configuration};
-use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
-use hotstuff_rs::types::{
-    AppStateUpdates, CryptoHash, Power, ValidatorSet, ValidatorSetUpdates,
-    ViewNumber,
-};
+use hotstuff_rs::state::kv_store::{KVGet, KVStore};
+use hotstuff_rs::state::write_batch::WriteBatch;
+use hotstuff_rs::types::basic::{AppStateUpdates, BlockHeight, BufferSize, ChainID, CryptoHash, Data, Datum, EpochLength, Power, ViewNumber};
+use hotstuff_rs::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
+// use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
+// use hotstuff_rs::types::{
+//     AppStateUpdates, CryptoHash, Power, ValidatorSet, ValidatorSetUpdates,
+//     ViewNumber,
+// };
 use log::LevelFilter;
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
@@ -60,16 +63,18 @@ fn basic_functions_integration_test() {
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
         state
     };
-    let init_vs = {
-        let mut validator_set = ValidatorSetUpdates::new();
-        validator_set.insert(keypairs[0].verifying_key(), 1);
-        validator_set
+    let (init_vs, init_vs_updates) = {
+        let mut validator_set = ValidatorSet::new();
+        let mut vs_updates = ValidatorSetUpdates::new();
+        vs_updates.insert(keypairs[0].verifying_key(), Power::new(1));
+        validator_set.apply_updates(&vs_updates);
+        (validator_set, vs_updates)
     };
 
     let mut nodes: Vec<Node> = keypairs
         .into_iter()
         .zip(network_stubs)
-        .map(|(keypair, network)| Node::new(keypair, network, init_as.clone(), init_vs.clone()))
+        .map(|(keypair, network)| Node::new(keypair, network, init_as.clone(), init_vs_updates.clone()))
         .collect();
 
     // Submit an Increment transaction to the initial validator.
@@ -85,9 +90,9 @@ fn basic_functions_integration_test() {
     // Submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.
     log::debug!("Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
     let node_1 = nodes[1].verifying_key();
-    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, 1));
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, Power::new(1)));
     let node_2 = nodes[2].verifying_key();
-    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, 1));
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, Power::new(1)));
 
     // Poll the validator set of every replica until we have 3 validators.
     log::debug!("Polling the validator set of every replica until we have 3 validators.");
@@ -107,6 +112,9 @@ fn basic_functions_integration_test() {
     // Poll the app state of every replica until the value is 4.
     log::debug!("Polling the app state of every replica until the value is 4");
     while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 {
+        // println!("number for 0 is {}", nodes[0].number());
+        // println!("number for 1 is {}", nodes[1].number());
+        // println!("number for 2 is {}", nodes[2].number());
         thread::sleep(Duration::from_millis(500));
     }
 }
@@ -123,11 +131,12 @@ fn default_pacemaker_view_sync_integration_test() {
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
         state
     };
-    let init_vs = {
-        let mut validator_set = ValidatorSetUpdates::new();
-        validator_set.insert(keypair_1.verifying_key(), 1);
-        validator_set.insert(keypair_2.verifying_key(), 1);
-        validator_set
+    let (init_vs, init_vs_updates) = {
+        let mut validator_set = ValidatorSet::new();
+        let mut vs_updates = ValidatorSetUpdates::new();
+        vs_updates.insert(keypair_1.verifying_key(), Power::new(1));
+        vs_updates.insert(keypair_2.verifying_key(), Power::new(1));
+        (validator_set, vs_updates)
     };
     let (network_stub_1, network_stub_2) = {
         let mut network_stubs =
@@ -136,10 +145,10 @@ fn default_pacemaker_view_sync_integration_test() {
     };
 
     // Start the first node.
-    let mut first_node = Node::new(keypair_1, network_stub_1, init_as.clone(), init_vs.clone());
+    let mut first_node = Node::new(keypair_1, network_stub_1, init_as.clone(), init_vs_updates.clone());
 
     // Wait until the first node's current view advances to 5.
-    while first_node.highest_view_entered() < 5 {
+    while first_node.highest_view_entered() < ViewNumber::new(5) {
         thread::sleep(Duration::from_millis(500));
     }
 
@@ -148,7 +157,7 @@ fn default_pacemaker_view_sync_integration_test() {
         "First node is at view {}, starting second node.",
         first_node.highest_view_entered()
     );
-    let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs.clone());
+    let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs_updates.clone());
 
     // Wait until both nodes' current views match.
     log::debug!("Waiting until both nodes' current views match.");
@@ -350,11 +359,12 @@ impl App<MemDB> for NumberApp {
         let mut tx_queue = self.tx_queue.lock().unwrap();
 
         let (app_state_updates, validator_set_updates) = self.execute(initial_number, &tx_queue);
-        let data = vec![tx_queue.try_to_vec().unwrap()];
+        let data = Data::new(vec![Datum::new(tx_queue.try_to_vec().unwrap())]);
         let data_hash = {
             let mut hasher = Sha256::new();
-            hasher.update(&data[0]);
-            hasher.finalize().into()
+            hasher.update(&data.vec()[0].bytes());
+            let bytes = hasher.finalize().into();
+            CryptoHash::new(bytes)
         };
 
         tx_queue.clear();
@@ -372,8 +382,9 @@ impl App<MemDB> for NumberApp {
         let data = &request.proposed_block().data;
         let data_hash: CryptoHash = {
             let mut hasher = Sha256::new();
-            hasher.update(&data[0]);
-            hasher.finalize().into()
+            hasher.update(&data.vec()[0].bytes());
+            let bytes = hasher.finalize().into();
+            CryptoHash::new(bytes)
         };
 
         if request.proposed_block().data_hash != data_hash {
@@ -389,7 +400,7 @@ impl App<MemDB> for NumberApp {
             );
 
             if let Ok(transactions) =
-                Vec::<NumberAppTransaction>::deserialize(&mut &*request.proposed_block().data[0])
+                Vec::<NumberAppTransaction>::deserialize(&mut &*request.proposed_block().data.vec()[0].bytes().as_slice())
             {
                 let (app_state_updates, validator_set_updates) =
                     self.execute(initial_number, &transactions);
@@ -459,24 +470,28 @@ impl Node {
         keypair: SigningKey,
         network: NetworkStub,
         init_as: AppStateUpdates,
-        init_vs: ValidatorSetUpdates,
+        init_vs_updates: ValidatorSetUpdates,
     ) -> Node {
         let kv_store = MemDB::new();
 
-        Replica::initialize(kv_store.clone(), init_as, init_vs);
+        let mut init_vs = ValidatorSet::new();
+        init_vs.apply_updates(&init_vs_updates);
+        let init_vs_state = ValidatorSetState::new(init_vs.clone(), init_vs, None, true);
+
+        Replica::initialize(kv_store.clone(), init_as, init_vs_state);
 
         let verifying_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
-        let pacemaker =
-            DefaultPacemaker::new(Duration::from_millis(500));
 
         let configuration = 
             Configuration :: builder()
             .me(keypair)
-            .chain_id(0)
-            .sync_request_limit(10)
-            .sync_response_timeout(Duration::new(3, 0))
-            .progress_msg_buffer_capacity(10000)
+            .chain_id(ChainID::new(0))
+            .block_sync_request_limit(10)
+            .block_sync_response_timeout(Duration::new(3, 0))
+            .progress_msg_buffer_capacity(BufferSize::new(1024))
+            .epoch_length(EpochLength::new(100))
+            .max_view_time(Duration::from_millis(2000))
             .log_events(true)
             .build();
 
@@ -487,7 +502,6 @@ impl Node {
         let replica = 
             ReplicaSpec :: builder()
             .app(NumberApp::new(tx_queue.clone()))
-            .pacemaker(pacemaker)
             .network(network)
             .kv_store(kv_store)
             .configuration(configuration)
@@ -523,6 +537,7 @@ impl Node {
             .block_tree_camera()
             .snapshot()
             .committed_validator_set()
+            .expect("Cannot obtain the committed validator set from the block tree!")
     }
 
     fn highest_view_entered(&self) -> ViewNumber {
@@ -530,6 +545,7 @@ impl Node {
             .block_tree_camera()
             .snapshot()
             .highest_view_entered()
+            .expect("Cannot obtain the highest view entered from the block tree!")
     }
 
     fn verifying_key(&self) -> VerifyingKeyBytes {

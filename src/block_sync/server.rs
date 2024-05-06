@@ -51,7 +51,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
 
         thread::spawn(move || {
 
-            todo!()
+            // todo
 
         })
     }

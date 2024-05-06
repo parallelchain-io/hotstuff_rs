@@ -282,11 +282,14 @@ pub trait KVGet {
 
     /* ↓↓↓ Validator Set Update Block Height ↓↓↓ */
 
-    fn validator_set_update_block_height(&self) -> Result<BlockHeight, KVGetError> {
-        BlockHeight::deserialize(
-            &mut &*self.get(&paths::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT)
-            .ok_or(KVGetError::ValueNotFound{key: Key::ValidatorSetUpdateHeight})?
-        ).map_err(|err| KVGetError::DeserializeValueError{key: Key::ValidatorSetUpdateHeight, source: err})
+    fn validator_set_update_block_height(&self) -> Result<Option<BlockHeight>, KVGetError> {
+        if let Some(bytes) = self.get(&paths::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT) {
+            let block_height = BlockHeight::deserialize(&mut &*bytes)
+                .map_err(|err| KVGetError::DeserializeValueError{key: Key::ValidatorSetUpdateHeight, source: err})?;
+            Ok(Some(block_height))
+        } else {
+            Ok(None)
+        }
     }
 
     /* ↓↓↓ Validator Set Update Complete ↓↓↓ */

@@ -104,7 +104,9 @@ impl<K: KVStore> BlockTree<K> {
 
         wb.set_committed_validator_set(&committed_validator_set)?;
         wb.set_previous_validator_set(&previous_validator_set)?;
-        wb.set_validator_set_update_block_height(*update_height)?;
+        if let Some(height) = *update_height {
+            wb.set_validator_set_update_block_height(height)?
+        }
         wb.set_validator_set_update_completed(update_completed)?;
 
         wb.set_locked_qc(&QuorumCertificate::genesis_qc())?;
@@ -341,7 +343,7 @@ impl<K: KVStore> BlockTree<K> {
     /* ↓↓↓ Extra state getters for convenience ↓↓↓ */
 
     pub fn contains(&self, block: &CryptoHash) -> bool {
-        self.block(block).is_ok() && self.block(block).unwrap().is_some()
+        self.block(block).is_ok_and(|block_opt| block_opt.is_some())
     }
 
     pub(crate) fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
@@ -516,8 +518,8 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.previous_validator_set()?)
     }
 
-    pub(crate) fn validator_set_update_block_height(&self) -> Result<BlockHeight, BlockTreeError> {
-        Ok(self.validator_set_update_block_height()?)
+    pub(crate) fn validator_set_update_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+        Ok(self.0.validator_set_update_block_height()?)
     }
 
     pub(crate) fn validator_set_update_complete(&self) -> Result<bool, BlockTreeError> {

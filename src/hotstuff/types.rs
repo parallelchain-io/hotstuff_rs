@@ -41,39 +41,47 @@ impl Certificate for QuorumCertificate {
     ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
-        if self.is_genesis_qc() {return Ok(true)};
+        if self.is_genesis_qc() {
+            return Ok(true)
+        };
 
         let block_height = block_tree.block_height(&self.block)?;
-        if block_height.is_none() {return Ok(false)};
+        if block_height.is_none() {
+            return Ok(false)
+        };
 
         let validator_set_state = block_tree.validator_set_state()?;
 
-        if &block_height.unwrap() < validator_set_state.update_height() {
-            Ok(self.is_correctly_signed(validator_set_state.previous_validator_set()))
-        } else if &block_height.unwrap() > validator_set_state.update_height() {
-            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
-        } else {
-            match self.phase {
-                Phase::Decide => {
-                    // Check if the validator set updates associated with this block have been committed.
-                    match block_tree.validator_set_updates_status(&self.block)? {
-                        ValidatorSetUpdatesStatus::Committed => {
-                            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
-                        },
-                        ValidatorSetUpdatesStatus::Pending(vs_updates) => {
-                            // This may be the case if the block justified by this QC is received via sync,
-                            // hence the updates have not been applied yet.
-                            let mut new_validator_set = block_tree.committed_validator_set()?;
-                            new_validator_set.apply_updates(&vs_updates);
-                            Ok(self.is_correctly_signed(&new_validator_set))
-                        },
-                        ValidatorSetUpdatesStatus::None => Ok(false)
-                    }
-                },
-                Phase::Prepare | Phase::Precommit | Phase::Commit =>
-                    Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
-                _ => Ok(false) // Note: cannot panic here, since safe_qc has not been checked yet.
+        if let Some(update_height) = validator_set_state.update_height() {
+            if &block_height.unwrap() < update_height {
+                Ok(self.is_correctly_signed(validator_set_state.previous_validator_set()))
+            } else if &block_height.unwrap() > update_height {
+                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
+            } else {
+                match self.phase {
+                    Phase::Decide => {
+                        // Check if the validator set updates associated with this block have been committed.
+                        match block_tree.validator_set_updates_status(&self.block)? {
+                            ValidatorSetUpdatesStatus::Committed => {
+                                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
+                            },
+                            ValidatorSetUpdatesStatus::Pending(vs_updates) => {
+                                // This may be the case if the block justified by this QC is received via sync,
+                                // hence the updates have not been applied yet.
+                                let mut new_validator_set = block_tree.committed_validator_set()?;
+                                new_validator_set.apply_updates(&vs_updates);
+                                Ok(self.is_correctly_signed(&new_validator_set))
+                            },
+                            ValidatorSetUpdatesStatus::None => Ok(false)
+                        }
+                    },
+                    Phase::Prepare | Phase::Precommit | Phase::Commit =>
+                        Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
+                    _ => Ok(false) // Note: cannot panic here, since safe_qc has not been checked yet.
+                }
             }
+        } else {
+            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
         }
     }
 

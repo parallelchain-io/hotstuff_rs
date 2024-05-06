@@ -47,7 +47,7 @@ use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::{AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent, TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent};
+use crate::events::{AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent, TimeoutVoteEvent, UpdateHighestQCEvent, UpdateHighestTCEvent, ViewTimeoutEvent};
 use crate::hotstuff::voting::is_validator;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
@@ -256,9 +256,7 @@ impl<N: Network> Pacemaker<N> {
                 // In case the replica is behind, the "fallback tc" contained in the timeout vote message
                 // serves to prove to it that a quorum is ahead and lets the replica catch up.
                 if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
-                    let mut wb = BlockTreeWriteBatch::new();
-                    wb.set_highest_tc(&tc)?;
-                    block_tree.write(wb);
+                    block_tree.set_highest_tc(&tc)?;
                     Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: tc.clone()}).publish(&self.event_publisher);
                     
                     // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
@@ -294,6 +292,24 @@ impl<N: Network> Pacemaker<N> {
         };
 
         if valid {
+            // Set highestTC or highestQC of needed.
+            match &progress_certificate {
+                ProgressCertificate::QuorumCertificate(qc) => {
+                    if qc.view > block_tree.highest_qc()?.view {
+                        block_tree.set_highest_qc(&qc)?;
+                        Event::UpdateHighestQC(UpdateHighestQCEvent{timestamp: SystemTime::now(), highest_qc: qc.clone()})
+                        .publish(&self.event_publisher); 
+                    }
+                },
+                ProgressCertificate::TimeoutCertificate(tc) => {
+                    if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
+                        block_tree.set_highest_tc(&tc)?;
+                        Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: tc.clone()})
+                        .publish(&self.event_publisher);
+                    }
+                }
+            }
+
             // If I am a validator, re-broadcast the received advance view message.
             if is_validator(&self.config.keypair.public(), &block_tree.validator_set_state()?) {
                 self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view.clone())));
@@ -529,8 +545,8 @@ pub fn select_leader(
     let mut counter = 0;
 
     // Search for a validator at given index in the abstract array of leaders.
-    for threshold in 1..p_max {
-        for k in 0..(n-1) {
+    for threshold in 1..=p_max {
+        for k in 0..=(n-1) {
             let validator = validator_set.validators().nth(k).unwrap();
             if validator_set.power(validator).unwrap().int() >= threshold {
                 if counter == index {

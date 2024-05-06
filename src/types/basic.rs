@@ -101,7 +101,7 @@ impl ChildrenList {
 pub struct CryptoHash([u8; 32]);
 
 impl CryptoHash {
-    pub(crate) const fn new(bytes: [u8; 32]) -> Self {
+    pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
@@ -127,7 +127,7 @@ impl Debug for CryptoHash {
 pub struct Data(Vec<Datum>);
 
 impl Data {
-    pub(crate) fn new(datum_vec: Vec<Datum>) -> Self {
+    pub fn new(datum_vec: Vec<Datum>) -> Self {
         Self(datum_vec)
     }
 
@@ -159,7 +159,7 @@ impl DataLen {
 pub struct Datum(Vec<u8>);
 
 impl Datum {
-    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+    pub fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
@@ -173,6 +173,10 @@ impl Datum {
 pub struct Power(u64);
 
 impl Power {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+
     pub const fn int(&self) -> u64 {
         self.0
     }

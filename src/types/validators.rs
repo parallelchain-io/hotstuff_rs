@@ -246,15 +246,15 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
 pub struct ValidatorSetState {
     committed_validator_set: ValidatorSet,
     previous_validator_set: ValidatorSet,
-    update_height: BlockHeight,
+    update_height: Option<BlockHeight>,
     update_completed: bool,
 }
 
 impl ValidatorSetState {
-    pub(crate) fn new(
+    pub fn new(
         committed_validator_set: ValidatorSet, 
         previous_validator_set: ValidatorSet,
-        update_height: BlockHeight,
+        update_height: Option<BlockHeight>,
         update_completed: bool,
     ) -> Self {
         Self { 
@@ -273,7 +273,7 @@ impl ValidatorSetState {
         &self.previous_validator_set
     }
 
-    pub fn update_height(&self) -> &BlockHeight {
+    pub fn update_height(&self) -> &Option<BlockHeight> {
         &self.update_height
     }
 

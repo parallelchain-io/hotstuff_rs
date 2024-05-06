@@ -173,7 +173,11 @@ pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>) 
     -> Result<Option<QuorumCertificate>, BlockTreeError> 
-{
+{   
+    if justify.is_genesis_qc() {
+        return Ok(None)
+    }
+
     let locked_qc = block_tree.locked_qc()?;
     let new_locked_qc = match justify.phase {
         Phase::Decide | Phase::Precommit => {
@@ -226,7 +230,9 @@ pub(crate) fn block_to_commit<K: KVStore>(
     block_tree: &BlockTree<K>) 
     -> Result<Option<CryptoHash>, BlockTreeError> 
 {
-    if justify.is_genesis_qc() {return Ok(None)};
+    if justify.is_genesis_qc() {
+        return Ok(None)
+    };
 
     match justify.phase {
         Phase::Commit | Phase::Decide => {
@@ -298,9 +304,12 @@ pub(crate) fn repropose_block<K: KVStore>(
 /// need to check the qc's block, its parent, and its grandparent.
 fn extends_locked_qc_block<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
     let locked_qc = block_tree.locked_qc()?;
+    let block = qc.block;
+    let block_parent = block_tree.block_justify(&block).ok().map(|qc| qc.block);
+    let block_grandparent = block_parent.map(|b| block_tree.block_justify(&b).ok().map(|qc| qc.block)).flatten();
     Ok(
-        qc.block == locked_qc.block ||
-        block_tree.block_justify(&qc.block)?.block == locked_qc.block ||
-        block_tree.block_justify(&block_tree.block_justify(&qc.block)?.block)?.block == locked_qc.block
+        block == locked_qc.block ||
+        block_parent.is_some_and(|b| b == locked_qc.block) ||
+        block_grandparent.is_some_and(|b| b == locked_qc.block)
     )
 }
