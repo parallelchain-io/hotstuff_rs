@@ -251,7 +251,6 @@ pub struct StartViewEvent {
 pub struct ViewTimeoutEvent {
     pub timestamp: SystemTime,
     pub view: ViewNumber,
-    pub timeout: Duration,
 }
 
 /// The replica collected a new [Quorum Certificate](crate::hotstuff::types::QuorumCertificate) from the

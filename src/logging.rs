@@ -375,11 +375,10 @@ impl Logger for ViewTimeoutEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |view_timeout_event: &ViewTimeoutEvent| {
             log::info!(
-                "{}, {}, {}, {:?}",
+                "{}, {}, {}",
                 VIEW_TIMEOUT,
                 secs_since_unix_epoch(view_timeout_event.timestamp),
                 view_timeout_event.view,
-                view_timeout_event.timeout,
             )
         };
         Box::new(logger)
