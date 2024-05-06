@@ -29,13 +29,8 @@ use hotstuff_rs::networking::Network;
 use hotstuff_rs::replica::{Replica, ReplicaSpec, Configuration};
 use hotstuff_rs::state::kv_store::{KVGet, KVStore};
 use hotstuff_rs::state::write_batch::WriteBatch;
-use hotstuff_rs::types::basic::{AppStateUpdates, BlockHeight, BufferSize, ChainID, CryptoHash, Data, Datum, EpochLength, Power, ViewNumber};
+use hotstuff_rs::types::basic::{AppStateUpdates, BufferSize, ChainID, CryptoHash, Data, Datum, EpochLength, Power, ViewNumber};
 use hotstuff_rs::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
-// use hotstuff_rs::state::{KVGet, KVStore, WriteBatch};
-// use hotstuff_rs::types::{
-//     AppStateUpdates, CryptoHash, Power, ValidatorSet, ValidatorSetUpdates,
-//     ViewNumber,
-// };
 use log::LevelFilter;
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
