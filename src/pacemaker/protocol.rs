@@ -54,9 +54,9 @@ use crate::networking::{Network, SenderHandle};
 use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::EpochLength;
+use crate::types::basic::{EpochLength, Power};
 use crate::types::collectors::{Certificate, Collectors};
-use crate::types::validators::{ValidatorSet, ValidatorSetState};
+use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
     keypair::Keypair
@@ -576,4 +576,28 @@ fn is_epoch_change_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {
 
 fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
     view.int().div_ceil(epoch_length.int() as u64)
+}
+
+/// Tests if the number of times each validator is selected as a leader is proportional to its power.
+#[test]
+fn select_leader_fairness_test() {
+    use rand_core::OsRng;
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+
+    let mut csprg = OsRng {};
+    let n = 20;
+    let keypairs: Vec<SigningKey> = (0..n).map(|_| SigningKey::generate(&mut csprg)).collect();
+    let public_keys: Vec<VerifyingKey> = keypairs.iter().map(|keypair| keypair.verifying_key()).collect();
+
+    let mut validator_set = ValidatorSet::new();
+    let mut validator_set_updates = ValidatorSetUpdates::new();
+    public_keys.iter().zip(0..n).for_each(|(validator, power)| validator_set_updates.insert(*validator, Power::new(power)));
+    validator_set.apply_updates(&validator_set_updates);
+
+    let total_power = validator_set.total_power().int() as u64;
+    let leader_sequence: Vec<VerifyingKey> = (0..total_power).into_iter().map(|v| select_leader(ViewNumber::new(v), &validator_set)).collect();
+
+    validator_set.validators().for_each(|validator|
+        assert_eq!(leader_sequence.iter().filter(|leader| leader == &validator).count(), validator_set.power(validator).unwrap().int() as usize)
+    )
 }

@@ -169,7 +169,7 @@ impl Datum {
 }
 
 /// Power of a validator.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Power(u64);
 
 impl Power {
