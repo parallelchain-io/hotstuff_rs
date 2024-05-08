@@ -11,7 +11,7 @@ use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
 use crate::types::basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber};
 use crate::types::block::Block;
-use crate::types::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes, ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
+use crate::types::validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes};
 
 use super::block_tree::BlockTreeError;
 use super::kv_store::Key;
@@ -169,7 +169,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Pending(validator_set_updates.into());
         Ok(
             self.0.set(
-                &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
+                &combine(&paths::VALIDATOR_SET_UPDATES_STATUS, &block.bytes()),
                 &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})?,
             )
         )
@@ -180,7 +180,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Committed;
         Ok(
             self.0.set(
-                &combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()),
+                &combine(&paths::VALIDATOR_SET_UPDATES_STATUS, &block.bytes()),
                 &block_vs_updates_bytes.try_to_vec().map_err(|err| KVSetError::SerializeValueError{key: Key::ValidatorSetUpdatesStatus{block: block.clone()}, source: err})?,
             )
         )
@@ -188,7 +188,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn delete_block_validator_set_updates(&mut self, block: &CryptoHash) {
         self.0
-            .delete(&combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes()))
+            .delete(&combine(&paths::VALIDATOR_SET_UPDATES_STATUS, &block.bytes()))
     }
 
     /* ↓↓↓ Locked View ↓↓↓ */

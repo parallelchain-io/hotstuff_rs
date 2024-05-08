@@ -152,8 +152,6 @@ impl<K: KVStore> BlockTree<K> {
 
         self.write(wb);
 
-        // todo: caller should emit this event
-        // Event::InsertBlock(InsertBlockEvent { timestamp: SystemTime::now(), block}).publish(event_publisher);
 
         Ok(())
 

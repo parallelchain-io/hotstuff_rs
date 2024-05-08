@@ -8,7 +8,7 @@
 //!    an [AdvertiseBlock] message, and
 //! 2. Responding to received sync requests.
 
-use std::{sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}};
+use std::{sync::mpsc::{Receiver, Sender, TryRecvError}, thread::{self, JoinHandle}};
 
 use ed25519_dalek::VerifyingKey;
 
@@ -49,12 +49,24 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
 
     pub(crate) fn start(mut self) -> JoinHandle<()> {
 
-        thread::spawn(move || {
+        thread::spawn(move || loop {
 
-            // todo
+            match self.shutdown_signal.try_recv() {
+                Ok(()) => return,
+                Err(TryRecvError::Empty) => (),
+                Err(TryRecvError::Disconnected) => {
+                    panic!("Algorithm thread disconnected from main thread")
+                }
+            }
 
+            // todo: handle received sync requests
+
+            thread::yield_now();
+            
         })
+
     }
+
 }
 
 /// Immutable parameters that define the behaviour of the [BlockSyncServer].

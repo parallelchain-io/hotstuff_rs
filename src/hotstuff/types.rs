@@ -46,6 +46,9 @@ impl Certificate for QuorumCertificate {
         };
 
         let block_height = block_tree.block_height(&self.block)?;
+        
+        // If the height of the block associated with this QC is unknown, then we do not know what to validate 
+        // the QC against, so we return that the QC is invalid.
         if block_height.is_none() {
             return Ok(false)
         };
@@ -75,8 +78,15 @@ impl Certificate for QuorumCertificate {
                             ValidatorSetUpdatesStatus::None => Ok(false)
                         }
                     },
-                    Phase::Prepare | Phase::Precommit | Phase::Commit =>
-                        Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
+                    Phase::Prepare | Phase::Precommit | Phase::Commit => {
+                        match block_tree.validator_set_updates_status(&self.block)? {
+                            ValidatorSetUpdatesStatus::Committed => 
+                                Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
+                            ValidatorSetUpdatesStatus::Pending(_) => 
+                                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set())),
+                            ValidatorSetUpdatesStatus::None => Ok(false)
+                        }
+                    }
                     _ => Ok(false) // Note: cannot panic here, since safe_qc has not been checked yet.
                 }
             }

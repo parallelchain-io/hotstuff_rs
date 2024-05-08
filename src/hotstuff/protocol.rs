@@ -57,7 +57,7 @@ use std::time::SystemTime;
 use ed25519_dalek::VerifyingKey;
 
 use crate::app::{App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse};
-use crate::events::{CollectQCEvent, CommitBlockEvent, Event, NewViewEvent, NudgeEvent, ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent, VoteEvent};
+use crate::events::{CollectQCEvent, CommitBlockEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent, VoteEvent};
 use crate::hotstuff::voting::{is_proposer, is_voter, leaders};
 use crate::messages::SignedMessage;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
@@ -319,6 +319,7 @@ impl<N: Network> HotStuff<N> {
         } = app.validate_block(validate_block_request) {
 
             block_tree.insert_block(&proposal.block, app_state_updates.as_ref(), validator_set_updates.as_ref())?;
+            Event::InsertBlock(InsertBlockEvent{timestamp: SystemTime::now(), block: proposal.block.clone()}).publish(&self.event_publisher);
 
             // 3. Trigger block tree updates: update highestQC, lock, commit.
             let committed_validator_set_updates = update_block_tree(&proposal.block.justify, block_tree, &self.event_publisher)?;
@@ -479,9 +480,18 @@ impl<N: Network> HotStuff<N> {
                 Event::CollectQC(CollectQCEvent{timestamp: SystemTime::now(), quorum_certificate: new_qc.clone()})
                 .publish(&self.event_publisher);
 
+                // If the newly collected QC is not correct or not safe, then ignore it and return.
+                if !new_qc.is_correct(block_tree)? || !safe_qc(&new_qc, block_tree, self.config.chain_id)? {
+                    return Ok(())
+                }
+
+                // TODO: here we need to process teh QC to decide if it should be accepted or set as highest qc.
+                // also need to do checks in update_block_tree.
+                // check if correct and safe
+
                 // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
                 let committed_validator_set_updates = 
-                update_block_tree(&new_qc, block_tree, &self.event_publisher)?;
+                    update_block_tree(&new_qc, block_tree, &self.event_publisher)?;
 
                 if let Some(vs_updates) = committed_validator_set_updates {
                     self.validator_set_update_handle.update_validator_set(vs_updates)

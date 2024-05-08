@@ -160,8 +160,10 @@ impl<N: Network> Pacemaker<N> {
                 }
                 self.extend_view()?
             } else {
-                self.update_view(cur_view + 1, &validator_set_state)?
+                self.update_view(cur_view + 1, &validator_set_state)?;
             }
+
+            return Ok(())
         }
 
         // 2. Check if the timeout vote collectors need to be updated in response to a validator set
@@ -174,7 +176,8 @@ impl<N: Network> Pacemaker<N> {
         //    broadcast an advance view message.
         if block_tree.highest_qc()?.view == cur_view 
             && !block_tree.highest_qc()?.is_genesis_qc()
-            && is_validator(&self.config.keypair.public(), &validator_set_state) {
+            && is_validator(&self.config.keypair.public(), &validator_set_state) 
+            && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < cur_view)) {
             let pacemaker_message = 
                 PacemakerMessage::advance_view(
                     ProgressCertificate::QuorumCertificate(block_tree.highest_qc()?)
@@ -183,6 +186,7 @@ impl<N: Network> Pacemaker<N> {
             if let PacemakerMessage::AdvanceView(advance_view) = pacemaker_message {
                 Event::AdvanceView(AdvanceViewEvent{timestamp: SystemTime::now(), advance_view}).publish(&self.event_publisher)
             }
+            self.state.last_advance_view = Some(self.view_info.view);
         }
 
         Ok(())
@@ -241,16 +245,21 @@ impl<N: Network> Pacemaker<N> {
                 // If a new TC for the current view is collected the replica should (possibly) update its highest_tc 
                 // and broadcast the collected TC.
                 if block_tree.highest_tc()?.is_none() || new_tc.view > block_tree.highest_tc()?.unwrap().view {
+
                     let mut wb = BlockTreeWriteBatch::new();
                     wb.set_highest_tc(&new_tc)?;
                     block_tree.write(wb);
                     Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: new_tc.clone()}).publish(&self.event_publisher);
-                    if is_validator(&self.config.keypair.public(), &validator_set_state) {
+
+                    if is_validator(&self.config.keypair.public(), &validator_set_state) 
+                        && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < self.view_info.view)) {
+
                         let pacemaker_message = PacemakerMessage::advance_view(ProgressCertificate::TimeoutCertificate(new_tc));
                         self.sender.broadcast(Message::from(pacemaker_message.clone()));
                         if let PacemakerMessage::AdvanceView(advance_view) = pacemaker_message {
                             Event::AdvanceView(AdvanceViewEvent{timestamp: SystemTime::now(), advance_view}).publish(&self.event_publisher)
                         }
+                        self.state.last_advance_view = Some(self.view_info.view);
                     }
                 }   
             } else if let Some(tc) = fallback_tc {
@@ -294,34 +303,30 @@ impl<N: Network> Pacemaker<N> {
         };
 
         if valid {
-            // Set highestTC or highestQC of needed.
-            match &progress_certificate {
-                ProgressCertificate::QuorumCertificate(qc) => {
-                    if qc.view > block_tree.highest_qc()?.view {
-                        block_tree.set_highest_qc(&qc)?;
-                        Event::UpdateHighestQC(UpdateHighestQCEvent{timestamp: SystemTime::now(), highest_qc: qc.clone()})
-                        .publish(&self.event_publisher); 
-                    }
-                },
-                ProgressCertificate::TimeoutCertificate(tc) => {
-                    if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
-                        block_tree.set_highest_tc(&tc)?;
-                        Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: tc.clone()})
-                        .publish(&self.event_publisher);
-                    }
+            // Set highestTC if needed.
+            // Note: we do not update the highestQC here, since checking the safety of QCs and updating
+            // highestQC is a responsibility of the HotStuff protocol.
+            if let ProgressCertificate::TimeoutCertificate(tc) = &progress_certificate {
+                if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
+                    block_tree.set_highest_tc(&tc)?;
+                    Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: tc.clone()})
+                    .publish(&self.event_publisher);
                 }
-            }
+            };
 
             // If I am a validator, re-broadcast the received advance view message.
-            if is_validator(&self.config.keypair.public(), &block_tree.validator_set_state()?) {
+            if is_validator(&self.config.keypair.public(), &block_tree.validator_set_state()?) 
+                && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < self.view_info.view)) {
                 self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view.clone())));
-                Event::AdvanceView(AdvanceViewEvent{timestamp: SystemTime::now(), advance_view}).publish(&self.event_publisher)
+                Event::AdvanceView(AdvanceViewEvent{timestamp: SystemTime::now(), advance_view}).publish(&self.event_publisher);
+                self.state.last_advance_view = Some(self.view_info.view);
             }
 
             // Check if about to enter a new epoch, and if so then set the timeouts for the new epoch.
             let next_view = progress_certificate.view() + 1;
             self.update_view(next_view, &validator_set_state)?
         }
+
 
         Ok(())
     }
@@ -385,6 +390,7 @@ pub(crate) struct PacemakerConfiguration {
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
     timeout_vote_collectors: Collectors<TimeoutVoteCollector>,
+    last_advance_view: Option<ViewNumber>,
 }
 
 impl PacemakerState {
@@ -399,6 +405,7 @@ impl PacemakerState {
         Self {
             timeouts: Self::initial_timeouts(init_view, config),
             timeout_vote_collectors: <Collectors<TimeoutVoteCollector>>::new(config.chain_id, init_view, validator_set_state),
+            last_advance_view: None,
         }
     }
 

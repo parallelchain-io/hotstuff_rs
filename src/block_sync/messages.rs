@@ -15,7 +15,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     hotstuff::types::QuorumCertificate, 
-    messages::{Message, ProgressMessage}, 
     types::{basic::*,block::*}
 };
 

@@ -40,7 +40,11 @@ use super::types::{Phase, QuorumCertificate};
 /// 
 /// Usually, the proposer is the leader of the committed validator set. However, during the validator
 /// set update period the leader of the previous validator set can also act as the proposer.
-pub fn is_proposer(validator: &VerifyingKey, view: ViewNumber, validator_set_state: &ValidatorSetState) -> bool {
+pub fn is_proposer(
+    validator: &VerifyingKey, 
+    view: ViewNumber, 
+    validator_set_state: &ValidatorSetState,
+) -> bool {
     validator == &select_leader(view, validator_set_state.committed_validator_set()) ||
     (!validator_set_state.update_completed() && 
     validator == &select_leader(view, validator_set_state.previous_validator_set()))
@@ -85,8 +89,9 @@ pub fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetStat
         match justify.phase {
             Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Decide => 
                 validator_set_state.previous_validator_set().contains(&validator),
-            Phase::Commit =>
+            Phase::Commit => {
                 validator_set_state.committed_validator_set().contains(&validator)
+            }
         }
     }
 }

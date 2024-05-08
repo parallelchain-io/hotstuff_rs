@@ -197,7 +197,7 @@ pub trait KVGet {
 
     fn validator_set_updates_status(&self, block: &CryptoHash) -> Result<ValidatorSetUpdatesStatus, KVGetError> {
         let validator_set_updates_status_bytes = 
-            match self.get(&combine(&paths::BLOCK_VALIDATOR_SET_UPDATES, &block.bytes())) {
+            match self.get(&combine(&paths::VALIDATOR_SET_UPDATES_STATUS, &block.bytes())) {
                 None => ValidatorSetUpdatesStatusBytes::None,
                 Some(bytes) => {
                     ValidatorSetUpdatesStatusBytes::deserialize(&mut &*bytes)

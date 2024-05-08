@@ -484,7 +484,8 @@ fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
 fn progress_certificate_info(progress_certificate: &ProgressCertificate) -> String {
     match progress_certificate {
         ProgressCertificate::QuorumCertificate(qc) => {
-            String::from(format!("Quorum Certificate, view: {}, block: {}", qc.view, first_seven_base64_chars(&qc.block.bytes())))
+            String::from(format!("Quorum Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}", 
+            qc.view, qc.phase, first_seven_base64_chars(&qc.block.bytes()), qc.signatures.iter().filter(|sig| sig.is_some()).count()))
         },
         ProgressCertificate::TimeoutCertificate(tc) => {
             String::from(format!("Timeout Certificate, view: {}", tc.view))

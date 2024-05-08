@@ -8,7 +8,6 @@
 //! 2. [Pacemaker]: for synchronizing views among the peers,
 //! 3. [BlockSyncClient]: for triggering and handling the block sync procedure when needed.
 
-use std::cmp::max;
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 
@@ -21,7 +20,7 @@ use crate::messages::ProgressMessage;
 use crate::events::*;
 use crate::hotstuff::protocol::{HotStuff, HotStuffConfiguration};
 use crate::networking::*;
-use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration, ViewInfo};
+use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration};
 use crate::state::*;
 use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 
@@ -37,7 +36,6 @@ pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'stati
     pacemaker: Pacemaker<N>,
     block_sync_client: BlockSyncClient<N>,
     shutdown_signal: Receiver<()>,
-    event_publisher: Option<Sender<Event>>,
 }
 
 impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
@@ -104,7 +102,6 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
             pacemaker,
             block_sync_client,
             shutdown_signal,
-            event_publisher
         }
     }
 
@@ -138,7 +135,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
 
             // 4. In case the view has been updated, update HotStuff's internal view and perform
             // the necessary protocol steps.
-            if view_info != self.hotstuff.view_info() {
+            if view_info.view != self.hotstuff.view_info().view {
                 self.hotstuff.on_receive_view_info(view_info.clone(), &mut self.block_tree, &mut self.app).expect("HotStuff failure!")
             }
 

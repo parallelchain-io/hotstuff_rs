@@ -3,27 +3,34 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The test suite for HotStuff-rs involves an [app](NumberApp) that keeps track of a single number in its state, which
-//! is initially 0. Tests push transactions to this app to increase this number, or change its validator set, and then
-//! query its state to check if consensus is proceeding.
+//! The test suite for HotStuff-rs involves an [app](NumberApp) that keeps track of a single number in
+//! its state, which is initially 0. Tests push transactions to this app to increase this number, or 
+//! change its validator set, and then query its state to check if consensus is proceeding.
 //!
-//! The replicas used in this test suite use a mock [NetworkStub], a mock [MemDB](key-value store), and the
-//! [default pacemaker](hotstuff_rs::pacemaker::DefaultPacemaker). These use channels to simulate communication, and a
-//! hashmap to simulate persistence, and thus never leaves any artifacts.
+//! The replicas used in this test suite use a mock [NetworkStub], a mock [MemDB](key-value store). 
+//! These use channels to simulate communication, and a hashmap to simulate persistence, and thus 
+//! never leaves any artifacts.
 //! 
-//! There are currently two tests:
-//! 1. [basic_functions_integration_test]: tests the most basic user-visible functionalities: committing transactions,
-//!    querying app state, and expanding the validator set. This should complete in less than 1 minute.
-//! 2. [default_pacemaker_view_sync_integration_test]: tests whether a validator set using [DefaultPacemaker] that
-//!    start with unsynchronized views. This should complete in less than 3 minutes.
+//! There are currently three tests:
+//! 1. [basic_consenus_and_validator_set_update_test]: tests the most basic user-visible functionalities: 
+//!    committing transactions, querying app state, and expanding the validator set. This should complete 
+//!    in less than 40 seconds.
+//! 2. [multiple_validator_set_updates_test]: tests if frequent validator set updates, including ones that
+//!    completely change the validator set (i.e., there is no intersection between the old and the new
+//!    validator sets), can succeed. This should complete in less than 1 minute.
+//! 3. [pacemaker_initial_view_sync_test]: tests whether validators can succesfully synchronize in the
+//!    initial view even if they start executing the protocol at different moments. This should complete
+//!    in less than 30 seconds.
 
 extern crate rand;
+use base64::engine::general_purpose::STANDARD_NO_PAD;
+use base64::Engine;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use hotstuff_rs::app::{
     App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
 };
-use hotstuff_rs::events::InsertBlockEvent;
+use hotstuff_rs::events::{CommitBlockEvent, InsertBlockEvent, ReceiveProposalEvent, UpdateHighestQCEvent, VoteEvent};
 use hotstuff_rs::messages::*;
 use hotstuff_rs::networking::Network;
 use hotstuff_rs::replica::{Replica, ReplicaSpec, Configuration};
@@ -42,12 +49,12 @@ use std::sync::{
     Arc, Mutex, MutexGuard,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 type VerifyingKeyBytes = [u8; 32];
 
 #[test]
-fn basic_functions_integration_test() {
+fn basic_consenus_and_validator_set_update_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
@@ -58,12 +65,10 @@ fn basic_functions_integration_test() {
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
         state
     };
-    let (init_vs, init_vs_updates) = {
-        let mut validator_set = ValidatorSet::new();
+    let init_vs_updates = {
         let mut vs_updates = ValidatorSetUpdates::new();
         vs_updates.insert(keypairs[0].verifying_key(), Power::new(1));
-        validator_set.apply_updates(&vs_updates);
-        (validator_set, vs_updates)
+        vs_updates
     };
 
     let mut nodes: Vec<Node> = keypairs
@@ -98,6 +103,8 @@ fn basic_functions_integration_test() {
         thread::sleep(Duration::from_millis(500));
     }
 
+    thread::sleep(Duration::from_millis(1000));
+
     // Push an Increment transaction to each of the 3 validators we have now.
     log::debug!("Submitting an increment transaction to each of the 3 validators we have now.");
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
@@ -107,15 +114,94 @@ fn basic_functions_integration_test() {
     // Poll the app state of every replica until the value is 4.
     log::debug!("Polling the app state of every replica until the value is 4");
     while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 {
-        // println!("number for 0 is {}", nodes[0].number());
-        // println!("number for 1 is {}", nodes[1].number());
-        // println!("number for 2 is {}", nodes[2].number());
         thread::sleep(Duration::from_millis(500));
     }
 }
 
 #[test]
-fn default_pacemaker_view_sync_integration_test() {
+fn multiple_validator_set_updates_test() {
+    setup_logger(LevelFilter::Trace);
+
+    let mut csprg = OsRng {};
+    let keypairs: Vec<SigningKey> = (0..6).map(|_| SigningKey::generate(&mut csprg)).collect();
+    let network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
+    let init_as = {
+        let mut state = AppStateUpdates::new();
+        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
+        state
+    };
+    let init_vs_updates = {
+        let mut vs_updates = ValidatorSetUpdates::new();
+        vs_updates.insert(keypairs[0].verifying_key(), Power::new(1));
+        vs_updates.insert(keypairs[1].verifying_key(), Power::new(1));
+        vs_updates
+    };
+
+    let mut nodes: Vec<Node> = keypairs
+        .into_iter()
+        .zip(network_stubs)
+        .map(|(keypair, network)| Node::new(keypair, network, init_as.clone(), init_vs_updates.clone()))
+        .collect();
+
+    thread::sleep(Duration::from_millis(500));
+
+    // Submit a set validator transaction to one of the 2 initial validators to register 1 more peer.
+    log::debug!("Submitting a set validator transaction to the initial validator to register 1 more peer.");
+    let node_2 = nodes[2].verifying_key();
+    nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, Power::new(1)));
+
+    // Poll the validator set of every replica until we have 3 validators.
+    log::debug!("Polling the validator set of every replica until we have 3 validators.");
+    while nodes[0].committed_validator_set().len() != 3
+        || nodes[1].committed_validator_set().len() != 3
+        || nodes[2].committed_validator_set().len() != 3
+    {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    thread::sleep(Duration::from_millis(1000));
+
+    // Submit a set validator transaction to one of the 2 initial validators to register 1 more peer.
+    log::debug!("Submitting a set validator transaction to one of the initial validators to register 1 more peer.");
+    let node_3 = nodes[3].verifying_key();
+    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_3, Power::new(3)));
+
+    // Poll the validator set of every replica until we have 4 validators.
+    log::debug!("Polling the validator set of every replica until we have 4 validators.");
+    while nodes[0].committed_validator_set().len() != 4
+        || nodes[1].committed_validator_set().len() != 4
+        || nodes[2].committed_validator_set().len() != 4
+    {
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    // Submit set validator transactions to one of the existing validators to:
+    // 1. Remove all existing validators
+    // 2. Set new validators: nodes[4] and nodes[5]
+    log::debug!("Submitting a set validator transaction to one of the initial validators to delete the current validators and add two new validators.");
+    let node_4 = nodes[4].verifying_key();
+    let node_5 = nodes[5].verifying_key();
+    let node_0 = nodes[0].verifying_key();
+    let node_1 = nodes[1].verifying_key();
+    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_4, Power::new(2)));
+    nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_5, Power::new(4)));
+    nodes[1].submit_transaction(NumberAppTransaction::DeleteValidator(node_0));
+    nodes[1].submit_transaction(NumberAppTransaction::DeleteValidator(node_1));
+    nodes[1].submit_transaction(NumberAppTransaction::DeleteValidator(node_2));
+    nodes[1].submit_transaction(NumberAppTransaction::DeleteValidator(node_3));
+
+    // Poll the validator set of every replica until we have 2 validators.
+    log::debug!("Polling the validator set of every replica until we have 2 validators.");
+    while nodes[0].committed_validator_set().len() != 2
+        || nodes[1].committed_validator_set().len() != 2
+        || nodes[2].committed_validator_set().len() != 2
+    {
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+#[test]
+fn pacemaker_initial_view_sync_test() {
     setup_logger(LevelFilter::Trace);
 
     let mut csprg = OsRng {};
@@ -126,12 +212,11 @@ fn default_pacemaker_view_sync_integration_test() {
         state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
         state
     };
-    let (init_vs, init_vs_updates) = {
-        let mut validator_set = ValidatorSet::new();
+    let init_vs_updates = {
         let mut vs_updates = ValidatorSetUpdates::new();
         vs_updates.insert(keypair_1.verifying_key(), Power::new(1));
         vs_updates.insert(keypair_2.verifying_key(), Power::new(1));
-        (validator_set, vs_updates)
+        vs_updates
     };
     let (network_stub_1, network_stub_2) = {
         let mut network_stubs =
@@ -140,23 +225,18 @@ fn default_pacemaker_view_sync_integration_test() {
     };
 
     // Start the first node.
+    log::debug!("Starting the first node.");
     let mut first_node = Node::new(keypair_1, network_stub_1, init_as.clone(), init_vs_updates.clone());
 
-    // Wait until the first node's current view advances to 5.
-    while first_node.highest_view_entered() < ViewNumber::new(5) {
-        thread::sleep(Duration::from_millis(500));
-    }
+    thread::sleep(Duration::from_millis(4000));
 
     // Start the second node.
-    log::debug!(
-        "First node is at view {}, starting second node.",
-        first_node.highest_view_entered()
-    );
+    log::debug!("Starting the second node.");
     let second_node = Node::new(keypair_2, network_stub_2, init_as.clone(), init_vs_updates.clone());
 
     // Wait until both nodes' current views match.
-    log::debug!("Waiting until both nodes' current views match.");
-    while first_node.highest_view_entered() != second_node.highest_view_entered() {
+    log::debug!("Waiting until both nodes enter view 1.");
+    while first_node.highest_view_entered() < ViewNumber::new(1) || second_node.highest_view_entered() < ViewNumber::new(1) {
         thread::sleep(Duration::from_millis(500));
     }
 
@@ -336,6 +416,7 @@ const NUMBER_KEY: [u8; 1] = [0];
 enum NumberAppTransaction {
     Increment,
     SetValidator(VerifyingKeyBytes, Power),
+    DeleteValidator(VerifyingKeyBytes),
 }
 
 impl App<MemDB> for NumberApp {
@@ -440,6 +521,15 @@ impl NumberApp {
                         vsu.insert(VerifyingKey::from_bytes(validator).unwrap(), *power);
                         validator_set_updates = Some(vsu);
                     }
+                },
+                NumberAppTransaction::DeleteValidator(validator) => {
+                    if let Some(updates) = &mut validator_set_updates {
+                        updates.delete(VerifyingKey::from_bytes(validator).unwrap());
+                    } else {
+                        let mut vsu = ValidatorSetUpdates::new();
+                        vsu.delete(VerifyingKey::from_bytes(validator).unwrap());
+                        validator_set_updates = Some(vsu);
+                    }
                 }
             }
         }
@@ -485,13 +575,71 @@ impl Node {
             .block_sync_request_limit(10)
             .block_sync_response_timeout(Duration::new(3, 0))
             .progress_msg_buffer_capacity(BufferSize::new(1024))
-            .epoch_length(EpochLength::new(100))
+            .epoch_length(EpochLength::new(50))
             .max_view_time(Duration::from_millis(2000))
-            .log_events(true)
+            .log_events(false)
             .build();
 
         let insert_block_handler = |insert_block_event: &InsertBlockEvent| {
-            println!("Inserted block with hash: {:?}, timestamp: {:?}", insert_block_event.block.hash, insert_block_event.timestamp)
+            log::debug!(
+                "Inserted block with hash: {}, timestamp: {}", 
+                first_seven_base64_chars(&insert_block_event.block.hash.bytes()), secs_since_unix_epoch(insert_block_event.timestamp)
+            )
+        };
+
+        let receive_proposal_handler = |receive_proposal_event: &ReceiveProposalEvent| {
+            let txn = 
+                Vec::<NumberAppTransaction>::deserialize(&mut &*receive_proposal_event.proposal.block.data.vec()[0].bytes().as_slice()).unwrap();
+            let txn_printable = 
+                if txn.is_empty() {
+                    String::from("no transactions")
+                } else {
+                    let all: Vec<String> = txn.iter().map(|tx|
+                        match tx {
+                            NumberAppTransaction::Increment => String::from("increment, "),
+                            NumberAppTransaction::SetValidator(_, _) => String::from("set validator, "),
+                            NumberAppTransaction::DeleteValidator(_) => String::from("delete validator, ")
+                        }
+                    ).collect();
+                    all.join(" ")
+                };
+            log::debug!(
+                "{}, {}, origin: {}, {}, view: {}, block height: {}, transactions: {}",
+                "Received Proposal",
+                secs_since_unix_epoch(receive_proposal_event.timestamp),
+                first_seven_base64_chars(&receive_proposal_event.origin.to_bytes()),
+                first_seven_base64_chars(&receive_proposal_event.proposal.block.hash.bytes()),
+                receive_proposal_event.proposal.view,
+                receive_proposal_event.proposal.block.height.clone(),
+                txn_printable
+            )
+        };
+
+        let commit_block_handler = |commit_block_event: &CommitBlockEvent| {
+            log::debug!("{}, {}, {}", "Committed block", secs_since_unix_epoch(commit_block_event.timestamp), first_seven_base64_chars(&commit_block_event.block.bytes()))
+        };
+
+        let update_highest_qc_handler = |update_highest_qc_event: &UpdateHighestQCEvent| {
+            log::debug!(
+                "{}, {}, block: {}, view: {}, phase: {:?}, no. of signatures = {}",
+                "Updated HighestQC",
+                secs_since_unix_epoch(update_highest_qc_event.timestamp),
+                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
+                update_highest_qc_event.highest_qc.view,
+                update_highest_qc_event.highest_qc.phase,
+                update_highest_qc_event.highest_qc.signatures.iter().filter(|sig| sig.is_some()).count()
+            )
+        };
+
+        let vote_handler = |vote_event: &VoteEvent| {
+            log::debug!(
+                "{}, {}, {}, {}, {:?}",
+                "Voted",
+                secs_since_unix_epoch(vote_event.timestamp),
+                first_seven_base64_chars(&vote_event.vote.block.bytes()),
+                vote_event.vote.view,
+                vote_event.vote.phase
+            )
         };
 
         let replica = 
@@ -501,6 +649,10 @@ impl Node {
             .kv_store(kv_store)
             .configuration(configuration)
             .on_insert_block(insert_block_handler)
+            .on_receive_proposal(receive_proposal_handler)
+            .on_commit_block(commit_block_handler)
+            .on_update_highest_qc(update_highest_qc_handler)
+            .on_vote(vote_handler)
             .build()
             .start();
 
@@ -546,4 +698,20 @@ impl Node {
     fn verifying_key(&self) -> VerifyingKeyBytes {
         self.verifying_key
     }
+}
+
+// Get a more readable representation of a bytesequence by base64-encoding it and taking the first 7 characters.
+fn first_seven_base64_chars(bytes: &[u8]) -> String {
+    let encoded = STANDARD_NO_PAD.encode(bytes);
+    if encoded.len() > 7 {
+        encoded[0..7].to_string()
+    } else {
+        encoded
+    }
+}
+
+fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
+    timestamp.duration_since(SystemTime::UNIX_EPOCH)
+        .expect("Event occured before the Unix Epoch.")
+        .as_secs()
 }
