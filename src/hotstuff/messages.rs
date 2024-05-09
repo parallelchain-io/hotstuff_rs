@@ -17,7 +17,7 @@
 //! - [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
 //!    on the highestQC that replicas know of.
 //! 
-//! ## Note on NewView
+//! ## `NewView` and view synchronization
 //! 
 //! In the original HotStuff protocol, the leader of the next view keeps track of the number of
 //! `NewView` messages collected in the current view with the aim of advancing to the next view once a
