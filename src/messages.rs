@@ -87,7 +87,9 @@ pub(crate) trait SignedMessage: Clone {
     }
 }
 
-/// A cacheable message can be inserted into a message buffer.
+/// A cacheable message can be inserted into the 
+/// [progress message buffer](crate::networking::ProgressMessageStub).
+/// 
 /// For this, we require that:
 /// 1. The message is associated with a view,
 /// 2. The message size is statically known and depends on a particular enum variant.

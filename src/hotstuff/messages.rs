@@ -8,13 +8,14 @@
 //! 
 //! ## Messages
 //! 
-//! - [`Proposal``]: broadcasted by the leader of a given view, who proposes to extend the blockchain by 
+//! HotStuff-rs' modified HotStuff protocol involves four types of messages:
+//! 1. [`Proposal`]: broadcasted by the leader of a given view, who proposes to extend the blockchain by 
 //!    inserting a block contained in the proposal.
-//! - [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
+//! 2. [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
 //!    a next voting phase for a block with a given quorum certificate.
-//! - [`Vote`]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
+//! 3. [`Vote`]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
 //!    contains a cryptographic signature over the information passed through a vote.
-//! - [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
+//! 4. [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
 //!    on the highestQC that replicas know of.
 //! 
 //! ## `NewView` and view synchronization

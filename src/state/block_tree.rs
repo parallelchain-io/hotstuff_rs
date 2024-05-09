@@ -46,7 +46,8 @@
 //! |Highest Committed Block|[CryptoHash]|The hash of the committed block that has the highest height.|
 //! |Newest BlocK|[CryptoHash]The hash of the most recent block to be inserted into the block tree.|
 //! 
-//!
+//! ### Persistence in KV Store
+//! 
 //! The location of each of these variables in a KV store is defined in [paths](crate::state::paths). 
 //! Note that the fields of a block are itself stored in different tuples. This is so that user code 
 //! can get a subset of a block's data without loading the entire block from storage (which can be 
