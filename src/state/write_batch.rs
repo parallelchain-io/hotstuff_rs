@@ -2,6 +2,8 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
+//! This module defines the [WriteBatch] trait for batching writes to the key-value store, and its 
+//! implementation for the [block tree](crate::state::block_tree::BlockTree), the [BlockTreeWriteBatch].
 pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
 
 use borsh::BorshSerialize;

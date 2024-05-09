@@ -13,6 +13,16 @@
 //!    contains a cryptographic signature over the information passed through a vote.
 //! 4. [NewView]: sent by a replica to the next leader on view timeout, serves to update the next leader
 //!    on the highestQC that replicas know of.
+//! 
+//! ## Note on NewView
+//! In hotstuff-rs, unlike in the original HotStuff protocol, the leader of the next view does not keep
+//! track of the number of [NewView] messages collected in the current view with the aim of advancing
+//! to the next view once a quorum of [NewView] messages are seen. This is because the original HotStuff
+//! protocol does not come with a BFT view synchronization mechanism. Still, it offers a way to ensure
+//! that the view leader does not fall behind other replicas. The hotstuff-rs [Pacemaker](crate::pacemaker) 
+//! provides a Byzantine Fault Tolerant view synchronisation protocol which ensures that replicas advance
+//! to next views optimistically when progress is made, and on timeout when no progress is made.
+//! Therefore, keeping track of the [NewView] messages does not offer any extra benefit.
 
 use std::mem;
 
@@ -36,6 +46,7 @@ pub enum HotStuffMessage {
 }
 
 impl HotStuffMessage {
+    /// Create a [Proposal] message for a given chain id, view, and block.
     pub fn proposal(chain_id: ChainID, view: ViewNumber, block: Block) -> HotStuffMessage {
         HotStuffMessage::Proposal(Proposal {
             chain_id,
@@ -44,6 +55,7 @@ impl HotStuffMessage {
         })
     }
 
+    /// Create a [Nudge] message for a given chain id, view, and justifying QC.
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
     pub fn nudge(
@@ -61,6 +73,7 @@ impl HotStuffMessage {
         }
     }
 
+    /// Create a [NewView] message for a given chain id, view, and highestQC.
     pub fn new_view(
         chain_id: ChainID,
         view: ViewNumber,
@@ -73,6 +86,8 @@ impl HotStuffMessage {
         })
     }
 
+    /// Create a [Vote] for a given chain id, view, block, and phase, by signing over the values with the 
+    /// replica's private key.
     pub(crate) fn vote(
         me: &Keypair,
         chain_id: ChainID,
@@ -149,6 +164,8 @@ impl Into<ProgressMessage> for HotStuffMessage {
     }
 }
 
+/// Broadcasted by the leader of a given view, who proposes to extend the blockchain by inserting a 
+/// block contained in the proposal.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
     pub chain_id: ChainID,
@@ -156,6 +173,8 @@ pub struct Proposal {
     pub block: Block,
 }
 
+/// Broadcasted by the leader of a given view, who nudges other validators to participate in a next 
+/// voting phase for a block with a given quorum certificate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     pub chain_id: ChainID,
@@ -163,6 +182,8 @@ pub struct Nudge {
     pub justify: QuorumCertificate,
 }
 
+/// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a 
+/// cryptographic signature over the information passed through a vote.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
     pub chain_id: ChainID,
@@ -184,6 +205,8 @@ impl SignedMessage for Vote {
     }
 }
 
+/// Sent by a replica to the next leader on view timeout, serves to update the next leader on the 
+/// highestQC that replicas know of.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
     pub chain_id: ChainID,

@@ -4,7 +4,7 @@
 */
 
 //! Methods used to enforce who is allowed to propose and vote at any given point. The methods implement
-//! the key rules of the validator set update protocol.
+//! the key rules of the hotstuff-rs validator set update protocol.
 //! 
 //! ## Validator Set Update protocol
 //! hotstuff-rs adds an extra "decide" phase to the phased HotStuff protocol. This phase serves as the
@@ -31,9 +31,8 @@ use crate::types::{
     basic::ViewNumber, 
     validators::ValidatorSetState
 };
-
-use super::messages::Vote;
-use super::types::{Phase, QuorumCertificate};
+use crate::hotstuff::messages::Vote;
+use crate::hotstuff::types::{Phase, QuorumCertificate};
 
 /// Returns whether the replica with a given public key is allowed to act as the proposer for a 
 /// given view.
@@ -110,9 +109,10 @@ pub fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &Validato
     validator_set_state.previous_validator_set().contains(verifying_key))
 }
 
+/// Returns the leader(s) of a given view. In general, a view has only one leader, but during the 
+/// validator set update period the leader of the resigning validator set can act as a leader too.
 pub fn leaders(view: ViewNumber, validator_set_state: &ValidatorSetState) -> (VerifyingKey, Option<VerifyingKey>) {
     (select_leader(view, validator_set_state.committed_validator_set()),
      if validator_set_state.update_completed() {None} 
      else {Some(select_leader(view, validator_set_state.previous_validator_set()))})
 }
-

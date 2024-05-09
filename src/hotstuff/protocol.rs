@@ -18,12 +18,12 @@
 //!    state updates associated with the block's justify. This may include updating the highestQC,
 //!    updating the lockedQC, and committing a great-grandparent block. They also vote for the
 //!    proposal.
-//! 3. The next leader collect the votes into a QC, and saves it as its highestQC.
+//! 3. The next leader collects the votes into a QC, and saves it as its highestQC.
 //! 
 //! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
-//! associated validator set updates. This is because in a dynamic validator sets setting one may need 
-//! immediacy - if B updates the validator set from vs to vs', then its child shall be proposed and 
-//! voted for by replicas from vs'.
+//! associated validator set updates. This is because in a dynamic validator sets setting a desirable  
+//! property is immediacy - if B is a block that updates the validator set from vs to vs', then its 
+//! child shall be proposed and voted for by replicas from vs'.
 //! 
 //! ## HotStuff for dynamic validator sets
 //! 
@@ -43,13 +43,13 @@
 //!     send [Phase::Decide] votes.
 //! 
 //! The "decide" phase is special as it enforces a liveness-preserving transition between the two
-//! validator sets. Concretely, on seeing a commitQC replicas from the resigning validator set the
-//! new validator set becomes committed and its members vote "decide" for the block, with the goal
-//! of producing a decideQC. However, in case they fail to do so, the resigning validator set is
-//! still active and ready to re-initiate the "decide" phase by broadcasting the commitQC if needed
-//! - the resigning validators only completely de-activate themselves on seeing a decideQC for the
-//! block. This guarantees the invariant that if a decideQC exists, a quorum from the new validator
-//! set has committed the validator set update and is ready to make progress.
+//! validator sets. Concretely, on seeing a commitQC new validator set becomes committed and its 
+//! members vote "decide" for the block, with the goal of producing a decideQC. However, in case 
+//! they fail to do so, the resigning validator set is still active and ready to re-initiate the 
+//! "decide" phase by broadcasting the commitQC if needed - the resigning validators only completely
+//! de-activate themselves on seeing a decideQC for the block. This guarantees the invariant that 
+//! if a decideQC exists, a quorum from the new validator set has committed the validator set update
+//! and is ready to make progress.
 
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
@@ -57,7 +57,10 @@ use std::time::SystemTime;
 use ed25519_dalek::VerifyingKey;
 
 use crate::app::{App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse};
-use crate::events::{CollectQCEvent, CommitBlockEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, UpdateLockedQCEvent, UpdateValidatorSetEvent, VoteEvent};
+use crate::events::{CollectQCEvent, CommitBlockEvent, Event, InsertBlockEvent, NewViewEvent, 
+                    NudgeEvent, ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, 
+                    ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, 
+                    UpdateLockedQCEvent, UpdateValidatorSetEvent, VoteEvent};
 use crate::hotstuff::voting::{is_proposer, is_voter, leaders};
 use crate::messages::SignedMessage;
 use crate:: networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
@@ -123,11 +126,11 @@ impl<N: Network> HotStuff<N> {
         &self.view_info
     }
 
-    /// Send messages and perform state updates associated with exiting the current view and enter a new
-    /// view given by view info. 
+    /// On receiving new [ViewInfo] from the [Pacemaker](crate::pacemaker::protocol::Pacemaker): send messages
+    /// and perform state updates associated with exiting the current view, update the local view info. 
     /// 
     /// This involves the following steps:
-    /// 1. Exit the current view: send a NewView message to the leader of the next view.
+    /// 1. Exit the current view: send a [NewView] message to the leader of the next view.
     /// 2. Update the internal view info and view status, as well as the vote collectors. 
     /// 3. If serving as a leader of the newly entered view, propose or nudge.
     /// 
@@ -138,7 +141,7 @@ impl<N: Network> HotStuff<N> {
         view_info: ViewInfo,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
-    ) -> Result<(), HotStuffError>{
+    ) -> Result<(), HotStuffError> {
 
         let validator_set_state = block_tree.validator_set_state()?;
 
@@ -173,8 +176,8 @@ impl<N: Network> HotStuff<N> {
         // 4. If I am a proposer for this view then broadcast a nudge or a proposal.
         if is_proposer(&self.config.keypair.public(), self.view_info.view, &validator_set_state) {
 
-            // Check if I need to re-propose a block. This may be required in case a chain of consecutive views
-            // of voting for a validator-set-updating block has been interrupted.
+            // Check if I need to re-propose an existing block. This may be required in case a chain of consecutive
+            // views of voting for a validator-set-updating block proposed earlier has been interrupted.
             if let Some(block_hash) = repropose_block(self.view_info.view, block_tree)? {
                 let block = 
                     block_tree.block(&block_hash)?
@@ -185,7 +188,7 @@ impl<N: Network> HotStuff<N> {
                 return Ok(())
             }
 
-            // Otherwise, propose or nudge based on highest_qc.
+            // Otherwise, propose a new block or nudge based on highest_qc.
             let highest_qc = block_tree.highest_qc()?;
             match highest_qc.phase {
                 // Produce a block proposal.
@@ -291,7 +294,7 @@ impl<N: Network> HotStuff<N> {
 
         // 1. Check if block is correct and safe.
         if !proposal.block.is_correct(block_tree)? || !safe_block(&proposal.block, block_tree, self.config.chain_id)? {
-            // Take note that proposals or nudges from this leader should no longer be accepted in this view.
+            // Ensure that proposals or nudges from this leader should no longer be accepted in this view.
             match self.view_status {
                 ViewStatus::ViewInProgress => {
                     self.view_status = ViewStatus::LeaderProposed{leader: *origin}
@@ -322,7 +325,8 @@ impl<N: Network> HotStuff<N> {
             Event::InsertBlock(InsertBlockEvent{timestamp: SystemTime::now(), block: proposal.block.clone()}).publish(&self.event_publisher);
 
             // 3. Trigger block tree updates: update highestQC, lock, commit.
-            let committed_validator_set_updates = update_block_tree(&proposal.block.justify, block_tree, &self.event_publisher)?;
+            let committed_validator_set_updates = 
+                update_block_tree(&proposal.block.justify, block_tree, &self.event_publisher)?;
 
             if let Some(vs_updates) = committed_validator_set_updates {
                 self.validator_set_update_handle.update_validator_set(vs_updates)
@@ -485,10 +489,6 @@ impl<N: Network> HotStuff<N> {
                     return Ok(())
                 }
 
-                // TODO: here we need to process teh QC to decide if it should be accepted or set as highest qc.
-                // also need to do checks in update_block_tree.
-                // check if correct and safe
-
                 // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
                 let committed_validator_set_updates = 
                     update_block_tree(&new_qc, block_tree, &self.event_publisher)?;
@@ -586,10 +586,12 @@ pub enum ViewStatus {
 }
 
 impl ViewStatus {
+    /// Can any proposals/nudges from a valid leader be processed in this view?
     fn is_view_in_progress(&self) -> bool {
         matches!(self, ViewStatus::ViewInProgress)
     }
 
+    /// Has this leader already proposed/nudged in the current view?
     fn is_leader_proposed(&self, leader: &VerifyingKey) -> bool {
         match self {
             ViewStatus::LeaderProposed{leader: validator} => {
@@ -599,6 +601,8 @@ impl ViewStatus {
         }
     }
 
+    /// Have all (max. 2) leaders already proposed/nudged in this view?
+    /// Note: this can evaluate to true only during the validator set update period.
     fn is_view_completed(&self) -> bool {
         matches!(self, ViewStatus::ViewCompleted)
     }
@@ -612,7 +616,9 @@ impl ViewStatus {
 /// 4. Setting the validator set updates associated with a block as completed.
 /// 
 /// Returns optional [validator set updates](crate::types::validators::ValidatorSetUpdates) caused by
-/// committing a block.
+/// committing a block. Note that even if multiple blocks are committed on calling this method, only max. 1
+/// of them can have associated validator set updates. This is because validator-set-updating blocks are
+/// committed via a non-pipelined protocol.
 /// 
 /// # Precondition
 /// The block or nudge with this justify must satisfy [safety::safe_block] or [safety::safe_nudge] respectively.
@@ -648,15 +654,14 @@ fn update_block_tree<K: KVStore>(
     // 4. Set validator set updates as completed if needed.
     if justify.phase.is_decide() {
         wb.set_validator_set_update_completed(true)?
-        // todo: emit an event for this
     }
 
     block_tree.write(wb);
 
     publish_update_block_tree_events(event_publisher, update_highest_qc, update_locked_qc, &committed_blocks);
 
-    // Safety: a block that updates the validator set must be followed by a block that contains a commit
-    // qc. A block becomes committed immediately if followed by a commit qc. Therefore, under normal
+    // Safety: a block that updates the validator set must be followed by a block that contains a decide
+    // qc. A block becomes committed immediately if its commitQC or decideQC is seen. Therefore, under normal
     // operation, at most 1 validator-set-updating block can be committed at a time.
     let resulting_vs_update = 
         committed_blocks.into_iter().rev()

@@ -2,6 +2,28 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
+//! This module defines the location of each of the variables stored in the key-value store.
+//! These variables are:
+//! 
+//! |Variable|"Type"|Description|
+//! |---|---|---|
+//! |Blocks|[CryptoHash] -> [Block]||
+//! |Block at Height|[BlockHeight] -> [CryptoHash]|A mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
+//! |Block to Children|[CryptoHash] -> [ChildrenList]|A mapping between a block's hash and the children it has in the block tree. A block may have multiple children if they have not been committed.|
+//! |Committed App State|[Vec<u8>] -> [Vec<u8>]||
+//! |Pending App State Updates|[CryptoHash] -> [AppStateUpdates]||
+//! |Committed Validator Set|[ValidatorSet]|The acting validator set.|
+//! |Previous Validator Set|[ValidatorSet]|The previous acting validator set, possibly still active if the update has not been completed yet.|
+//! |Validator Set Update Completed|[bool]|Whether the most recently initiated validator set update has been completed. A validator set update is initiated when a commit QC for the corresponding validator-set-updating block is seen.|
+//! |Validator Set Update Block Height|The height of the block associated with the most recently initiated validator set update.|
+//! |Validator Set Updates Status|[CryptoHash] -> [ValidatorSetUpdatesStatus]||
+//! |Locked QC|[QuorumCertificate]| QC of a block that is about to be committed, unless there is evidence for a quorum switching to a conflicting branch. Refer to the HotStuff paper for details.|
+//! |Highest Voted View|[ViewNumber]|The highest view that this validator has voted in.|
+//! |Highest View Entered|[ViewNumber]|The highest view that this validator has entered.|
+//! |Highest Quorum Certificate|[QuorumCertificate]|Among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.|
+//! |Highest Timeout Certificate|[TimeoutCertificate]|Among the timeout certificates this validator has seen and verified the signatures of, the one with the highest view number.|
+//! |Highest Committed Block|[CryptoHash]|The hash of the committed block that has the highest height.|
+//! |Newest BlocK|[CryptoHash]The hash of the most recent block to be inserted into the block tree.|
 
 // State variables
 pub(super) const BLOCKS: [u8; 1] = [0];

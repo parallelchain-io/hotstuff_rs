@@ -37,7 +37,7 @@ pub struct QuorumCertificate {
 
 impl Certificate for QuorumCertificate {
     /// Computes the appropriate validator set that the QC should be checked against, and checks if the
-    /// signatures in the certificate are correct and form a quorum.
+    /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
@@ -46,53 +46,52 @@ impl Certificate for QuorumCertificate {
         };
 
         let block_height = block_tree.block_height(&self.block)?;
-        
-        // If the height of the block associated with this QC is unknown, then we do not know what to validate 
-        // the QC against, so we return that the QC is invalid.
-        if block_height.is_none() {
-            return Ok(false)
-        };
 
         let validator_set_state = block_tree.validator_set_state()?;
 
-        if let Some(update_height) = validator_set_state.update_height() {
-            if &block_height.unwrap() < update_height {
-                Ok(self.is_correctly_signed(validator_set_state.previous_validator_set()))
-            } else if &block_height.unwrap() > update_height {
-                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
-            } else {
-                match self.phase {
-                    Phase::Decide => {
-                        // Check if the validator set updates associated with this block have been committed.
-                        match block_tree.validator_set_updates_status(&self.block)? {
-                            ValidatorSetUpdatesStatus::Committed => {
-                                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
-                            },
-                            ValidatorSetUpdatesStatus::Pending(vs_updates) => {
-                                // This may be the case if the block justified by this QC is received via sync,
-                                // hence the updates have not been applied yet.
-                                let mut new_validator_set = block_tree.committed_validator_set()?;
-                                new_validator_set.apply_updates(&vs_updates);
-                                Ok(self.is_correctly_signed(&new_validator_set))
-                            },
-                            ValidatorSetUpdatesStatus::None => Ok(false)
+        let result = match (block_height, validator_set_state.update_height()) {
+            (None, _) | (Some(_), &None) => self.is_correctly_signed(validator_set_state.committed_validator_set()),
+            (Some(height), &Some(update_height)) => {
+                if height < update_height {
+                    self.is_correctly_signed(validator_set_state.previous_validator_set())
+                } else if height > update_height {
+                    self.is_correctly_signed(validator_set_state.committed_validator_set())
+                } else {
+                    match self.phase {
+                        Phase::Decide => {
+                            // Check if the validator set updates associated with this block have been committed.
+                            // This tells us which validator set is expected to have voted on this QC.
+                            match block_tree.validator_set_updates_status(&self.block)? {
+                                ValidatorSetUpdatesStatus::Committed => {
+                                    self.is_correctly_signed(validator_set_state.committed_validator_set())
+                                },
+                                ValidatorSetUpdatesStatus::Pending(vs_updates) => {
+                                    // This may be the case if the block justified by this QC is received via sync,
+                                    // hence the updates have not been applied yet. In this case we need to compute
+                                    // the validator set expected to have voted "decide" for the block.
+                                    let mut new_validator_set = block_tree.committed_validator_set()?;
+                                    new_validator_set.apply_updates(&vs_updates);
+                                    self.is_correctly_signed(&new_validator_set)
+                                },
+                                ValidatorSetUpdatesStatus::None => false
+                            }
+                        },
+                        Phase::Prepare | Phase::Precommit | Phase::Commit => {
+                            match block_tree.validator_set_updates_status(&self.block)? {
+                                ValidatorSetUpdatesStatus::Committed => 
+                                    self.is_correctly_signed(validator_set_state.previous_validator_set()),
+                                ValidatorSetUpdatesStatus::Pending(_) => 
+                                    self.is_correctly_signed(validator_set_state.committed_validator_set()),
+                                ValidatorSetUpdatesStatus::None => false
+                            }
                         }
-                    },
-                    Phase::Prepare | Phase::Precommit | Phase::Commit => {
-                        match block_tree.validator_set_updates_status(&self.block)? {
-                            ValidatorSetUpdatesStatus::Committed => 
-                                Ok(self.is_correctly_signed(validator_set_state.previous_validator_set())),
-                            ValidatorSetUpdatesStatus::Pending(_) => 
-                                Ok(self.is_correctly_signed(validator_set_state.committed_validator_set())),
-                            ValidatorSetUpdatesStatus::None => Ok(false)
-                        }
+                        _ => false // Note: cannot panic here, since safe_qc has not been checked yet.
                     }
-                    _ => Ok(false) // Note: cannot panic here, since safe_qc has not been checked yet.
                 }
             }
-        } else {
-            Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))
-        }
+        };
+
+        Ok(result)
     }
 
     /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
@@ -162,6 +161,7 @@ impl QuorumCertificate {
     }
 }
 
+/// Voting phase in the hotstuff-rs consensus protocol.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
     // ↓↓↓ For pipelined flow ↓↓↓ //
@@ -202,8 +202,8 @@ impl Phase {
     }
 }
 
-/// Serves to incrementally form a [QuorumCertificate] by combining votes for the same chain id, view,
-/// block, and phase by replicas from a given [validator set](ValidatorSet).
+/// Serves to incrementally form a [QuorumCertificate] by keeping track of votes for the same chain id, 
+/// view, block, and phase by replicas from a given [validator set](ValidatorSet).
 #[derive(Clone)]
 pub(crate) struct VoteCollector {
     chain_id: ChainID,

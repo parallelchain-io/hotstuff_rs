@@ -148,7 +148,8 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
                         ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &self.block_tree),
                     }
                 },
-                Err(_) => {},
+                Err(ProgressMessageReceiveError::Disconnected) => panic!("The poller has disconnected!"),
+                Err(ProgressMessageReceiveError::Timeout) => {},
             }
 
         }

@@ -57,7 +57,7 @@
 //! 
 //! ## Locking rules
 //! 
-//! Locking servers to guarantee the safety of commit. In SMR protocols that follow the lock-commit
+//! Locking serves to guarantee the safety of commit. In SMR protocols that follow the lock-commit
 //! paradigm, a value has to be locked before it is committed. The idea is that even if only some
 //! replicas commit, the others hold a lock to the committed value and should eventually commit it.
 //! 

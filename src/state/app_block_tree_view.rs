@@ -3,6 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+//! Defines [AppBlockTreeView], an app-specific read-only interface for the 
+//! [block tree](crate::state::block_tree::BlockTree).
+
 use crate::hotstuff::types::QuorumCertificate;
 use crate::types::{
     basic::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},

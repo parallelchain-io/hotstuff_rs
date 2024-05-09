@@ -2,6 +2,8 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
+//! Defines the [BlockTreeCamera] which can be used to obtain [BlockTreeSnapshot]: an immutable, read-only
+//! interface for the [block tree](crate::state::block_tree::BlockTree).
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;

@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the [ValidatorSet] and [ValidatorSetUpdates] types and their associated methods.
+//! Definitions for the types that store information about validator sets and potential updates to validator sets:
+//! [ValidatorSet], [ValidatorSetUpdates], [ValidatorSetUpdatesStatus], [ValidatorSetState].
 
 use std::{
     collections::{HashMap, HashSet}, 

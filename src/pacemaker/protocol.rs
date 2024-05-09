@@ -47,16 +47,16 @@ use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::{AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent, TimeoutVoteEvent, UpdateHighestQCEvent, UpdateHighestTCEvent, ViewTimeoutEvent};
+use crate::events::{AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent, TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent};
 use crate::hotstuff::voting::is_validator;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
 use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::{EpochLength, Power};
+use crate::types::basic::EpochLength;
 use crate::types::collectors::{Certificate, Collectors};
-use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
+use crate::types::validators::{ValidatorSet, ValidatorSetState};
 use crate::types::{
     basic::{ChainID, ViewNumber}, 
     keypair::Keypair
@@ -583,6 +583,8 @@ fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
 fn select_leader_fairness_test() {
     use rand_core::OsRng;
     use ed25519_dalek::{SigningKey, VerifyingKey};
+    use crate::types::validators::ValidatorSetUpdates;
+    use crate::types::basic::Power;
 
     let mut csprg = OsRng {};
     let n = 20;
