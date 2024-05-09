@@ -4,25 +4,30 @@
 */
 
 //! Definitions for structured messages that are sent between replicas as part of the
-//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol:
-//! 1. [Proposal]: broadcasted by the leader of a given view, who proposes to extend the blockchain by 
+//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! 
+//! ## Messages
+//! 
+//! - [`Proposal``]: broadcasted by the leader of a given view, who proposes to extend the blockchain by 
 //!    inserting a block contained in the proposal.
-//! 2. [Nudge]: broadcasted by the leader of a given view, who nudges other validators to participate in
+//! - [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
 //!    a next voting phase for a block with a given quorum certificate.
-//! 3. [Vote]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
+//! - [`Vote`]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
 //!    contains a cryptographic signature over the information passed through a vote.
-//! 4. [NewView]: sent by a replica to the next leader on view timeout, serves to update the next leader
+//! - [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
 //!    on the highestQC that replicas know of.
 //! 
 //! ## Note on NewView
-//! In hotstuff-rs, unlike in the original HotStuff protocol, the leader of the next view does not keep
-//! track of the number of [NewView] messages collected in the current view with the aim of advancing
-//! to the next view once a quorum of [NewView] messages are seen. This is because the original HotStuff
-//! protocol does not come with a BFT view synchronization mechanism. Still, it offers a way to ensure
-//! that the view leader does not fall behind other replicas. The hotstuff-rs [Pacemaker](crate::pacemaker) 
-//! provides a Byzantine Fault Tolerant view synchronisation protocol which ensures that replicas advance
-//! to next views optimistically when progress is made, and on timeout when no progress is made.
-//! Therefore, keeping track of the [NewView] messages does not offer any extra benefit.
+//! 
+//! In the original HotStuff protocol, the leader of the next view keeps track of the number of
+//! `NewView` messages collected in the current view with the aim of advancing to the next view once a
+//! quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
+//! view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
+//! not come with a "fully-featured" BFT view synchronization mechanism.
+//! 
+//! HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
+//! form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
+//! unnecessary.
 
 use std::mem;
 

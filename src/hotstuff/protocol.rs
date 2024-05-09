@@ -6,6 +6,13 @@
 //! Implementation of the HotStuff protocol for Byzantine Fault Tolerant State Machine Replication,
 //! adapted for dynamic validator sets.
 //! 
+//! ## Protocol
+//! 
+//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements consists of two
+//! operating modes: a **Pipelined** mode, and a **Phased** mode.
+//! 
+//! ### Pipelined mode
+//! 
 //! The base protocol for consensus on blocks that do not update the validator set implements the
 //! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes 
 //! for its ancestors too. Thus, the base protocol consists of exchanging [Proposal], [Vote], and
@@ -20,12 +27,12 @@
 //!    proposal.
 //! 3. The next leader collects the votes into a QC, and saves it as its highestQC.
 //! 
+//! ### Phased mode
+//! 
 //! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
 //! associated validator set updates. This is because in a dynamic validator sets setting a desirable  
 //! property is immediacy - if B is a block that updates the validator set from vs to vs', then its 
 //! child shall be proposed and voted for by replicas from vs'.
-//! 
-//! ## HotStuff for dynamic validator sets
 //! 
 //! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is 
 //! supplemented with a non-pipelined version of HotStuff with an additional "decide" phase.
