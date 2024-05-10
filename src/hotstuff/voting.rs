@@ -39,7 +39,7 @@ use crate::hotstuff::types::{Phase, QuorumCertificate};
 /// 
 /// Usually, the proposer is the leader of the committed validator set. However, during the validator
 /// set update period the leader of the previous validator set can also act as the proposer.
-pub fn is_proposer(
+pub(crate) fn is_proposer(
     validator: &VerifyingKey, 
     view: ViewNumber, 
     validator_set_state: &ValidatorSetState,
@@ -55,7 +55,7 @@ pub fn is_proposer(
 /// view. However, during the validator set update period the leader of the previous validator set 
 /// for the next view is tasked with collecting all kinds of votes other than decide-phase votes, which
 /// are addressed to the next leader of the committed validator set.
-pub fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
+pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
     if validator_set_state.update_completed() {
         select_leader(vote.view+1, validator_set_state.committed_validator_set())
     } else {
@@ -81,7 +81,7 @@ pub fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> V
 /// justify satisfies [safe_qc](crate::state::safety::safe_qc) and 
 /// [is_correct](crate::hotstuff::types::QuorumCertificate::is_correct), and the block tree updates
 /// associated with this justify have already been applied.
-pub fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetState, justify: &QuorumCertificate) -> bool {
+pub(crate) fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetState, justify: &QuorumCertificate) -> bool {
     if validator_set_state.update_completed() {
         validator_set_state.committed_validator_set().contains(&validator)
     } else {
@@ -103,7 +103,7 @@ pub fn is_voter(validator: &VerifyingKey, validator_set_state: &ValidatorSetStat
 /// 
 /// In general, memebers of the committed validator set are always active, but during the validator
 /// set update period members of the previous validator set are active too.
-pub fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &ValidatorSetState) -> bool {
+pub(crate) fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &ValidatorSetState) -> bool {
     validator_set_state.committed_validator_set().contains(verifying_key) ||
     (!validator_set_state.update_completed() && 
     validator_set_state.previous_validator_set().contains(verifying_key))
@@ -111,7 +111,7 @@ pub fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &Validato
 
 /// Returns the leader(s) of a given view. In general, a view has only one leader, but during the 
 /// validator set update period the leader of the resigning validator set can act as a leader too.
-pub fn leaders(view: ViewNumber, validator_set_state: &ValidatorSetState) -> (VerifyingKey, Option<VerifyingKey>) {
+pub(crate) fn leaders(view: ViewNumber, validator_set_state: &ValidatorSetState) -> (VerifyingKey, Option<VerifyingKey>) {
     (select_leader(view, validator_set_state.committed_validator_set()),
      if validator_set_state.update_completed() {None} 
      else {Some(select_leader(view, validator_set_state.previous_validator_set()))})

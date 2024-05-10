@@ -116,7 +116,7 @@ impl<N: Network> HotStuff<N> {
     ) -> Self {
         let vote_collectors = 
             <Collectors<VoteCollector>>::new(config.chain_id, view_info.view, &init_validator_set_state);
-        let view_status = ViewStatus::ViewInProgress;
+        let view_status = ViewStatus::WaitingForProposal;
         Self { 
             config,
             view_info,
@@ -170,7 +170,7 @@ impl<N: Network> HotStuff<N> {
 
         // 2. Update current view info and status.
         self.view_info = view_info;
-        self.view_status = ViewStatus::ViewInProgress;
+        self.view_status = ViewStatus::WaitingForProposal;
         
 
         // 3. Update the vote collectors to collect votes for the updated view.
@@ -237,7 +237,7 @@ impl<N: Network> HotStuff<N> {
 
                 },
                 // Produce a nudge.
-                _ => {
+                Phase::Prepare | Phase::Precommit | Phase::Commit => {
                     let nudge_msg = HotStuffMessage::nudge(self.config.chain_id, self.view_info.view, highest_qc);
 
                     self.sender_handle.broadcast(nudge_msg.clone());
@@ -303,7 +303,7 @@ impl<N: Network> HotStuff<N> {
         if !proposal.block.is_correct(block_tree)? || !safe_block(&proposal.block, block_tree, self.config.chain_id)? {
             // Ensure that proposals or nudges from this leader should no longer be accepted in this view.
             match self.view_status {
-                ViewStatus::ViewInProgress => {
+                ViewStatus::WaitingForProposal => {
                     self.view_status = ViewStatus::LeaderProposed{leader: *origin}
                 },
                 ViewStatus::LeaderProposed{leader: _} => {
@@ -377,7 +377,7 @@ impl<N: Network> HotStuff<N> {
 
         // 6. Stop accepting proposals or nudges from this leader in this view.
         match self.view_status {
-            ViewStatus::ViewInProgress => {
+            ViewStatus::WaitingForProposal => {
                 self.view_status = ViewStatus::LeaderProposed{leader: *origin}
             },
             ViewStatus::LeaderProposed{leader: _} => {
@@ -404,7 +404,7 @@ impl<N: Network> HotStuff<N> {
         if !nudge.justify.is_correct(block_tree)? || !safe_nudge(&nudge, self.view_info.view, block_tree, self.config.chain_id)? {
             // Take note that proposals or nudges from this leader should no longer be accepted in this view.
             match self.view_status {
-                ViewStatus::ViewInProgress => {
+                ViewStatus::WaitingForProposal => {
                     self.view_status = ViewStatus::LeaderProposed{leader: *origin}
                 },
                 ViewStatus::LeaderProposed{leader: _} => {
@@ -461,7 +461,7 @@ impl<N: Network> HotStuff<N> {
 
         // 5. Stop accepting proposals or nudges from this leader in this view.
         match self.view_status {
-            ViewStatus::ViewInProgress => {
+            ViewStatus::WaitingForProposal => {
                 self.view_status = ViewStatus::LeaderProposed{leader: *origin}
             },
             ViewStatus::LeaderProposed{leader: _} => {
@@ -578,8 +578,8 @@ impl From<BlockTreeError> for HotStuffError {
 /// ## Variants
 /// 
 /// The `ViewStatus` can either be:
-/// 1. [`ViewInProgress`](ViewStatus::ViewInProgress): The view is in progress. Proposals and nudges
-///    from a valid leader (proposer) can be accepted.
+/// 1. [`WaitingForProposal`](ViewStatus::WaitingForProposal): No proposal or nudge was seen in this 
+///    view so far. Proposals and nudges from a valid leader (proposer) can be accepted.
 /// 2. [`LeaderProposed`](ViewStatus::LeaderProposed): The leader with a given public key has already
 ///    proposed or nudged. no more proposals or nudges from this leader can be accepted.
 /// 3. [`ViewCompleted`](ViewStatus::ViewCompleted): The view is completed (for use during the validator
@@ -593,17 +593,12 @@ impl From<BlockTreeError> for HotStuffError {
 /// losing the information about the highest view the replica has voted in, cannot lead to safety
 /// violations. In the worst case, it can only enable temporary liveness violations.
 pub enum ViewStatus {
-    ViewInProgress,
+    WaitingForProposal,
     LeaderProposed{leader: VerifyingKey},
     ViewCompleted,
 }
 
 impl ViewStatus {
-    /// Can any proposals/nudges from a valid leader be processed in this view?
-    fn is_view_in_progress(&self) -> bool {
-        matches!(self, ViewStatus::ViewInProgress)
-    }
-
     /// Has this leader already proposed/nudged in the current view?
     fn is_leader_proposed(&self, leader: &VerifyingKey) -> bool {
         match self {

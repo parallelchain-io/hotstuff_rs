@@ -5,7 +5,8 @@
 
 //! Definitions for structured messages that are sent between replicas.
 //!
-//! This includes messages [used in the progress protocol](ProgressMessage), and those [used in the sync protocol](SyncMessage).
+//! This includes messages [used in the progress protocol](ProgressMessage), and those 
+//! [used in the block sync protocol](BlockSyncMessage).
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, VerifyingKey, Verifier};
@@ -21,6 +22,11 @@ pub enum Message {
     BlockSyncMessage(BlockSyncMessage),
 }
 
+/// A message that serves to advance the consensus process, which may involve:
+/// 1. Participating in consesus via a [HotStuffMessage],
+/// 2. Syncing views with other replicas via a [PacemakerMessage] (required for consensus),
+/// 3. Triggering block sync on seeing a [BlockSyncTriggerMessage], which indicates that
+///    the replica is lagging behind the others (required for consensus).
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressMessage {
     HotStuffMessage(HotStuffMessage),

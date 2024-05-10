@@ -28,10 +28,16 @@ use super::{
 /// evidence comes in the form of a set of signatures of the validators.
 pub trait Certificate {
 
+    /// Returns whether the certificate is correct, i.e., can serve as evidence that a given block is 
+    /// approved by a quorum of validators assigned to validate it. This may require checking if it is 
+    /// correctly signed by a quorum of validators from an appropriate validator set.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError>;
 
+    /// Returns whether the certificate is correctly signed by a quorum of validators from the given 
+    /// validator set.
     fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool;
     
+    /// Returns the total power of validators from the given validator set that corresponds to a quorum.
     fn quorum(validator_set_power: TotalPower) -> TotalPower {
         const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
         TotalPower::new(

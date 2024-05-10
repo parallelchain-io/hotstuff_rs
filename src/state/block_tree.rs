@@ -31,7 +31,7 @@
 //! |Blocks|[CryptoHash] -> [Block]||
 //! |Block at Height|[BlockHeight] -> [CryptoHash]|A mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
 //! |Block to Children|[CryptoHash] -> [ChildrenList]|A mapping between a block's hash and the children it has in the block tree. A block may have multiple children if they have not been committed.|
-//! |Committed App State|[Vec<u8>] -> [Vec<u8>]||
+//! |Committed App State|[Vec<u8>] -> [Vec<u8>]| Current app state as per last committed block.|
 //! |Pending App State Updates|[CryptoHash] -> [AppStateUpdates]||
 //! |Committed Validator Set|[ValidatorSet]|The acting validator set.|
 //! |Previous Validator Set|[ValidatorSet]|The previous acting validator set, possibly still active if the update has not been completed yet.|
