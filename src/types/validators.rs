@@ -128,7 +128,7 @@ impl ValidatorSet {
     }
 
     pub(crate) fn quorum(&self) -> TotalPower {
-        const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";
+        const TOTAL_POWER_OVERFLOW: &str = "Validator set power exceeds u128::MAX/2. Read the itemdoc for `ValidatorSet`.";
 
         TotalPower::new(
         (self.total_power()

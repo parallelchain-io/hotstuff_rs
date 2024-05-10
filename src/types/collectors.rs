@@ -3,10 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the generic [SignedMessage] and [Collector] traits. Implementations used by the 
-//! [Pacemaker][crate::pacemaker::types] and [HotStuff][crate::hotstuff::types] protocols can be found 
-//! in the respective modules. The [Collectors] groups collectors for all active validator sets into
-//! a single struct, which can be easily updated on view or validator set state updates.
+//! Defines the generic [`SignedMessage`] and [`Collector`] traits. 
+//! 
+//! Implementations used by the [Pacemaker][crate::pacemaker::types] and 
+//! [HotStuff][crate::hotstuff::types] protocols can be found in the respective modules. [`Collectors`]
+//! groups collectors for all active validator sets into a single struct, which can be easily updated
+//! on view or validator set state updates.
 
 pub use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 pub use sha2::Sha256 as CryptoHasher;

@@ -116,7 +116,11 @@ impl<N: Network> SenderHandle<N> {
     }
 }
 
-/// Handle for informing the network provider about the validator set updates.
+/// Handle for informing the Network Provider about validator set updates.
+/// 
+/// It is important for the network provider to know about validator set updates because, for example,
+/// if a validator set update adds new validators into the validator set, the network provider may want
+/// to establish connections to these new validators.
 #[derive(Clone)]
 pub(crate) struct ValidatorSetUpdateHandle<N: Network> {
     network: N

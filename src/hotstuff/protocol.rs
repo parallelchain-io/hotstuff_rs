@@ -6,6 +6,13 @@
 //! Implementation of the HotStuff protocol for Byzantine Fault Tolerant State Machine Replication,
 //! adapted for dynamic validator sets.
 //! 
+//! ## HotStuff for dynamic validator sets
+//! 
+//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements consists of two
+//! operating modes: a **Pipelined** mode, and a **Phased** mode.
+//! 
+//! ### Pipelined mode
+//! 
 //! The base protocol for consensus on blocks that do not update the validator set implements the
 //! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes 
 //! for its ancestors too. Thus, the base protocol consists of exchanging [Proposal], [Vote], and
@@ -20,12 +27,12 @@
 //!    proposal.
 //! 3. The next leader collects the votes into a QC, and saves it as its highestQC.
 //! 
+//! ### Phased mode
+//! 
 //! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
 //! associated validator set updates. This is because in a dynamic validator sets setting a desirable  
 //! property is immediacy - if B is a block that updates the validator set from vs to vs', then its 
 //! child shall be proposed and voted for by replicas from vs'.
-//! 
-//! ## HotStuff for dynamic validator sets
 //! 
 //! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is 
 //! supplemented with a non-pipelined version of HotStuff with an additional "decide" phase.
@@ -43,12 +50,12 @@
 //!     send [Phase::Decide] votes.
 //! 
 //! The "decide" phase is special as it enforces a liveness-preserving transition between the two
-//! validator sets. Concretely, on seeing a commitQC new validator set becomes committed and its 
-//! members vote "decide" for the block, with the goal of producing a decideQC. However, in case 
+//! validator sets. Concretely, on seeing a CommitQC, a new validator set becomes committed and its 
+//! members vote "decide" for the block, with the goal of producing a DecideQC. However, in case 
 //! they fail to do so, the resigning validator set is still active and ready to re-initiate the 
 //! "decide" phase by broadcasting the commitQC if needed - the resigning validators only completely
-//! de-activate themselves on seeing a decideQC for the block. This guarantees the invariant that 
-//! if a decideQC exists, a quorum from the new validator set has committed the validator set update
+//! de-activate themselves on seeing a DecideQC for the block. This guarantees the invariant that 
+//! if a DecideQC exists, a quorum from the new validator set has committed the validator set update
 //! and is ready to make progress.
 
 use std::sync::mpsc::Sender;
@@ -564,19 +571,25 @@ impl From<BlockTreeError> for HotStuffError {
     }
 }
 
-/// Captures the state of progress in a view. Keeping track of the [ViewStatus] is important for
+/// Captures the state of progress in a view. Keeping track of the `ViewStatus` is important for
 /// ensuring that a leader can only propose once in a view - any subsequent proposals will be
 /// ignored.
 /// 
-/// The [ViewStatus] can signal either of the above:
-/// 1. The view is in progress: proposals and nudges from a valid leader (proposer) can be accepted.
-/// 2. The leader with a given public key has already proposed or nudged: no more proposals or nudges
-///    from this leader can be accepted.
-/// 3. The view is completed (for use during the validator set update period): all leaders for the
-///    view have proposed or nudged, hence no more proposals or nudges can be accepted in this view.
+/// ## Variants
+/// 
+/// The `ViewStatus` can either be:
+/// 1. [`ViewInProgress`](ViewStatus::ViewInProgress): The view is in progress. Proposals and nudges
+///    from a valid leader (proposer) can be accepted.
+/// 2. [`LeaderProposed`](ViewStatus::LeaderProposed): The leader with a given public key has already
+///    proposed or nudged. no more proposals or nudges from this leader can be accepted.
+/// 3. [`ViewCompleted`](ViewStatus::ViewCompleted): The view is completed (for use during the validator
+///    set update period). All leaders for the view have proposed or nudged, hence no more proposals or
+///    nudges can be accepted in this view.
+/// 
+/// ## Persistence
 /// 
 /// Note that a variable of this type is stored in memory allocated to the program at runtime, rather
-/// than persistent storage. This is because losing the information stored in [ViewStatus], unlike
+/// than persistent storage. This is because losing the information stored in `ViewStatus`, unlike
 /// losing the information about the highest view the replica has voted in, cannot lead to safety
 /// violations. In the worst case, it can only enable temporary liveness violations.
 pub enum ViewStatus {
