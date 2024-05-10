@@ -135,8 +135,8 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
 
             // 4. In case the view has been updated, update HotStuff's internal view and perform
             // the necessary protocol steps.
-            if view_info.view != self.hotstuff.view_info().view {
-                self.hotstuff.on_receive_view_info(view_info.clone(), &mut self.block_tree, &mut self.app).expect("HotStuff failure!")
+            if self.hotstuff.is_view_outdated(view_info) {
+                self.hotstuff.on_enter_view(view_info.clone(), &mut self.block_tree, &mut self.app).expect("HotStuff failure!")
             }
 
             // 5. Poll the network for incoming messages.

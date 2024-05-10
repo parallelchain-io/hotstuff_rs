@@ -128,9 +128,10 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
-    /// Retrieve the view info currently used by the HotStuff protocol.
-    pub(crate) fn view_info(&self) -> &ViewInfo {
-        &self.view_info
+    /// Returns if the HotStuff internal view is outdated with respect to the view from [ViewInfo] provided
+    /// by the [Pacemaker](crate::pacemaker::protocol::Pacemaker).
+    pub(crate) fn is_view_outdated(&self, new_view_info: &ViewInfo) -> bool {
+        new_view_info.view != self.view_info.view
     }
 
     /// On receiving new [ViewInfo] from the [Pacemaker](crate::pacemaker::protocol::Pacemaker): send messages
@@ -143,9 +144,9 @@ impl<N: Network> HotStuff<N> {
     /// 
     /// ## Precondition
     /// The [Pacemaker](crate::pacemaker::protocol::Pacemaker) updated the view info.
-    pub(crate) fn on_receive_view_info<K: KVStore>(
+    pub(crate) fn on_enter_view<K: KVStore>(
         &mut self, 
-        view_info: ViewInfo,
+        new_view_info: ViewInfo,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
@@ -169,7 +170,7 @@ impl<N: Network> HotStuff<N> {
         }
 
         // 2. Update current view info and status.
-        self.view_info = view_info;
+        self.view_info = new_view_info;
         self.view_status = ViewStatus::WaitingForProposal;
         
 
