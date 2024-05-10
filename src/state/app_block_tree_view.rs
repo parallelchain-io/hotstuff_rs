@@ -16,12 +16,14 @@ use crate::types::{
 use super::block_tree::BlockTreeError;
 use super::{block_tree::BlockTree, kv_store::KVStore};
 
-
+/// View of the block tree, which may be used by the [App](crate::app::App) to produce or validate a 
+/// block. It provides:
+/// 1. A reference to the block tree,
+/// 2. A vector of optional app state updates associated with the ancestors of a given block, starting
+///    from the block's parent (if any) and ending at the oldest uncommitted ancestor.
 pub struct AppBlockTreeView<'a, K: KVStore> {
     pub(super) block_tree: &'a BlockTree<K>,
-    pub(super) parent_app_state_updates: Option<AppStateUpdates>,
-    pub(super) grandparent_app_state_updates: Option<AppStateUpdates>,
-    pub(super) great_grandparent_app_state_updates: Option<AppStateUpdates>,
+    pub(super) pending_ancestors_app_state_updates: Vec<Option<AppStateUpdates>>,
 }
 
 impl<'a, K: KVStore> AppBlockTreeView<'a, K> {
@@ -57,31 +59,23 @@ impl<'a, K: KVStore> AppBlockTreeView<'a, K> {
         self.block_tree.block_at_height(height)
     }
 
+    /// Get the current app state associated with a given key, as per the state of the key value store
+    /// reflecting the app state changes (possibly pending) introduced by the chain of ancestors of a
+    /// given block.
     pub fn app_state(&'a self, key: &[u8]) -> Option<Vec<u8>> {
-        if let Some(parent_app_state_updates) = &self.parent_app_state_updates {
-            if parent_app_state_updates.contains_delete(&key.to_vec()) {
-                return None;
-            } else if let Some(value) = parent_app_state_updates.get_insert(&key.to_vec()) {
-                return Some(value.clone());
-            }
-        }
 
-        if let Some(grandparent_app_state_changes) = &self.grandparent_app_state_updates {
-            if grandparent_app_state_changes.contains_delete(&key.to_vec()) {
-                return None;
-            } else if let Some(value) = grandparent_app_state_changes.get_insert(&key.to_vec()) {
-                return Some(value.clone());
-            }
-        }
+        let latest_key_update = 
+            self.pending_ancestors_app_state_updates.iter()
+            .find(|app_state_updates_opt| 
+                  if let Some(app_state_updates) = app_state_updates_opt {
+                    app_state_updates.contains_delete(&key.to_vec()) || app_state_updates.get_insert(&key.to_vec()).is_some()
+                  } else {false});
 
-        if let Some(great_grandparent_app_state_changes) = &self.great_grandparent_app_state_updates
-        {
-            if great_grandparent_app_state_changes.contains_delete(&key.to_vec()) {
-                return None;
-            } else if let Some(value) =
-                great_grandparent_app_state_changes.get_insert(&key.to_vec())
-            {
-                return Some(value.clone());
+        if let Some(Some(app_state_updates)) = latest_key_update {
+            if app_state_updates.contains_delete(&key.to_vec()) {
+                return None
+            } else if let Some(value) = app_state_updates.get_insert(&key.to_vec()) {
+                return Some(value.clone())
             }
         }
 

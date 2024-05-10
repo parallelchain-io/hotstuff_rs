@@ -389,56 +389,57 @@ impl<K: KVStore> BlockTree<K> {
     /* ↓↓↓ Get AppBlockTreeView for ProposeBlockRequest and ValidateBlockRequest */
 
     pub(crate) fn app_view<'a>(&'a self, parent: Option<&CryptoHash>) -> Result<AppBlockTreeView<'a, K>, BlockTreeError> {
-        if parent.is_none() {
-            return Ok(
-                AppBlockTreeView {
-                    block_tree: self,
-                    parent_app_state_updates: None,
-                    grandparent_app_state_updates: None,
-                    great_grandparent_app_state_updates: None,
-                }
+        let highest_committed_block_height = self.highest_committed_block_height()?;
+        let parent = 
+            match parent {
+                None => None,
+                Some(&b) => Some(b)
+            };
+
+        // Obtain an iterator over the ancestors starting from the parent, all the way until genesis, 
+        // from newest (parent) to oldest.
+        let ancestors_iter =
+            successors(
+            parent, 
+            |b| 
+                self.block_justify(b).ok()
+                .map(|qc| if !qc.is_genesis_qc() {Some(qc.block)} else {None})
+                .flatten()
+            );
+        
+        let ancestors_heights_iter = 
+            ancestors_iter
+            .clone()
+            .map(|block| 
+                self.block_height(&block)
+                .map(|res| if res.is_none() {Err(BlockTreeError::BlockExpectedButNotFound{block: block.clone()})} else {Ok(res.unwrap())})
             )
-        }
+            .flatten()
+            .flatten();
 
-        let parent_app_state_updates = self.pending_app_state_updates(parent.unwrap())?;
-        let parent_justify = self.block_justify(parent.unwrap()).unwrap();
-
-        if parent_justify.is_genesis_qc() {
-            return Ok(
-                AppBlockTreeView {
-                    block_tree: self,
-                    parent_app_state_updates,
-                    grandparent_app_state_updates: None,
-                    great_grandparent_app_state_updates: None,
-                }
+        // Obtain an iterator over the uncomitted ancestors starting from the parent,
+        // ending at the lowest uncommitted ancestor.
+        let uncommitted_ancestors_iter =
+            ancestors_iter
+            .zip(ancestors_heights_iter)
+            .take_while(|(_, height)| 
+                highest_committed_block_height.is_none() || 
+                highest_committed_block_height.is_some_and(|h| height > &h)
             )
-        }
+            .map(|(b, _)| b);
 
-        let grandparent = parent_justify.block;
-        let grandparent_app_state_updates = self.pending_app_state_updates(&grandparent)?;
-        let grandparent_justify = self.block_justify(&grandparent).unwrap();
-
-        if grandparent_justify.is_genesis_qc() {
-            return Ok(
-                AppBlockTreeView {
-                    block_tree: self,
-                    parent_app_state_updates,
-                    grandparent_app_state_updates,
-                    great_grandparent_app_state_updates: None,
-                }
-            )
-        }
-
-        let great_grandparent = grandparent_justify.block;
-        let great_grandparent_app_state_updates =
-            self.pending_app_state_updates(&great_grandparent)?;
+        // Obtain a vector of optional app state updates associated with ancestors
+        // starting from the parent, ending at the oldest uncommitted ancestor.
+        let pending_ancestors_app_state_updates: Vec<Option<AppStateUpdates>> = 
+            uncommitted_ancestors_iter
+            .map(|block| self.pending_app_state_updates(&block))
+            .flatten()
+            .collect();
 
         Ok(
             AppBlockTreeView {
                 block_tree: self,
-                parent_app_state_updates,
-                grandparent_app_state_updates,
-                great_grandparent_app_state_updates,
+                pending_ancestors_app_state_updates
             }
         )
     }
