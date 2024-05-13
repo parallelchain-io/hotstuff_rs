@@ -274,7 +274,7 @@ impl<N: Network> HotStuff<N> {
                 return Ok(())
             }
 
-            if self.view_status.is_leader_proposed(origin) || self.view_status.is_view_completed() {
+            if self.view_status.has_one_leader_proposed(origin) || self.view_status.have_all_leaders_proposed() {
                 return Ok(())
             }
 
@@ -579,9 +579,8 @@ impl From<BlockTreeError> for HotStuffError {
 ///    view so far. Proposals and nudges from a valid leader (proposer) can be accepted.
 /// 2. [`OneLeaderProposed`](ViewStatus::OneLeaderProposed): The leader with a given public key has already
 ///    proposed or nudged. no more proposals or nudges from this leader can be accepted.
-/// 3. [`AllLeadersProposed`](ViewStatus::AllLeadersProposed): The view is completed (for use during the validator
-///    set update period). All leaders for the view have proposed or nudged, hence no more proposals or
-///    nudges can be accepted in this view.
+/// 3. [`AllLeadersProposed`](ViewStatus::AllLeadersProposed): All leaders for the view have proposed or
+///    nudged, hence no more proposals or nudges can be accepted in this view.
 /// 
 /// ## Persistence
 /// 
@@ -597,7 +596,7 @@ pub enum ViewStatus {
 
 impl ViewStatus {
     /// Has this leader already proposed/nudged in the current view?
-    fn is_leader_proposed(&self, leader: &VerifyingKey) -> bool {
+    fn has_one_leader_proposed(&self, leader: &VerifyingKey) -> bool {
         match self {
             ViewStatus::OneLeaderProposed{leader: validator} => {
                 validator == leader
@@ -608,7 +607,7 @@ impl ViewStatus {
 
     /// Have all (max. 2) leaders already proposed/nudged in this view?
     /// Note: this can evaluate to true only during the validator set update period.
-    fn is_view_completed(&self) -> bool {
+    fn have_all_leaders_proposed(&self) -> bool {
         matches!(self, ViewStatus::AllLeadersProposed)
     }
 }
