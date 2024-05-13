@@ -111,6 +111,13 @@ pub(crate) fn is_validator(verifying_key: &VerifyingKey, validator_set_state: &V
 
 /// Returns the leader(s) of a given view. In general, a view has only one leader, but during the 
 /// validator set update period the leader of the resigning validator set can act as a leader too.
+/// 
+/// ## Return value
+/// 
+/// Returns a pair with the following items:
+/// 1. `VerifyingKey`: the leader in the committed validator set in the specified view.
+/// 2. `Option<VerifyingKey>`: the leader in the resigning validator set in the specified view (`None`
+///     if the most recently initiated validator set update has been completed).
 pub(crate) fn leaders(view: ViewNumber, validator_set_state: &ValidatorSetState) -> (VerifyingKey, Option<VerifyingKey>) {
     (select_leader(view, validator_set_state.committed_validator_set()),
      if validator_set_state.update_completed() {None} 
