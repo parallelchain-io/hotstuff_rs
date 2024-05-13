@@ -143,8 +143,10 @@ impl<N: Network> HotStuff<N> {
     /// 3. If serving as a leader of the newly entered view, propose or nudge.
     /// 
     /// ## Precondition
-    /// The [Pacemaker](crate::pacemaker::protocol::Pacemaker) updated the view info.
-    pub(crate) fn on_enter_view<K: KVStore>(
+    /// [Self::is_view_outdated] returns true. This is the case when the 
+    /// [Pacemaker](crate::pacemaker::protocol::Pacemaker) updated the view info but the update has not been
+    /// propagated to the [HotStuff] protocol yet.
+    pub(crate) fn enter_view<K: KVStore>(
         &mut self, 
         new_view_info: ViewInfo,
         block_tree: &mut BlockTree<K>,
