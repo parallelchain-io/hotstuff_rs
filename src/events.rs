@@ -33,7 +33,7 @@
 //! [insert block event](InsertBlockEvent) is only emitted after the insertion has been persisted into 
 //! the backing storage of the block tree.
 
-use std::time::{SystemTime, Duration};
+use std::time::SystemTime;
 use std::sync::mpsc::Sender;
 
 use ed25519_dalek::VerifyingKey;

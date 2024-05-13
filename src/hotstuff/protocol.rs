@@ -343,9 +343,8 @@ impl<N: Network> HotStuff<N> {
             // 4. Access the possibly updated validator set state, and update the vote collectors if needed.
             let validator_set_state = block_tree.validator_set_state()?;
 
-            if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
-                self.vote_collectors.update_validator_sets(&validator_set_state)
-            }
+
+            let _ = self.vote_collectors.update_validator_sets(&validator_set_state);
 
             // 5. Vote, if I am allowed to vote and if I haven't voted in this view yet.
             if is_voter(&self.config.keypair.public(), &validator_set_state, &proposal.block.justify) 
@@ -427,9 +426,8 @@ impl<N: Network> HotStuff<N> {
         // 3. Access the possibly updated validator set state, and update the vote collectors if needed.
         let validator_set_state = block_tree.validator_set_state()?;
 
-        if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
-            self.vote_collectors.update_validator_sets(&validator_set_state)
-        }
+        let _ = self.vote_collectors.update_validator_sets(&validator_set_state);
+
 
         // 4. Vote, if I am allowed to vote and if I haven't voted in this view yet.
         if is_voter(&self.config.keypair.public(), &validator_set_state, &nudge.justify) 
@@ -509,9 +507,7 @@ impl<N: Network> HotStuff<N> {
                 // (if new QC collected).
                 let validator_set_state = block_tree.validator_set_state()?;
 
-                if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
-                    self.vote_collectors.update_validator_sets(&validator_set_state)
-                }
+                let _ = self.vote_collectors.update_validator_sets(&validator_set_state);
             }
         }
         
@@ -544,9 +540,8 @@ impl<N: Network> HotStuff<N> {
             // (if new QC collected).
             let validator_set_state = block_tree.validator_set_state()?;
 
-            if self.vote_collectors.should_update_validator_sets(&validator_set_state) {
-                self.vote_collectors.update_validator_sets(&validator_set_state)
-            }
+            let _ = self.vote_collectors.update_validator_sets(&validator_set_state);
+
         }
 
         Ok(())

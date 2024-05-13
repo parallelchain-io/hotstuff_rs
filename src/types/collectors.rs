@@ -92,16 +92,27 @@ impl<CL:Collector> Collectors<CL> {
         }
     }
 
-    /// Update the collectors in response to an update of the [validator set state](ValidatorSetState).
-    pub(crate) fn update_validator_sets(&mut self, validator_set_state: &ValidatorSetState) {
+    /// Checks if the collectors should be updated given possible updates to the 
+    /// [validator set state](ValidatorSetState), and if so it updates the collectors to match the new 
+    /// validator set state. Returns whether the collectors have been updated.
+    pub(crate) fn update_validator_sets(&mut self, validator_set_state: &ValidatorSetState) -> bool {
         
         let chain_id = self.committed_validator_set_collector.chain_id();
         let view = self.committed_validator_set_collector.view();
 
+        let validator_set_update_period_started = 
+            self.prev_validator_set_collector.is_none() & !validator_set_state.update_completed();
+
+        let committed_validator_set_was_updated = 
+            self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set();
+
+        let validator_set_update_period_ended = 
+            self.prev_validator_set_collector.is_some() && validator_set_state.update_completed();
+
         // If a validator set update has been initiated but no vote collector has been assigned for
         // the previous validator set. In this case, the previous validator set must be equal to the
         // committed validator set stored by the vote collectors.
-        if self.prev_validator_set_collector.is_none() & !validator_set_state.update_completed() {
+        if validator_set_update_period_started {
             if validator_set_state.previous_validator_set() == self.committed_validator_set_collector.validator_set() {
                 self.prev_validator_set_collector = Some(self.committed_validator_set_collector.clone())
             } else {
@@ -110,7 +121,7 @@ impl<CL:Collector> Collectors<CL> {
         }
 
         // If the committed validator set has been updated.
-        if self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() {
+        if committed_validator_set_was_updated {
             self.committed_validator_set_collector = CL::new(
                 chain_id, 
                 view, 
@@ -118,20 +129,16 @@ impl<CL:Collector> Collectors<CL> {
             )
         }
 
-        // If the validator set update has been marked as complete. In this case, a collector
+        // If the validator set update has been marked as completed. In this case, a collector
         // for the previous validator set is not required anymore.
-        if self.prev_validator_set_collector.is_some() && validator_set_state.update_completed() {
+        if validator_set_update_period_ended {
             self.prev_validator_set_collector = None
         }
 
-    }
+        validator_set_update_period_started ||
+        committed_validator_set_was_updated ||
+        validator_set_update_period_ended
 
-    /// Checks if the collectors should be updated given possible updates to the validator
-    /// set state.
-    pub(crate) fn should_update_validator_sets(&self, validator_set_state: &ValidatorSetState) -> bool {
-        self.committed_validator_set_collector.validator_set() != validator_set_state.committed_validator_set() ||
-        (self.prev_validator_set_collector.is_some() && validator_set_state.update_completed()) ||
-        (self.prev_validator_set_collector.is_none() && !validator_set_state.update_completed())
     }
 
     /// Collects the message with the appropriate collector.

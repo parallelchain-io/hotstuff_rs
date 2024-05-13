@@ -168,9 +168,8 @@ impl<N: Network> Pacemaker<N> {
 
         // 2. Check if the timeout vote collectors need to be updated in response to a validator set
         //    state update. 
-        if self.state.timeout_vote_collectors.should_update_validator_sets(&validator_set_state) {
-            self.state.timeout_vote_collectors.update_validator_sets(&validator_set_state)
-        }
+        let _ = self.state.timeout_vote_collectors.update_validator_sets(&validator_set_state);
+        
 
         // 3. Check if a QC for the current view is available and if I am a validator, and if so 
         //    broadcast an advance view message.

@@ -47,7 +47,7 @@ impl ProgressMessage {
         match self {
             ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
             ProgressMessage::PacemakerMessage(msg) => Some(msg.view()),
-            ProgressMessage::BlockSyncTriggerMessage(msg) => None,
+            ProgressMessage::BlockSyncTriggerMessage(_) => None,
         }
     }
 
@@ -61,7 +61,7 @@ impl ProgressMessage {
 
     pub fn is_block_sync_trigger_msg(&self) -> bool {
         match self {
-            ProgressMessage::BlockSyncTriggerMessage(msg) => true,
+            ProgressMessage::BlockSyncTriggerMessage(_) => true,
             _ => false,
         }
     }
