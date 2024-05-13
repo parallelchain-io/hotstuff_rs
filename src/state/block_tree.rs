@@ -333,7 +333,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     /// Performs depth-first search to collect all blocks in a branch into a single iterator.
-    fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
+    pub fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
         let mut stack: Vec<CryptoHash> = vec![root];
         let mut branch: Vec<CryptoHash> = vec![];
 

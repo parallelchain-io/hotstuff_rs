@@ -300,6 +300,13 @@ impl ValidatorSetUpdatesStatus {
             Self::Pending(_) | Self::Committed => true,
         }
     }
+
+    pub fn is_pending(&self) -> bool {
+        match self {
+            Self::Pending(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// [ValidatorSetUpdatesStatus] where public keys of validators are stored as bytes.
