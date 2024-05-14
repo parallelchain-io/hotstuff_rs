@@ -35,10 +35,10 @@
 //! child shall be proposed and voted for by replicas from vs'.
 //! 
 //! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is 
-//! supplemented with a non-pipelined version of HotStuff with an additional "decide" phase.
-//! This means that the voting for a validator-set-updating block proceeds in 4 phases, through
-//! which the validators are only voting for the block, but not for its ancestors. If this 4-phase
-//! consensus is interrupted, then the block has to be re-proposed, which guarantees safety.
+//! supplemented with a "phased" version of HotStuff with an additional "decide" phase. This means that
+//! the voting for a validator-set-updating block proceeds in 4 phases, through which the validators are
+//! only voting for the block, but not for its ancestors. If this 4-phase consensus is interrupted, then
+//! the block has to be re-proposed, which guarantees safety.
 //! 
 //! The consensus phases for a validator-set-updating block B proceed as follows:
 //! 1. "Prepare" phase: the leader broadcasts a proposal for B, replicas send [Phase::Prepare] votes.

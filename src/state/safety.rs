@@ -5,25 +5,25 @@
 
 //! This module contains implementations of rules that collectively guarantee the safety of hotstuff-rs.
 //! 
-//! In hotstuff-rs, the key events that can trigger state updates are:
+//! In HotStuff-rs, the key events that can trigger state updates are:
 //! 1. Receiving a block proposal,
 //! 2. Receiving a nudge.
 //! 
 //! If a block or a nudge is considered safe, then it is safe for it to trigger state updates inside the
-//! [BlockTree]. This generally requires that the block or nudge is well-formed, and that the quroum
+//! [`BlockTree`]. This generally requires that the block or nudge is well-formed, and that the quroum
 //! certificate that it references is cryptographically correct and safe. However, since nudges
-//! implement a version of the non-pipelined HotStuff consensus for validator-set-updating blocks, a
-//! non-decide-phase nudge is only safe if it is broadcasted in the next view relative to the view in
+//! implement a version of the "phased" HotStuff consensus for validator-set-updating blocks, a
+//! non-Decide-phase nudge is only safe if it is broadcasted in the next view relative to the view in
 //! which its justify is collected. 
 //! 
-//! While [safe_block], [safe_nudge], and [safe_qc] define what it means for a block, nudge, or QC,
-//! to be safe, and hence be allowed to trigger state updates, [qc_to_lock] and [block_to_commit]
+//! While [`safe_block`], [`safe_nudge`], and [`safe_qc`] define what it means for a block, nudge, or
+//! QC to be safe, and hence be allowed to trigger state updates, [`qc_to_lock`] and [`block_to_commit`]
 //! can be used to determine which updates can be made on seeing a safe nudge or a safe block.
 //! This depends on the commit and locking rules.
 //! 
 //! ## Safe QC
 //! 
-//! A safe QC must match the chain id of the replica (to avoid having state updates triggered by a
+//! A safe QC must match the Chain ID of the replica (to avoid having state updates triggered by a
 //! QC from another blockchain). It must also have an appropriate phase depending on whether the
 //! block it justifies has associated validator set updates or not, and it must be for a known
 //! block, i.e., a block that is already stored in the BlockTree.
@@ -34,7 +34,7 @@
 //! 
 //! The former condition guarantees safety in case a quorum of replicas is locked on a given block,
 //! while the latter ensures liveness in case the quorum has moved to a conflicting branch and
-//! there exists evidence for it. The evidence would be a newely received QC with a view higher than the
+//! there exists evidence for it. The evidence would be a newly received QC with a view higher than the
 //! view of the replica's locked QC.
 //! 
 //! ## Commit rules
@@ -43,8 +43,8 @@
 //! pipelined HotStuff protocol requires that in order to be committed a block must be followed by a
 //! 3-chain. Concretely, the three QCs referenced by its child, grandchild, and great-grandchild, 
 //! serving as its prepareQC, precommitQC, and commitQC respectively, must have consecutive views.
-//! [block_to_commit] enforces this rule for the pipelined protocol for non-validator-set-updating
-//! blocks. It is not required in [safe_block] since blocks can be safely added even if their 
+//! [`block_to_commit`] enforces this rule for the pipelined protocol for non-validator-set-updating
+//! blocks. It is not required in [`safe_block`] since blocks can be safely added even if their 
 //! ancestors don't have consecutive views - but commit of the branch will only be triggered once
 //! there is a 3-chain.
 //! 
@@ -77,7 +77,7 @@
 //! consecutive views requirement this is equivalent to locking the prepareQC. Since the block sync 
 //! protocol does not involve sending nudges, we must also lock the decideQC when referenced by the
 //! block. This is to ensure that subsequently received blocks are not accepted if they conflict with 
-//! it. This is enforced through [qc_to_lock].
+//! it. This is enforced through [`qc_to_lock`].
 
 use crate::hotstuff::{
     messages::Nudge, 
@@ -290,12 +290,17 @@ pub(crate) fn block_to_commit<K: KVStore>(
     }
 }
 
-/// Returns whether a block needs to be re-proposed or not, and if yes then which block. This method
-/// should be called by a leader to determine whether a block should be re-proposed or whether a 
-/// proposal or nudge referencing the highest qc should be broadcasted. The former may happen in case
-/// the sequence of nudges for a validator-set-updating block has been interrupted and the commit rule
-/// cannot be satisfied. In such case proposing or nudging on top of the highest_qc is doomed to fail, 
-/// and instead the block that the highest_qc points to should be re-proposed.
+/// Returns whether the leader of the current view should re-propose an existing block, and if so, which
+/// block. If `Ok(Some(block_hash))` is returned, then the leader should re-propose the block identified by 
+/// `block_hash`. Else if `Ok(None)` is returned, then the leader should either propose a new block, or
+/// nudge using the highest qc.
+/// 
+/// ## Purpose
+/// 
+/// The leader needs to re-propose an existing block in scenarios where the Highest QC in the Block Tree
+/// indicates that the consecutive-view sequence of nudges required to commit a validator-set updating
+/// block has been broken. In these scenarios, nudging the Highest QC will not allow state machine
+/// replication to make progress.
 pub(crate) fn repropose_block<K: KVStore>(
     cur_view: ViewNumber, 
     block_tree: &BlockTree<K>) 
