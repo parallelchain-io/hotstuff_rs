@@ -11,7 +11,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, VerifyingKey, Verifier};
 
-use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncTriggerMessage};
+use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncAdvertiseMessage};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::pacemaker::messages::PacemakerMessage;
 use crate::types::basic::{ChainID, SignatureBytes, ViewNumber};
@@ -31,7 +31,7 @@ pub enum Message {
 pub enum ProgressMessage {
     HotStuffMessage(HotStuffMessage),
     PacemakerMessage(PacemakerMessage),
-    BlockSyncTriggerMessage(BlockSyncTriggerMessage),
+    BlockSyncTriggerMessage(BlockSyncAdvertiseMessage),
 }
 
 impl ProgressMessage {
@@ -126,8 +126,8 @@ impl From<BlockSyncResponse> for Message {
 impl From<AdvertiseBlock> for Message {
     fn from(value: AdvertiseBlock) -> Self {
         Message::ProgressMessage(ProgressMessage::
-            BlockSyncTriggerMessage(BlockSyncTriggerMessage::
-                AdvertiseBlock(value)
+            BlockSyncTriggerMessage(
+                BlockSyncAdvertiseMessage::AdvertiseBlock(value)
             )
         )
     }

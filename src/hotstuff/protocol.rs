@@ -626,11 +626,11 @@ impl ViewStatus {
 /// 
 /// # Precondition
 /// The block or nudge with this justify must satisfy [safety::safe_block] or [safety::safe_nudge] respectively.
-fn update_block_tree<K: KVStore>(
+pub(crate) fn update_block_tree<K: KVStore>(
     justify: &QuorumCertificate, 
     block_tree: &mut BlockTree<K>,
     event_publisher: &Option<Sender<Event>>) 
-    -> Result<Option<ValidatorSetUpdates>, HotStuffError> 
+    -> Result<Option<ValidatorSetUpdates>, BlockTreeError> 
 {   
     let mut wb = BlockTreeWriteBatch::new();
 

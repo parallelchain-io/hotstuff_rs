@@ -73,6 +73,13 @@ impl Add<u64> for BlockHeight {
     }
 }
 
+impl Sub<BlockHeight> for BlockHeight {
+    type Output = u64;
+    fn sub(self, rhs: BlockHeight) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
 /// Set of blocks which represents the children of an existing block in the blockchain.
 #[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize, Default)]
 pub struct ChildrenList(Vec<CryptoHash>);

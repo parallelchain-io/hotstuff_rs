@@ -8,16 +8,36 @@
 //! 2. Managing the list of peers available as sync servers and a blacklist for sync servers that have provided incorrect information in the past, and
 //! 3. Selecting a peer to sync with from the list of available peers, and
 //! 4. The syncing process with a given peer.
+//! 
+//! ## Available sync servers
+//! In general, available sync servers are current and potential validators that:
+//! 1. Are "In sync" or ahead of the replica in terms of highest committed block height,
+//! 2. Notify the replica's sync client about their availability,
+//! 3. Have not provided false information to the block sync client within a certain period of time specified
+//!    by the blacklist expiry time. By "false information" we mean incorrect blocks or incorrect highest
+//!    committed block height (used to determine 1).
+//! 
+//! Keeping track of which peers can be considered available sync servers is done by maintaining a hashmap
+//! of available sync servers, and a queue of blacklisted sync servers together with their expiry times.
+//! 
+//! ## Sync process
+//! TODO
+//! 
+//! ## Block sync trigger
+//! TODO
 
-use std::{collections::{HashMap, HashSet}, iter, sync::mpsc::Sender, time::Duration};
+use std::collections::{HashMap, VecDeque};
+use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant, SystemTime};
 
 use ed25519_dalek::VerifyingKey;
+use rand::seq::IteratorRandom;
 
-use crate::{events::Event, state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore}, types::{basic::CryptoHash, validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus}}};
+use crate::{app::{App, ValidateBlockRequest, ValidateBlockResponse}, events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent}, hotstuff::protocol::update_block_tree, messages::SignedMessage, networking::BlockSyncResponseReceiveError, state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore, safety::{safe_block, safe_qc}}, types::{basic::{BlockHeight, CryptoHash}, block::Block, collectors::Certificate, validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus}}};
 use crate::networking::{BlockSyncClientStub, Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::types::basic::ChainID;
 
-use super::messages::{BlockSyncRequest, BlockSyncTriggerMessage};
+use super::messages::{AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest};
 
 pub(crate) struct BlockSyncClient<N: Network> {
     config: BlockSyncClientConfiguration,
@@ -30,6 +50,7 @@ pub(crate) struct BlockSyncClient<N: Network> {
 
 impl<N: Network> BlockSyncClient<N> {
 
+    /// Create a new instance of the [BlockSyncClient].
     pub(crate) fn new(
         config: BlockSyncClientConfiguration,
         receiver: BlockSyncClientStub,
@@ -47,41 +68,279 @@ impl<N: Network> BlockSyncClient<N> {
         }
     }
 
-    pub(crate) fn on_receive_msg<K: KVStore>(&mut self, msg: BlockSyncTriggerMessage, origin: &VerifyingKey, block_tree: &BlockTree<K>) {
-        // todo
+    /// Process a received [BlockSyncAdvertiseMessage].
+    pub(crate) fn on_receive_msg<K: KVStore>(
+        &mut self, 
+        msg: BlockSyncAdvertiseMessage, 
+        origin: &VerifyingKey, 
+        block_tree: &BlockTree<K>
+    ) -> Result<(), BlockSyncClientError> {
+        match msg {
+            BlockSyncAdvertiseMessage::AdvertiseBlock(advertise_block) => self.on_receive_advertise_block(advertise_block, origin, block_tree),
+            BlockSyncAdvertiseMessage::AdvertiseQC(advertise_qc) => self.on_receive_advertise_qc(advertise_qc, origin, block_tree),
+        }
     }
 
-    // TODO: other methods
+    fn on_receive_advertise_block<K: KVStore>(
+        &mut self, 
+        advertise_block: AdvertiseBlock, 
+        origin: &VerifyingKey, 
+        block_tree: &BlockTree<K>
+    ) -> Result<(), BlockSyncClientError> {
+        // 1. Check if the advertise block message has the correct chain id, and is correctly signed.
+        if advertise_block.chain_id != self.config.chain_id || !advertise_block.is_correct(origin) {
+            return Ok(())
+        }
 
-    // fn sync()
+        // 2. Check if the sender address is a valid sync server address.
+        if !is_sync_server_address(origin, block_tree)? {
+            return Ok(())
+        }
 
-    // fn tick()
+        // 3. Check if the sender is not blacklisted.
+        if self.block_sync_client_state.blacklist_contains_server_address(origin) {
+            return Ok(())
+        }
+
+        // 4. Register the sender as an available sync server, committed to sending blocks at least up to
+        // the provided block height.
+        self.block_sync_client_state.register_or_update_sync_server(*origin, advertise_block.highest_committed_block_height);
+
+        Ok(())
+    }
+
+    fn on_receive_advertise_qc<K: KVStore>(
+        &mut self,
+        advertise_qc: AdvertiseQC, 
+        origin: &VerifyingKey, 
+        block_tree: &BlockTree<K>
+    ) -> Result<(), BlockSyncClientError> {
+
+        todo!()
+    }
+
+    /// Sync with a randomly selected peer.
+    fn sync<K: KVStore>(
+        &mut self,
+        block_tree: &mut BlockTree<K>,
+        app: &mut impl App<K>,
+    ) -> Result<(), BlockSyncClientError> {
+        let highest_committed_block_height = block_tree.highest_committed_block_height()?;
+        if let Some(peer) = self.block_sync_client_state.random_sync_server(&highest_committed_block_height) {
+            self.sync_with(&peer, block_tree, app)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Sync with a given peer. This involves possibly multiple iterations of:
+    /// 1. Sending a sync request to the peer for a given number of blocks,
+    /// 2. Waiting for a response from the peer,
+    /// 3. Processing the response: validating blocks, inserting into the block tree, performing related
+    ///    block tree and app state updates.
+    /// 
+    /// As part of this process, a sync peer can be blacklisted if:
+    /// 1. It sends an incorrect or unsafe block,
+    /// 2. It sends a block that is not validated by the [App],
+    /// 3. It fails to provide the minimum number of blocks it committed to providing through [AdvertiseBlock].
+    fn sync_with<K: KVStore>(
+        &mut self,
+        peer: &VerifyingKey,
+        block_tree: &mut BlockTree<K>,
+        app: &mut impl App<K>,
+    ) -> Result<(), BlockSyncClientError> {
+        Event::StartSync(StartSyncEvent{timestamp: SystemTime::now(), peer: peer.clone()}).publish(&self.event_publisher);
+
+        let mut blocks_synced = 0;
+        let init_highest_committed_block_height = 
+            match block_tree.highest_committed_block_height()? {
+                Some(height) => height,
+                None => BlockHeight::new(0)
+            };
+
+        loop {
+            let request = BlockSyncRequest {
+                chain_id: self.config.chain_id,
+                start_height: if let Some(height) = block_tree.highest_committed_block_height()? {
+                    height + 1
+                } else {
+                    BlockHeight::new(0)
+                },
+                limit: self.config.request_limit,
+            };
+            self.sender.send(*peer, request);
+            
+            match self.receiver.recv_response(*peer, Instant::now() + self.config.response_timeout) {
+                Ok(response) => {
+                    let new_blocks: Vec<Block> = response
+                        .blocks
+                        .into_iter()
+                        .skip_while(|block| block_tree.contains(&block.hash))
+                        .collect();
+                    if new_blocks.is_empty() {
+                        // Check if the server's commitment to porviding blocks at least up to a given height was observed.
+                        // If not, blacklist the server.
+                        let min_blocks_expected = 
+                            *self.block_sync_client_state.available_sync_servers.get(peer).unwrap() - init_highest_committed_block_height;
+
+                        if blocks_synced < min_blocks_expected {
+                            self.block_sync_client_state.blacklist_sync_server(peer.clone(), self.config.blacklist_expiry_time)
+                        }
+
+                        Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
+                        return Ok(())
+                    }
+
+                    for block in new_blocks {
+                        if !block.is_correct(block_tree)? || !safe_block(&block, block_tree, self.config.chain_id)? {
+                            // Blacklist the sync server.
+                            self.block_sync_client_state.blacklist_sync_server(peer.clone(), self.config.blacklist_expiry_time);
+                            Event::EndSync(EndSyncEvent{timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
+                            return Ok(())
+                        }
+
+                        let parent_block = if block.justify.is_genesis_qc() {
+                            None
+                        } else {
+                            Some(&block.justify.block)
+                        };
+
+                        let validate_block_request =
+                            ValidateBlockRequest::new(&block, block_tree.app_view(parent_block)?);
+
+                        if let ValidateBlockResponse::Valid {
+                            app_state_updates,
+                            validator_set_updates,
+                        } = app.validate_block_for_sync(validate_block_request) {
+
+                            // 1. Insert the block into the block tree.
+                            block_tree.insert_block(&block, app_state_updates.as_ref(), validator_set_updates.as_ref())?;
+                            Event::InsertBlock(InsertBlockEvent{timestamp: SystemTime::now(), block: block.clone()}).publish(&self.event_publisher);
+                
+                            // 2. Trigger block tree updates: update highestQC, lock, commit.
+                            let committed_validator_set_updates = 
+                                update_block_tree(&block.justify, block_tree, &self.event_publisher)?;
+                
+                            if let Some(vs_updates) = committed_validator_set_updates {
+                                self.validator_set_update_handle.update_validator_set(vs_updates)
+                            }
+
+                            blocks_synced += 1;
+                
+                        } else {
+                            // Blacklist the sync server.
+                            self.block_sync_client_state.blacklist_sync_server(peer.clone(), self.config.blacklist_expiry_time);
+                            Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
+                            return Ok(())
+                        }
+
+                        if response.highest_qc.is_correct(block_tree)? && safe_qc(&response.highest_qc, block_tree, self.config.chain_id)? {
+                            update_block_tree(&response.highest_qc, block_tree, &self.event_publisher)?;
+                        }
+
+                    }
+                },
+                Err(BlockSyncResponseReceiveError::Disconnected) | Err(BlockSyncResponseReceiveError::Timeout) => {
+                    // Check if the server's commitment to porviding blocks at least up to a given height was observed.
+                    // If not, blacklist the server.
+                    let min_blocks_expected = 
+                        *self.block_sync_client_state.available_sync_servers.get(peer).unwrap() - init_highest_committed_block_height;
+
+                    if blocks_synced < min_blocks_expected {
+                        self.block_sync_client_state.blacklist_sync_server(peer.clone(), self.config.blacklist_expiry_time)
+                    }
+
+                    Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
+                    return Ok(())
+                },
+            }
+
+        }
+
+    }
+
+    fn tick(&mut self) {
+        todo!()
+    }
 
 }
 
-/// Immutable parameters that define the behaviour of the [BlockSyncClient].
+/// Immutable parameters that define the behaviour of the [BlockSyncClient]:
+/// 1. Chain ID of the target blockchain,
+/// 2. Max. number of blocks per block sync request,
+/// 3. Timeout for waiting for a single block sync response,
+/// 4. Time after which a blacklisted sync server should be removed from the blacklist.
 pub(crate) struct BlockSyncClientConfiguration {
     pub(crate) chain_id: ChainID,
     pub(crate) request_limit: u32,
     pub(crate) response_timeout: Duration,
+    pub(crate) blacklist_expiry_time: Duration,
 }
 
 struct BlockSyncClientState {
-    sync_servers: HashMap<VerifyingKey, u64>,
-    blacklist: HashSet<VerifyingKey>,
+    available_sync_servers: HashMap<VerifyingKey, BlockHeight>,
+    blacklist: VecDeque<(VerifyingKey, Instant)>,
     // TODO: fields for timeout-based sync trigger
 }
 
 impl BlockSyncClientState {
 
+    /// Initialize the internal state of the block sync client.
     fn initialize() -> Self {
         Self {
-            sync_servers: HashMap::new(),
-            blacklist: HashSet::new(), 
+            available_sync_servers: HashMap::new(),
+            blacklist: VecDeque::new(), 
         }
     }
 
-    // TODO: other methods
+    /// Check if a given server address is in the blacklist.
+    fn blacklist_contains_server_address(&self, sync_server: &VerifyingKey) -> bool {
+        self.blacklist.iter().find(|(vk, _)| vk == sync_server).is_some()
+    }
+
+    // Register a sync server
+    fn register_or_update_sync_server(&mut self, sync_server: VerifyingKey, highest_committed_block_height: BlockHeight) {
+        let _ = self.available_sync_servers.insert(sync_server, highest_committed_block_height);
+    }
+
+    /// Blacklist a given sync server by:
+    /// 1. Removing it from available sync servers,
+    /// 2. Adding it to the blacklist.
+    fn blacklist_sync_server(&mut self, sync_server: VerifyingKey, blacklist_expiry_time: Duration) {
+        // Remove any entry corresponding to this server address from the available servers list.
+        let _ = self.available_sync_servers.remove(&sync_server);
+
+        // Push a new blacklist entry to the end of the blacklist queue.
+        self.blacklist.push_back((sync_server, Instant::now() + blacklist_expiry_time))
+    }
+
+    /// Remove all sync servers whose blacklisting has expired from the blacklist.
+    fn remove_expired_blacklisted_servers(&mut self) {
+        let now = Instant::now();
+        while self.blacklist.front().is_some_and(|(_, expiry)| expiry >= &now) {
+            let _ = self.blacklist.pop_front();
+        }
+    }
+
+    /// Sample a random sync server from available sync servers.
+    fn random_sync_server(&self, min_highest_committed_block_height: &Option<BlockHeight>) -> Option<VerifyingKey> {
+        match min_highest_committed_block_height {
+            None => {
+                self.available_sync_servers
+                    .keys()
+                    .choose(&mut rand::thread_rng())
+                    .copied()
+            },
+            Some(min_height) => {
+                self.available_sync_servers
+                    .keys()
+                    .filter(|vk| self.available_sync_servers.get(vk).is_some_and(|height| height >= min_height))
+                    .choose(&mut rand::thread_rng())
+                    .copied()
+            }
+        }
+    }
+
 }
 
 #[derive(Debug)]

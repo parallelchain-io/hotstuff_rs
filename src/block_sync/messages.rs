@@ -15,7 +15,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     hotstuff::types::QuorumCertificate, 
-    types::{basic::*,block::*}
+    messages::SignedMessage, 
+    types::{basic::*,block::*, keypair::Keypair}
 };
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -50,33 +51,59 @@ pub struct BlockSyncResponse {
 
 // Messages that may trigger sync, exchanged as part of the normal progress protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum BlockSyncTriggerMessage {
-    AdvertiseBlock(AdvertiseBlock)
+pub enum BlockSyncAdvertiseMessage {
+    AdvertiseBlock(AdvertiseBlock),
+    AdvertiseQC(AdvertiseQC),
 }
 
-impl BlockSyncTriggerMessage {
-    pub fn advertise_block(chain_id: ChainID, block: CryptoHash, block_qc: QuorumCertificate) -> Self {
-        BlockSyncTriggerMessage::AdvertiseBlock(AdvertiseBlock{chain_id, block, block_qc})
+impl BlockSyncAdvertiseMessage {
+    pub fn advertise_block(me: &Keypair, chain_id: ChainID, highest_committed_block_height: BlockHeight) -> Self {
+        let message = &(chain_id, highest_committed_block_height)
+            .try_to_vec()
+            .unwrap();
+        let signature = me.sign(message);
+        BlockSyncAdvertiseMessage::AdvertiseBlock(AdvertiseBlock{chain_id, highest_committed_block_height, signature})
+    }
+
+    pub fn advertise_qc(highest_qc: QuorumCertificate) -> Self {
+        BlockSyncAdvertiseMessage::AdvertiseQC(AdvertiseQC{highest_qc})
     }
 
     pub fn chain_id(&self) -> ChainID {
         match self {
-            BlockSyncTriggerMessage::AdvertiseBlock(msg) => msg.chain_id
+            BlockSyncAdvertiseMessage::AdvertiseBlock(msg) => msg.chain_id,
+            BlockSyncAdvertiseMessage::AdvertiseQC(msg) => msg.highest_qc.chain_id
         }
     }
 
     pub fn size(&self) -> u64 {
         match self {
-            BlockSyncTriggerMessage::AdvertiseBlock(msg) => mem::size_of::<AdvertiseBlock>() as u64,
+            BlockSyncAdvertiseMessage::AdvertiseBlock(msg) => mem::size_of::<AdvertiseBlock>() as u64,
+            BlockSyncAdvertiseMessage::AdvertiseQC(msg) => mem::size_of::<AdvertiseQC>() as u64,
         }
     }
-
 }
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvertiseBlock {
     pub chain_id: ChainID,
-    pub block: CryptoHash,
-    pub block_qc: QuorumCertificate, // highest known qc for the block
-    //TODO: pub signature: SignatureBytes, // necessary to authenticate the sender of this message!
+    pub highest_committed_block_height: BlockHeight,
+    pub signature: SignatureBytes,
+}
+
+impl SignedMessage for AdvertiseBlock {
+    fn message_bytes(&self) -> Vec<u8> {
+        (self.chain_id, self.highest_committed_block_height)
+            .try_to_vec()
+            .unwrap()
+    }
+
+    fn signature_bytes(&self) -> SignatureBytes {
+        self.signature
+    }
+}
+
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
+pub struct AdvertiseQC {
+    pub highest_qc: QuorumCertificate,
 }
