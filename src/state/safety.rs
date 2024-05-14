@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! This module contains implementations of rules that collectively guarantee the safety of hotstuff-rs.
+//! Functions that implement rules and predicates that collectively guarantee the safety of HotStuff-rs
+//! SMR.
 //! 
 //! In HotStuff-rs, the key events that can trigger state updates are:
 //! 1. Receiving a block proposal,
@@ -52,7 +53,7 @@
 //! we require that the prepareQC, precommitQC, and commitQC for a validator-set-updating block received
 //! via nudges have consecutive views. If this flow is interrupted by a temporary loss of synchrony or
 //! a Byzantine leader, the validator-set-updating block has to be re-proposed, as specified in
-//! [repropose_block]. This rule is enforced through [safe_nudge]. Unlike block insertions, nudges
+//! [`repropose_block`]. This rule is enforced through [`safe_nudge`]. Unlike block insertions, nudges
 //! cannot cause state updates unless they satisfy the rule.
 //! 
 //! ## Locking rules
@@ -104,6 +105,7 @@ use super::{
 /// This function evaluates [safe_qc], then checks 2.
 ///
 /// # Precondition
+/// 
 /// [Block::is_correct]
 pub(crate) fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
@@ -125,6 +127,7 @@ pub(crate) fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, c
 /// 5. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
 ///
 /// # Precondition
+/// 
 /// [QuorumCertificate::is_correct] holds for block.justify.
 pub(crate) fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
@@ -137,18 +140,21 @@ pub(crate) fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree
     )
 }
 
-/// Returns whether a nudge can be considered safe, and hence cause updates to the block tree.
-/// For this, it is necessary that:
-/// 1. safe_qc(&nudge.justify, block_tree, chain_id).
-/// 2. nudge.justify is a prepare, precommit, or commit qc.
-/// 3. Its chain ID matches the chain ID of the replica.
-/// 4. &nudge.justify is either a commit qc, or &nudge.justify.view = cur_view - 1.
+/// Returns whether a [`Nudge`] can be considered safe, and hence cause updates to the Block Tree.
+/// 
+/// For a Nudge to be safe and for this function to return `true`, **all** of the following must be 
+/// true:
+/// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
+/// 2. `nudge.justify` is a Prepare, Precommit, or Commit qc.
+/// 3. `nudge.chain_id` matches the Chain ID configured for the replica.
+/// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = cur_view - 1`.
 /// 
 /// This method enforces the commit rule for validator-set-updating blocks.
 /// 
 /// # Precondition
-/// [QuorumCertificate::is_correct] holds for nudge.justify.
-pub(crate) fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
+/// 
+/// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `nudge.justify`.
+pub fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
         /* 1 */ safe_qc(&nudge.justify, block_tree, chain_id)? &&
         /* 2 */ nudge.justify.is_nudge_justify() &&
