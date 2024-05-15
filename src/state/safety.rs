@@ -105,7 +105,7 @@ use super::{
 ///
 /// # Precondition
 /// [Block::is_correct]
-pub fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
+pub(crate) fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
         /* 1 */ safe_qc(&block.justify, block_tree, chain_id)? &&
         /* 2 */ block.justify.is_block_justify()
@@ -126,7 +126,7 @@ pub fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, chain_id
 ///
 /// # Precondition
 /// [QuorumCertificate::is_correct] holds for block.justify.
-pub fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
+pub(crate) fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
         /* 1 */ (qc.chain_id == chain_id || qc.is_genesis_qc()) &&
         /* 2 */ (block_tree.contains(&qc.block) || qc.is_genesis_qc()) &&
@@ -148,7 +148,7 @@ pub fn safe_qc<K: KVStore>(qc: &QuorumCertificate, block_tree: &BlockTree<K>, ch
 /// 
 /// # Precondition
 /// [QuorumCertificate::is_correct] holds for nudge.justify.
-pub fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
+pub(crate) fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &BlockTree<K>, chain_id: ChainID) -> Result<bool, BlockTreeError> {
     Ok(
         /* 1 */ safe_qc(&nudge.justify, block_tree, chain_id)? &&
         /* 2 */ nudge.justify.is_nudge_justify() &&
@@ -162,12 +162,12 @@ pub fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &
 /// proposal or through a nudge. This method implements the following rule:
 /// 1. If a block justify is seen,
 ///     - if it is a decide qc, then locked qc should be updated to the block justify.
-///     - else the locked qc should be updated to the parent qc of the block justify.
+///     - else (if it is a generic qc) the locked qc should be updated to the parent qc of the block justify.
 /// 2. If a nudge justify is seen,
 ///     - if it is a precommit qc, then locked qc should be updated to the precommit qc.
 ///     - else the locked qc should not be updated.
 /// 
-/// # Precondition
+/// ## Precondition
 /// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
@@ -195,7 +195,7 @@ pub(crate) fn qc_to_lock<K: KVStore>(
                 None
             }
         },
-        _ => None
+        Phase::Prepare | Phase::Commit => None
     };
     if new_locked_qc.as_ref().is_some_and(|qc| qc != &locked_qc) {
         Ok(new_locked_qc)

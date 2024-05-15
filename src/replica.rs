@@ -262,19 +262,25 @@ impl Into<(HotStuffConfiguration, PacemakerConfiguration, BlockSyncClientConfigu
     - `.on_commit_block(...)`
     - `.on_prune_block(...)`
     - `.on_update_highest_qc(...)`
-    - `.on_update_locked_view(...)`
+    - `.on_update_locked_qc(...)`
+    - `.on_update_locked_tc(...)`
     - `.on_update_validator_set(...)`
     - `.on_propose(...)`
     - `.on_nudge(...)`
     - `.on_vote(...)`
     - `.on_new_view(...)`
+    - `.on_timeout_vote(...)`
+    - `.on_advance_view(...)`
     - `.on_receive_proposal(...)`
     - `.on_receive_nudge(...)`
     - `.on_receive_vote(...)`
     - `.on_receive_new_view(...)`
+    - `.on_receive_timeout_vote(...)`
+    - `.on_receive_advance_view(...)`
     - `.on_start_view(...)`
     - `.on_view_timeout(...)`
     - `.on_collect_qc(...)`
+    - `.on_collect_tc(...)`
     - `.on_start_sync(...)`
     - `.on_end_sync(...)`
     - `.on_receive_sync_request(...)`
@@ -306,7 +312,7 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedQCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its locked QC. Optional."))]
-    on_update_locked_view: Option<HandlerPtr<UpdateLockedQCEvent>>,
+    on_update_locked_qc: Option<HandlerPtr<UpdateLockedQCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestTCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest TC. Optional."))]
     on_update_highest_tc: Option<HandlerPtr<UpdateHighestTCEvent>>,
@@ -401,7 +407,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_commit_block,
             self.on_prune_block,
             self.on_update_highest_qc,
-            self.on_update_locked_view,
+            self.on_update_locked_qc,
             self.on_update_highest_tc,
             self.on_update_validator_set,
             self.on_propose,

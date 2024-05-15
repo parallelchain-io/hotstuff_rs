@@ -96,23 +96,24 @@ impl Event {
     }
 }
 
-/// A new block was inserted into the [Block Tree](crate::state::BlockTree) in a persistent manner.
-/// Includes all information about the insrted block contained in the
+/// A new block was inserted into the [Block Tree](crate::state::block_tree::BlockTree) in a persistent
+/// manner. Includes all information about the insrted block contained in the 
 /// [Block](crate::types::block::Block) struct.
 pub struct InsertBlockEvent {
     pub timestamp: SystemTime, 
     pub block: Block,
 }
 
-/// A block, identifiable by its [hash](crate::types::CryptoHash), was committed.
-/// This involves persistent changes to the [Block Tree](crate::state::BlockTree).
+/// A block, identifiable by its [hash](crate::types::basic::CryptoHash), was committed.
+/// This involves persistent changes to the [Block Tree](crate::state::block_tree::BlockTree).
 pub struct CommitBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
 }
 
-/// A block, identifiable by its [hash](crate::types::CryptoHash), was pruned,
-/// i.e., the block's siblings were permanently deleted from the [Block Tree](crate::state::BlockTree).
+/// A block, identifiable by its [hash](crate::types::basic::CryptoHash), was pruned,
+/// i.e., the block's siblings were permanently deleted from the 
+/// [Block Tree](crate::state::block_tree::BlockTree).
 pub struct PruneBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
@@ -223,7 +224,7 @@ pub struct ReceiveNewViewEvent {
     pub new_view: NewView,
 }
 
-/// The replica received an [adavance view](crate::pacemaker::messages::AdvanceView) message from
+/// The replica received an [advance view](crate::pacemaker::messages::AdvanceView) message from
 /// another replica identifiable by its [public key](ed25519_dalek::VerifyingKey).
 pub struct ReceiveAdvanceViewEvent {
     pub timestamp: SystemTime,
@@ -239,8 +240,7 @@ pub struct ReceiveTimeoutVoteEvent {
     pub timeout_vote: TimeoutVote,
 }
 
-/// The replica started a new view with a given [view number](crate::types::basic::ViewNumber) and
-/// a given leader identifiable by its [public key](ed25519_dalek::VerifyingKey).
+/// The replica started a new view with a given [view number](crate::types::basic::ViewNumber).
 pub struct StartViewEvent {
     pub timestamp: SystemTime,
     pub view: ViewNumber,
@@ -277,14 +277,14 @@ pub struct StartSyncEvent {
 
 /// The replica exited sync mode, during which it tried to sync with a given peer identifiable by its 
 /// [public key](ed25519_dalek::VerifyingKey), and inserted a given number of blocks received from the
-/// peer into its [Block Tree](crate::state::BlockTree).
+/// peer into its [Block Tree](crate::state::block_tree::BlockTree).
 pub struct EndSyncEvent {
     pub timestamp: SystemTime,
     pub peer: VerifyingKey,
     pub blocks_synced: u64,
 }
 
-/// The replica's [sync server](crate::sync_server) received a 
+/// The replica's [sync server](crate::block_sync::server::BlockSyncServer) received a 
 /// [sync request](crate::block_sync::messages::BlockSyncRequest) from a peer identifiable by its 
 /// [public key](ed25519_dalek::VerifyingKey). Includes information about the requested start height 
 /// from which the peer wants to sync, and the limit on the number of blocks that can be sent in a 
