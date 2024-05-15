@@ -163,7 +163,7 @@ pub(crate) fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_
 /// 1. If the justify is a precommitQC, then we lock the justify. Note that this is equivalent to locking 
 ///    the prepareQC for the same block on seeing the precommitQC (as in HotStuff), since the prepareQC 
 ///    and precommitQC must have consecutive views.
-/// 2. If the justify is a genericQC or a prepareQC, then it serves as as a precommitQC for the parent of
+/// 2. If the justify is a genericQC, then it serves as as a precommitQC for the parent of
 ///    justify.block, hence we lock the justify of justify.block.
 /// 3. If the justify is a commitQC or decideQC, then a QC for justify.block should have been locked on 
 ///    seeing a precommitQC for the block. Hence, under normal operation there is no need to lock. However, 
@@ -172,6 +172,9 @@ pub(crate) fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_
 ///    sync), we still lock the justify. This is equivalent to locking the precommitQC, as we do under normal 
 ///    operation, since the precommitQC and the commitQC/decideQC have consecutive views and are for the
 ///    same block.
+/// 4. If the justify is a prepareQC, then we do not lock anything. This is for the sake of consistency
+///    with the decision not to commit ancestor blocks on seeing a prepareQC or a precommitQC in 
+///    [block_to_commit].
 /// 
 /// ## Precondition
 /// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
@@ -189,7 +192,7 @@ pub(crate) fn qc_to_lock<K: KVStore>(
         Phase::Precommit => {
                 Some(justify.clone())
         },
-        Phase::Generic | Phase::Prepare => {
+        Phase::Generic => {
             let parent_justify = block_tree.block_justify(&justify.block)?;
             Some(parent_justify.clone())
         },
@@ -199,7 +202,8 @@ pub(crate) fn qc_to_lock<K: KVStore>(
             } else {
                 None
             }
-        }
+        },
+        Phase::Prepare => None,
     };
     if new_locked_qc.as_ref().is_some_and(|qc| qc != &locked_qc) {
         Ok(new_locked_qc)
@@ -215,17 +219,20 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 /// consecutive views.
 /// 
 /// This method implements the following rule:
-/// 1. If a commit or decide qc is seen, then the qc's block should be committed - if not committed yet. 
-/// 2. If a generic qc is seen, then the great-grandparent block, i.e., the block referenced by the generic
-///    qc's grandparent qc, should be committed - if not committed yet and if the commit rule holds.
+/// 1. If a commitQC or decideQC is seen, then the QC's block should be committed - if not committed yet. 
+/// 2. If a genericQC is seen, then the great-grandparent block, i.e., the block referenced by the generic
+///    qc's grandparent QC, should be committed - if not committed yet and if the commit rule holds.
+/// 3. If a prepareQC or precommitQC is seen, nothing is committed. Instead those ancestor blocks that
+///    would have been committed otherwise, will be committed once the validator-set-updating block
+///    gets committed.
 /// 
 /// Note:
-/// - We do not need to consider the blocks referenced by the parent and grandparent qc and check if they
-///   are decide qc, since if so, they would have been committed on inserting the parent or grandparent
+/// - We do not need to consider the blocks referenced by the parent and grandparent QC and check if they
+///   are decideQC, since if so, they would have been committed on inserting the parent or grandparent
 ///   blocks respectively.
-/// - Even though validator-set-updating blocks are usually committed on seeing a commit qc,
+/// - Even though validator-set-updating blocks are usually committed on seeing a commitQC,
 ///   when the missing blocks are received via sync the commit qc is not sent, but rather the block has to
-///   be committed on seeing a decide qc.
+///   be committed on seeing a decideQC.
 /// 
 /// # Precondition
 /// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
@@ -279,7 +286,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
             }
 
         },
-        _ => Ok(None)
+        Phase::Prepare | Phase::Precommit => Ok(None)
     }
 }
 
