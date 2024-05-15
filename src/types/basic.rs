@@ -301,6 +301,14 @@ impl Sub<u64> for ViewNumber {
     }
 }
 
+impl Sub<ViewNumber> for ViewNumber {
+    type Output = i64;
+
+    fn sub(self, rhs: ViewNumber) -> Self::Output {
+        (self.0 as i64).sub(rhs.0 as i64)
+    }
+}
+
 /// Length of a [Pacemaker][crate::pacemaker] epoch.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct EpochLength(u32);

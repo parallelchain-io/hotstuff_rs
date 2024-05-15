@@ -3,11 +3,14 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements the [BlockSyncClient], which is reponsible for:
-//! 1. Triggering block sync (when a replica can't make progress for long enough or sees evidence that others are ahead), and
-//! 2. Managing the list of peers available as sync servers and a blacklist for sync servers that have provided incorrect information in the past, and
+//! Implements the [BlockSyncClient], which can help a replica catch up with the head of the blockchain
+//! by requesting blocks from the sync server of another replica. The client is responsible for:
+//! 1. Triggering block sync (when a replica can't make progress for long enough or sees evidence that
+//!    others are ahead), and
+//! 2. Managing the list of peers available as sync servers and a blacklist for sync servers that have 
+//!    provided incorrect information in the past, and
 //! 3. Selecting a peer to sync with from the list of available peers, and
-//! 4. The syncing process with a given peer.
+//! 4. Attempting to sync with a given peer.
 //! 
 //! ## Available sync servers
 //! In general, available sync servers are current and potential validators that:
@@ -21,10 +24,42 @@
 //! of available sync servers, and a queue of blacklisted sync servers together with their expiry times.
 //! 
 //! ## Sync process
-//! TODO
+//! When sync is triggered, the sync client picks a random sync server from its list of available sync
+//! servers, and sends iteratively sends it sync requests and processes its sync responses until
+//! the sync is terminated. Sync can be terminated if either:
+//! 1. The sync client reaches timeout waiting for a response,
+//! 2. The response contains incorrect blocks,
+//! 3. The response contains no blocks.
+//! 
+//! In the first two cases, the sync server may be blacklisted if the above-mentioned behaviour is
+//! incosistent with the server's promise to provide blocks up to a given height, as conveyed
+//! through its earlier [AdvertiseBlock] message.
 //! 
 //! ## Block sync trigger
-//! TODO
+//! hotstuff-rs offers two complementary and configurable block sync trigger mechanims:
+//! 1. Event-based sync trigger: on receiving an [AdvertiseQC] message with a correct QC from the future.
+//!    By how many views the received QC must be ahead of the current view to trigger sync can be 
+//!    configured by setting block_sync_trigger_min_view_difference in 
+//!    [configuration](crate::replica::Configuration).
+//! 2. Timeout-based sync trigger: when no "progress" is made for a sufficiently long time. Here "pogress"
+//!    is understood as updating the highestQC stored in the [block tree](BlockTree) - in the context of
+//!    the HotStuff SMR, updating the highestQC means that the validators are achieving consensus and 
+//!    extending the blockchain. The amount of time without progress or sync attempts required to trigger
+//!    sync can be configured by setting the block_sync_trigger_timeout in 
+//!    [configuration](crate::replica::Configuration).
+//! 
+//! The two sync trigger mechanims offer fallbacks for different liveness-threatening scenarios that a
+//! replica may face:
+//! 1. The event-based sync trigger can help a replica catch up with the head of the blockchain 
+//!    in case there is a quorum of validators known to the replica making progress ahead, but 
+//!    the replica has fallen behind them in terms of view number. 
+//! 2. The timeout-based sync trigger can help a replica catch up in case there is either no 
+//!    quorum ahead (e.g., if others have also fallen out of sync with each other), or the
+//!    validator set making progress ahead is unknown to the replica because it doesn't know
+//!    about the most recent validator set updates. Note that in the latter case, sync will
+//!    only be succesfull if some of the sync peers known to the replica are up-to-date with
+//!    the head of the blockchain. Otherwise, a manual sync attempt may be required to recover
+//!    from this situation.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::Sender;
@@ -33,11 +68,23 @@ use std::time::{Duration, Instant, SystemTime};
 use ed25519_dalek::VerifyingKey;
 use rand::seq::IteratorRandom;
 
-use crate::{app::{App, ValidateBlockRequest, ValidateBlockResponse}, events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent}, hotstuff::protocol::update_block_tree, messages::SignedMessage, networking::BlockSyncResponseReceiveError, state::{block_tree::{BlockTree, BlockTreeError}, kv_store::KVStore, safety::{safe_block, safe_qc}}, types::{basic::{BlockHeight, CryptoHash}, block::Block, collectors::Certificate, validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus}}};
-use crate::networking::{BlockSyncClientStub, Network, SenderHandle, ValidatorSetUpdateHandle};
-use crate::types::basic::ChainID;
-
-use super::messages::{AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest};
+use crate::app::{App, ValidateBlockRequest, ValidateBlockResponse};
+use crate::events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent};
+use crate::hotstuff::protocol::update_block_tree;
+use crate::messages::SignedMessage;
+use crate::state::{
+    block_tree::{BlockTree, BlockTreeError}, 
+    kv_store::KVStore, safety::{safe_block, safe_qc}
+};
+use crate::types::basic::ViewNumber;
+use crate::types::{
+    basic::{BlockHeight, ChainID}, 
+    block::Block, 
+    collectors::Certificate, 
+    validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus}
+};
+use crate::networking::{BlockSyncClientStub, Network, SenderHandle, ValidatorSetUpdateHandle, BlockSyncResponseReceiveError};
+use crate::block_sync::messages::{AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest};
 
 pub(crate) struct BlockSyncClient<N: Network> {
     config: BlockSyncClientConfiguration,
@@ -73,14 +120,41 @@ impl<N: Network> BlockSyncClient<N> {
         &mut self, 
         msg: BlockSyncAdvertiseMessage, 
         origin: &VerifyingKey, 
-        block_tree: &BlockTree<K>
+        block_tree: &mut BlockTree<K>,
+        app: &mut impl App<K>
     ) -> Result<(), BlockSyncClientError> {
         match msg {
             BlockSyncAdvertiseMessage::AdvertiseBlock(advertise_block) => self.on_receive_advertise_block(advertise_block, origin, block_tree),
-            BlockSyncAdvertiseMessage::AdvertiseQC(advertise_qc) => self.on_receive_advertise_qc(advertise_qc, origin, block_tree),
+            BlockSyncAdvertiseMessage::AdvertiseQC(advertise_qc) => self.on_receive_advertise_qc(advertise_qc, origin, block_tree, app),
         }
     }
 
+    /// Update the [BlockSyncClient]'s internal state, and possibly trigger sync on reaching sync trigger 
+    /// timeout.
+    pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &mut BlockTree<K>, app: &mut impl App<K>) -> Result<(), BlockSyncClientError> {
+
+        // 1. Check if any blacklistings have expired, and if so remove the expired blacklistings
+        //    from the blacklist.
+        self.block_sync_client_state.remove_expired_blacklisted_servers();
+
+        // 2. Update highest_qc_view if needed.
+        let highest_qc_view = block_tree.highest_qc()?.view;
+        if highest_qc_view > self.block_sync_client_state.highest_qc_view {
+            self.block_sync_client_state.highest_qc_view = highest_qc_view;
+            self.block_sync_client_state.last_progress_or_sync_time = Instant::now();
+        }
+
+        // 3. Check if sync should be triggered due to timeout, and if yes then trigger sync.
+        if Instant::now() - self.block_sync_client_state.last_progress_or_sync_time >= self.config.block_sync_trigger_timeout {
+            self.sync(block_tree, app)?;
+            self.block_sync_client_state.last_progress_or_sync_time = Instant::now();
+        };
+
+        Ok(())
+    }
+
+    /// Process an [AdvertiseBlock] message. This can lead to registering the sender as an available sync
+    /// server and storing information on the server's claimed highest committed block height.
     fn on_receive_advertise_block<K: KVStore>(
         &mut self, 
         advertise_block: AdvertiseBlock, 
@@ -109,14 +183,39 @@ impl<N: Network> BlockSyncClient<N> {
         Ok(())
     }
 
+    /// Process an [AdvertiseQC] message. This can lead to triggering sync if the criteria for event-based
+    /// sync trigger are met.
     fn on_receive_advertise_qc<K: KVStore>(
         &mut self,
         advertise_qc: AdvertiseQC, 
         origin: &VerifyingKey, 
-        block_tree: &BlockTree<K>
+        block_tree: &mut BlockTree<K>,
+        app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
 
-        todo!()
+        let highest_view_entered = block_tree.highest_view_entered()?;
+
+        // If the sender is blacklisted, ignore the message.
+        if self.block_sync_client_state.blacklist_contains_server_address(origin) {
+            return Ok(())
+        }
+
+        // If the advertised QC has smaller view number than the highest view entered,
+        // then it cannot trigger sync.
+        if advertise_qc.highest_qc.view < highest_view_entered {
+            return Ok(())
+        }
+
+        // If the received QC is correct and the difference between its view and the highest view
+        // entered is sufficiently big, then trigger sync.
+        let view_difference = (advertise_qc.highest_qc.view - highest_view_entered) as u64;
+        if view_difference >= self.config.block_sync_trigger_min_view_difference && 
+           advertise_qc.highest_qc.is_correct(block_tree)? {
+            self.sync(block_tree, app)?;
+            self.block_sync_client_state.last_progress_or_sync_time = Instant::now();
+        };
+
+        Ok(())
     }
 
     /// Sync with a randomly selected peer.
@@ -178,7 +277,7 @@ impl<N: Network> BlockSyncClient<N> {
                         .skip_while(|block| block_tree.contains(&block.hash))
                         .collect();
                     if new_blocks.is_empty() {
-                        // Check if the server's commitment to porviding blocks at least up to a given height was observed.
+                        // Check if the server's commitment to providing blocks at least up to a given height was observed.
                         // If not, blacklist the server.
                         let min_blocks_expected = 
                             *self.block_sync_client_state.available_sync_servers.get(peer).unwrap() - init_highest_committed_block_height;
@@ -250,17 +349,13 @@ impl<N: Network> BlockSyncClient<N> {
                         self.block_sync_client_state.blacklist_sync_server(peer.clone(), self.config.blacklist_expiry_time)
                     }
 
-                    Event::EndSync(EndSyncEvent { timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
+                    Event::EndSync(EndSyncEvent{timestamp: SystemTime::now(), peer: *peer, blocks_synced}).publish(&self.event_publisher);
                     return Ok(())
                 },
             }
 
         }
 
-    }
-
-    fn tick(&mut self) {
-        todo!()
     }
 
 }
@@ -270,17 +365,24 @@ impl<N: Network> BlockSyncClient<N> {
 /// 2. Max. number of blocks per block sync request,
 /// 3. Timeout for waiting for a single block sync response,
 /// 4. Time after which a blacklisted sync server should be removed from the blacklist.
+/// 5. By how many views a QC received via [AdvertiseQC] must be ahead of the current 
+///    view in order to trigger sync (event-based sync trigger).
+/// 6. How much time needs to pass without any progress (i.e., updating the highestQC)
+///    or sync attempts in order to trigger sync (timeout-based sync trigger).
 pub(crate) struct BlockSyncClientConfiguration {
     pub(crate) chain_id: ChainID,
     pub(crate) request_limit: u32,
     pub(crate) response_timeout: Duration,
     pub(crate) blacklist_expiry_time: Duration,
+    pub(crate) block_sync_trigger_min_view_difference: u64,
+    pub(crate) block_sync_trigger_timeout: Duration,
 }
 
 struct BlockSyncClientState {
     available_sync_servers: HashMap<VerifyingKey, BlockHeight>,
     blacklist: VecDeque<(VerifyingKey, Instant)>,
-    // TODO: fields for timeout-based sync trigger
+    last_progress_or_sync_time: Instant,
+    highest_qc_view: ViewNumber,
 }
 
 impl BlockSyncClientState {
@@ -290,6 +392,8 @@ impl BlockSyncClientState {
         Self {
             available_sync_servers: HashMap::new(),
             blacklist: VecDeque::new(), 
+            last_progress_or_sync_time: Instant::now(),
+            highest_qc_view: ViewNumber::new(0),
         }
     }
 

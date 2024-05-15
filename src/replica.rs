@@ -191,10 +191,14 @@ pub struct Configuration {
     pub chain_id: ChainID,
     #[builder(setter(doc = "Set the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
     pub block_sync_request_limit: u32,
-    #[builder(setter(doc = "Set the timeout for receiving a sync response from a peer (in seconds). Required."))]
+    #[builder(setter(doc = "Set the timeout for receiving a sync response from a peer. Required."))]
     pub block_sync_response_timeout: Duration,
-    #[builder(setter(doc = "Set the time after which a block sync server blacklisting should expire (in seconds). Required."))]
+    #[builder(setter(doc = "Set the time after which a block sync server blacklisting should expire. Required."))]
     pub block_sync_blacklist_expiry_time: Duration,
+    #[builder(setter(doc = "Set the number of views a QC received by the sync client must be ahead of the current view in order to trigger sync (event-based sync trigger). Required."))]
+    pub block_sync_trigger_min_view_difference: u64,
+    #[builder(setter(doc = "Set the time that needs to pass without any progress (i.e., updating the highestQC) or sync attempts in order to trigger sync (timeout-based sync trigger). Required."))]
+    pub block_sync_trigger_timeout: Duration,
     #[builder(setter(doc = "Set the maximum number of bytes that can be stored in the replica's message buffer at any given moment. Required."))]
     pub progress_msg_buffer_capacity: BufferSize,
     #[builder(setter(doc = "Set the epoch length i.e., if epoch length is n, then replicas synchronize views via all-to-all broadcast 
@@ -224,6 +228,8 @@ impl Into<(HotStuffConfiguration, PacemakerConfiguration, BlockSyncClientConfigu
             request_limit: self.block_sync_request_limit,
             response_timeout: self.block_sync_response_timeout,
             blacklist_expiry_time: self.block_sync_blacklist_expiry_time,
+            block_sync_trigger_min_view_difference: self.block_sync_trigger_min_view_difference,
+            block_sync_trigger_timeout: self.block_sync_trigger_timeout,
         };
         let block_sync_server_config = BlockSyncServerConfiguration {
             chain_id: self.chain_id,
