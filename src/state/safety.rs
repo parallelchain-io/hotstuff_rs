@@ -160,12 +160,18 @@ pub(crate) fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_
 /// Returns an optional qc that should be set as the new locked qc after seeing a given justify. This
 /// should be called whenever a new, correct and safe justify qc is seen, whether through a block
 /// proposal or through a nudge. This method implements the following rule:
-/// 1. If a block justify is seen,
-///     - if it is a decide qc, then locked qc should be updated to the block justify.
-///     - else (if it is a generic qc) the locked qc should be updated to the parent qc of the block justify.
-/// 2. If a nudge justify is seen,
-///     - if it is a precommit qc, then locked qc should be updated to the precommit qc.
-///     - else the locked qc should not be updated.
+/// 1. If the justify is a precommitQC, then we lock the justify. Note that this is equivalent to locking 
+///    the prepareQC for the same block on seeing the precommitQC (as in HotStuff), since the prepareQC 
+///    and precommitQC must have consecutive views.
+/// 2. If the justify is a genericQC or a prepareQC, then it serves as as a precommitQC for the parent of
+///    justify.block, hence we lock the justify of justify.block.
+/// 3. If the justify is a commitQC or decideQC, then a QC for justify.block should have been locked on 
+///    seeing a precommitQC for the block. Hence, under normal operation there is no need to lock. However, 
+///    in case the current lockedQC is not for justify.block (this can happen if the replica didn't receive 
+///    the precommitQC for the block, for example if the replica is receiving the decideQC justify via block 
+///    sync), we still lock the justify. This is equivalent to locking the precommitQC, as we do under normal 
+///    operation, since the precommitQC and the commitQC/decideQC have consecutive views and are for the
+///    same block.
 /// 
 /// ## Precondition
 /// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
@@ -180,22 +186,20 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 
     let locked_qc = block_tree.locked_qc()?;
     let new_locked_qc = match justify.phase {
-        Phase::Decide | Phase::Precommit => {
-            if justify != &locked_qc {
+        Phase::Precommit => {
+                Some(justify.clone())
+        },
+        Phase::Generic | Phase::Prepare => {
+            let parent_justify = block_tree.block_justify(&justify.block)?;
+            Some(parent_justify.clone())
+        },
+        Phase::Commit | Phase::Decide => {
+            if locked_qc.block != justify.block {
                 Some(justify.clone())
             } else {
                 None
             }
-        },
-        Phase::Generic => {
-            let parent_justify = block_tree.block_justify(&justify.block)?;
-            if parent_justify != locked_qc {
-                Some(parent_justify.clone())
-            } else {
-                None
-            }
-        },
-        Phase::Prepare | Phase::Commit => None
+        }
     };
     if new_locked_qc.as_ref().is_some_and(|qc| qc != &locked_qc) {
         Ok(new_locked_qc)
