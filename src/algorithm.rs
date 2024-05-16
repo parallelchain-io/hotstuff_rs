@@ -145,7 +145,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
                     match msg {
                         ProgressMessage::HotStuffMessage(msg) => self.hotstuff.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app).expect("HotStuff failure!"),
                         ProgressMessage::PacemakerMessage(msg) => self.pacemaker.on_receive_msg(msg, &origin, &mut self.block_tree).expect("Pacemaker failure!"),
-                        ProgressMessage::BlockSyncTriggerMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app).expect("Block Sync Client failure!"),
+                        ProgressMessage::BlockSyncAdvertiseMessage(msg) => self.block_sync_client.on_receive_msg(msg, &origin, &mut self.block_tree, &mut self.app).expect("Block Sync Client failure!"),
                     }
                 },
                 Err(ProgressMessageReceiveError::Disconnected) => panic!("The poller has disconnected!"),

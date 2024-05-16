@@ -224,7 +224,7 @@ impl ProgressMessageStub {
                     let return_msg = match &msg {
                         ProgressMessage::HotStuffMessage(hotstuff_msg) => hotstuff_msg.view() == cur_view,
                         ProgressMessage::PacemakerMessage(pacemaker_msg) => pacemaker_msg.view() >= cur_view,
-                        ProgressMessage::BlockSyncTriggerMessage(_) => true,
+                        ProgressMessage::BlockSyncAdvertiseMessage(_) => true,
                     };
 
                     if return_msg {
@@ -413,17 +413,15 @@ pub enum BlockSyncResponseReceiveError {
 
 /// A receiving end for sync requests. The [BlockSyncServerStub::recv_request] method returns the
 /// received request.
-pub(crate) struct BlockSyncServerStub<N: Network> {
-    network: N,
+pub(crate) struct BlockSyncServerStub {
     requests: Receiver<(VerifyingKey, BlockSyncRequest)>,
 }
 
-impl<N: Network> BlockSyncServerStub<N> {
+impl BlockSyncServerStub {
     pub(crate) fn new(
-        network: N,
         requests: Receiver<(VerifyingKey, BlockSyncRequest)>,
-    ) -> BlockSyncServerStub<N> {
-        BlockSyncServerStub { network, requests }
+    ) -> BlockSyncServerStub {
+        BlockSyncServerStub{requests}
     }
 
     /// Receive a [BlockSyncRequest] if available, else return [BlockSyncRequestReceiveError::NotAvailable].

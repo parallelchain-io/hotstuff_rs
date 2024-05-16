@@ -31,7 +31,7 @@ pub enum Message {
 pub enum ProgressMessage {
     HotStuffMessage(HotStuffMessage),
     PacemakerMessage(PacemakerMessage),
-    BlockSyncTriggerMessage(BlockSyncAdvertiseMessage),
+    BlockSyncAdvertiseMessage(BlockSyncAdvertiseMessage),
 }
 
 impl ProgressMessage {
@@ -39,7 +39,7 @@ impl ProgressMessage {
         match self {
             ProgressMessage::HotStuffMessage(msg) => msg.chain_id(),
             ProgressMessage::PacemakerMessage(msg) => msg.chain_id(),
-            ProgressMessage::BlockSyncTriggerMessage(msg) => msg.chain_id(),
+            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.chain_id(),
         }
     }
 
@@ -47,7 +47,7 @@ impl ProgressMessage {
         match self {
             ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
             ProgressMessage::PacemakerMessage(msg) => Some(msg.view()),
-            ProgressMessage::BlockSyncTriggerMessage(_) => None,
+            ProgressMessage::BlockSyncAdvertiseMessage(_) => None,
         }
     }
 
@@ -55,13 +55,13 @@ impl ProgressMessage {
         match self {
             ProgressMessage::HotStuffMessage(msg) => msg.size(),
             ProgressMessage::PacemakerMessage(msg) => msg.size(),
-            ProgressMessage::BlockSyncTriggerMessage(msg) => msg.size(),
+            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.size(),
         }
     }
 
     pub fn is_block_sync_trigger_msg(&self) -> bool {
         match self {
-            ProgressMessage::BlockSyncTriggerMessage(_) => true,
+            ProgressMessage::BlockSyncAdvertiseMessage(_) => true,
             _ => false,
         }
     }
@@ -123,11 +123,11 @@ impl From<BlockSyncResponse> for Message {
     }
 }
 
-impl From<AdvertiseBlock> for Message {
-    fn from(value: AdvertiseBlock) -> Self {
+impl From<BlockSyncAdvertiseMessage> for Message {
+    fn from(value: BlockSyncAdvertiseMessage) -> Self {
         Message::ProgressMessage(ProgressMessage::
-            BlockSyncTriggerMessage(
-                BlockSyncAdvertiseMessage::AdvertiseBlock(value)
+            BlockSyncAdvertiseMessage(
+                value
             )
         )
     }

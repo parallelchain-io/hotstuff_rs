@@ -102,6 +102,15 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(res)
     }
 
+    pub(crate) fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+        let highest_committed_block = self.highest_committed_block()?;
+        if let Some(block) = highest_committed_block {
+            Ok(self.block_height(&block)?)
+        } else {
+            Ok(None)
+        }
+    }
+
     /* ↓↓↓ Basic state getters ↓↓↓ */
 
     pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {

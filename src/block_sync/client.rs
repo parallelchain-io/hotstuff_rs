@@ -23,16 +23,16 @@
 //! Keeping track of which peers can be considered available sync servers is done by maintaining a hashmap
 //! of available sync servers, and a queue of blacklisted sync servers together with their expiry times.
 //! 
-//! ## Sync process
+//! ## Block sync process
 //! When sync is triggered, the sync client picks a random sync server from its list of available sync
-//! servers, and sends iteratively sends it sync requests and processes its sync responses until
+//! servers, and iteratively sends it sync requests and processes the received sync responses until
 //! the sync is terminated. Sync can be terminated if either:
 //! 1. The sync client reaches timeout waiting for a response,
 //! 2. The response contains incorrect blocks,
 //! 3. The response contains no blocks.
 //! 
 //! In the first two cases, the sync server may be blacklisted if the above-mentioned behaviour is
-//! incosistent with the server's promise to provide blocks up to a given height, as conveyed
+//! inconsistent with the server's promise to provide blocks up to a given height, as conveyed
 //! through its earlier [AdvertiseBlock] message.
 //! 
 //! ## Block sync trigger
@@ -340,7 +340,7 @@ impl<N: Network> BlockSyncClient<N> {
                     }
                 },
                 Err(BlockSyncResponseReceiveError::Disconnected) | Err(BlockSyncResponseReceiveError::Timeout) => {
-                    // Check if the server's commitment to porviding blocks at least up to a given height was observed.
+                    // Check if the server's commitment to providing blocks at least up to a given height was observed.
                     // If not, blacklist the server.
                     let min_blocks_expected = 
                         *self.block_sync_client_state.available_sync_servers.get(peer).unwrap() - init_highest_committed_block_height;

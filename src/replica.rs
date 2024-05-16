@@ -191,6 +191,8 @@ pub struct Configuration {
     pub chain_id: ChainID,
     #[builder(setter(doc = "Set the limit for the number of blocks that a replica can request from its peer when syncing. Required."))]
     pub block_sync_request_limit: u32,
+    #[builder(setter(doc = "Set how frequently the sync server should advertise its highest committed block and highestQC. Required."))]
+    pub block_sync_server_advertise_time: Duration,
     #[builder(setter(doc = "Set the timeout for receiving a sync response from a peer. Required."))]
     pub block_sync_response_timeout: Duration,
     #[builder(setter(doc = "Set the time after which a block sync server blacklisting should expire. Required."))]
@@ -235,6 +237,7 @@ impl Into<(HotStuffConfiguration, PacemakerConfiguration, BlockSyncClientConfigu
             chain_id: self.chain_id,
             keypair: keypair.clone(),
             request_limit: self.block_sync_request_limit,
+            advertise_time: self.block_sync_server_advertise_time,
         };
         (
             hotstuff_config,

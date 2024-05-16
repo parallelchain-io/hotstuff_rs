@@ -42,7 +42,7 @@ use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::messages::{AdvanceView, TimeoutVote};
 use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{CryptoHash, ViewNumber};
+use crate::types::basic::{BlockHeight, CryptoHash, ViewNumber};
 use crate::types::block::Block;
 use crate::types::validators::ValidatorSetUpdates;
 
@@ -292,7 +292,7 @@ pub struct EndSyncEvent {
 pub struct ReceiveSyncRequestEvent {
     pub timestamp: SystemTime,
     pub peer: VerifyingKey,
-    pub start_height: u64,
+    pub start_height: BlockHeight,
     pub limit: u32,
 }
 

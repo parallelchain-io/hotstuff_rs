@@ -573,6 +573,7 @@ impl Node {
             .me(keypair)
             .chain_id(ChainID::new(0))
             .block_sync_request_limit(10)
+            .block_sync_server_advertise_time(Duration::new(10, 0))
             .block_sync_response_timeout(Duration::new(3, 0))
             .block_sync_blacklist_expiry_time(Duration::new(10, 0))
             .block_sync_trigger_min_view_difference(2)
