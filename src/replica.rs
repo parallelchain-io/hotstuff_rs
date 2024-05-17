@@ -461,10 +461,10 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.app,
             self.network.clone(), 
             progress_msgs, 
+            progress_msg_buffer_capacity,
             block_sync_responses, 
             algorithm_shutdown_receiver, 
-            event_publisher, 
-            progress_msg_buffer_capacity, 
+            event_publisher,  
         );
         let algorithm = algorithm.start();
         

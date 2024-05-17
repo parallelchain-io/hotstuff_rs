@@ -49,10 +49,10 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         app: A,
         network: N,
         progress_msg_receiver: Receiver<(VerifyingKey, ProgressMessage)>,
+        progress_msg_buffer_capacity: BufferSize,
         block_sync_response_receiver: Receiver<(VerifyingKey, BlockSyncResponse)>,
         shutdown_signal: Receiver<()>,
         event_publisher: Option<Sender<Event>>,
-        progress_msg_buffer_capacity: BufferSize,
     ) -> Self {
 
         let pm_stub = ProgressMessageStub::new(progress_msg_receiver, progress_msg_buffer_capacity);
