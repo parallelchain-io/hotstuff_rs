@@ -11,7 +11,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, VerifyingKey, Verifier};
 
-use crate::block_sync::messages::{AdvertiseBlock, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncAdvertiseMessage};
+use crate::block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse, BlockSyncAdvertiseMessage};
 use crate::hotstuff::messages::HotStuffMessage;
 use crate::pacemaker::messages::PacemakerMessage;
 use crate::types::basic::{ChainID, SignatureBytes, ViewNumber};
