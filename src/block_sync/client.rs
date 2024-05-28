@@ -447,6 +447,8 @@ impl BlockSyncClientState {
 
 }
 
+/// The block sync client may fail if there is an error when trying to read from or write to the 
+/// [block tree][BlockTree].
 #[derive(Debug)]
 pub enum BlockSyncClientError {
     BlockTreeError(BlockTreeError),

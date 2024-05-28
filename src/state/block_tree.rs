@@ -545,6 +545,11 @@ impl<K: KVStore> BlockTree<K> {
 
 }
 
+/// Error when reading or writing to the [BlockTree]. Three kinds of errors may be encountered:
+/// 1. Error when trying to get a value from the underlying [key value store][KVStore],
+/// 2. Error when trying to set a value for a given key in the underlying [key value store][KVStore],
+/// 3. Unable to find a block that matches a given block tree query, even though the block should be 
+///    present in the block tree.
 #[derive(Debug)]
 pub enum BlockTreeError {
     KVGetError(KVGetError),

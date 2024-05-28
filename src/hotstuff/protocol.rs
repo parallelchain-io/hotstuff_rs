@@ -557,6 +557,8 @@ pub(crate) struct HotStuffConfiguration {
     pub(crate) keypair: Keypair,
 }
 
+/// The HotStuff protocol may fail if there is an error when trying to read from or write to the 
+/// [block tree][BlockTree].
 #[derive(Debug)]
 pub enum HotStuffError {
     BlockTreeError(BlockTreeError)

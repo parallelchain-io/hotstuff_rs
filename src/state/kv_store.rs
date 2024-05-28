@@ -332,7 +332,11 @@ pub trait KVGet {
 
 }
 
-// TODO: impl Display, or import via thiserror
+/// Error when trying to read a value corresponding to a given key from the [key value store][KVStore].
+/// The error may arise in the following circumstances:
+/// 1. The value corresponding to a given key cannot be deserialized into its expected type,
+/// 2. The value corresponding to a given key cannot be found,
+/// 3. There was an error when processing Ed25519Dalek keypairs or signatures.
 #[derive(Debug)]
 pub enum KVGetError {
     DeserializeValueError{key: Key, source: std::io::Error},

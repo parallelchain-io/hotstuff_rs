@@ -284,6 +284,9 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     }
 }
 
+/// Error when writing a key-value pair to the [write batch][BlockTreeWriteBatch].
+/// The error may arise when the value cannot be serialized, and hence cannot be
+/// written to the write batch.
 #[derive(Debug)]
 pub enum KVSetError {
     SerializeValueError{key: Key, source: std::io::Error}
