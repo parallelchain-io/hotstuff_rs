@@ -515,24 +515,8 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.highest_committed_block()?)
     }
 
-    pub(crate) fn newest_block(&self) -> Result<Option<CryptoHash>, BlockTreeError> {
-        Ok(self.0.newest_block()?)
-    }
-
     pub(crate) fn highest_tc(&self) -> Result<Option<TimeoutCertificate>, BlockTreeError> {
         Ok(self.0.highest_tc()?)
-    }
-
-    pub(crate) fn previous_validator_set(&self) -> Result<ValidatorSet, BlockTreeError> {
-        Ok(self.0.previous_validator_set()?)
-    }
-
-    pub(crate) fn validator_set_update_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
-        Ok(self.0.validator_set_update_block_height()?)
-    }
-
-    pub(crate) fn validator_set_update_complete(&self) -> Result<bool, BlockTreeError> {
-        Ok(self.0.validator_set_update_complete()?)
     }
 
     pub(crate) fn validator_set_state(&self) -> Result<ValidatorSetState, BlockTreeError> {
