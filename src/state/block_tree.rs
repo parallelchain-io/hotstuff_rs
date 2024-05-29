@@ -298,16 +298,16 @@ impl<K: KVStore> BlockTree<K> {
     ///  # Precondition
     /// Block is in its parents' (or the genesis) children list.
     ///
-    /// # Panics
-    /// Panics if the block is not in the block tree, or if the block's parent (or genesis) does not have a
+    /// # Error
+    /// Returns an error if the block is not in the block tree, or if the block's parent (or genesis) does not have a
     /// children list.
     pub fn delete_siblings(
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
         block: &CryptoHash,
     ) -> Result<(), BlockTreeError> {
-        let parent_or_genesis = self.block_justify(block).unwrap().block;
-        let parents_or_genesis_children = self.children(&parent_or_genesis).unwrap();
+        let parent_or_genesis = self.block_justify(block)?.block;
+        let parents_or_genesis_children = self.children(&parent_or_genesis)?;
         let siblings = parents_or_genesis_children
             .iter()
             .filter(|sib| *sib != block);

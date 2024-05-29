@@ -438,7 +438,7 @@ impl<N: Network> HotStuff<N> {
                     Phase::Prepare => Phase::Precommit,
                     Phase::Precommit => Phase::Commit,
                     Phase::Commit => Phase::Decide,
-                    _ => panic!() // Safety: if safe_nudge check passed this cannot be the case.
+                    _ => unreachable!() // Safety: if safe_nudge check passed this cannot be the case.
                 };
 
 

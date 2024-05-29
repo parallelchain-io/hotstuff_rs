@@ -566,7 +566,7 @@ pub fn select_leader(
     }
 
     // Safety: If index not found, panic. This should never happen.
-    panic!("Cannot select a leader: index not found!")
+    unreachable!("Cannot select a leader: index not found!")
 }
 
 fn is_epoch_change_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {

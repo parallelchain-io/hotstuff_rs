@@ -117,7 +117,7 @@ impl<CL:Collector> Collectors<CL> {
             if validator_set_state.previous_validator_set() == self.committed_validator_set_collector.validator_set() {
                 self.prev_validator_set_collector = Some(self.committed_validator_set_collector.clone())
             } else {
-                panic!() // Safety: as explained above.
+                unreachable!() // Safety: as explained above.
             }
         }
 
