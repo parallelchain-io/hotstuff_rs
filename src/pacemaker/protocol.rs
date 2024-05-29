@@ -115,7 +115,7 @@ impl<N: Network> Pacemaker<N> {
         )
     }
 
-    /// Query the pacemaker for [ViewInfo].
+    /// Query the pacemaker for [`ViewInfo`].
     pub(crate) fn view_info(&self) -> &ViewInfo {
         &self.view_info
     }
@@ -210,14 +210,17 @@ impl<N: Network> Pacemaker<N> {
     }
 
     /// Update the [internal state of the pacemaker][PacemakerState] in response to receiving a 
-    /// [TimeoutVote]. If a [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate] is collected,
-    /// the replica should try to update its highest_tc and broadcast the collected 
-    /// [TimeoutCertificate][crate::pacemaker::types::TimeoutCertificate]. The vote may be rejected if the
-    /// receiver replica is lagging behind the quorum from which the vote is sent. In such case the replica
-    /// can use the sender's highest_tc attached to the vote to move ahead.
+    /// [`TimeoutVote`]. 
     /// 
-    /// Note: the TimeoutVote can be for any view greater or equal to the current view, but only timeout 
-    /// votes for the current view will be collected.
+    /// If a [`TimeoutCertificate`][crate::pacemaker::types::TimeoutCertificate] is collected, the replica
+    /// should try to update its `highest_tc` and broadcast the collected `TimeoutCertificate`. The vote may
+    /// be rejected if the receiver replica is lagging behind the quorum from which the vote is sent. In
+    /// such case the replica can use the sender's `highest_tc` attached to the vote to move ahead.
+    /// 
+    /// ## Preconditions
+    /// 
+    /// The Timeout Vote may be for any view greater or equal to the current view, but only timeout votes
+    /// for the current view will be collected.
     fn on_receive_timeout_vote<K: KVStore>(
         &mut self, 
         timeout_vote: TimeoutVote,
@@ -227,9 +230,13 @@ impl<N: Network> Pacemaker<N> {
         Event::ReceiveTimeoutVote(ReceiveTimeoutVoteEvent{timestamp: SystemTime::now(), origin: signer.clone(), timeout_vote: timeout_vote.clone()})
         .publish(&self.event_publisher);
 
+        // If we are not a validator, ignore the Timeout Vote.
         let validator_set_state = block_tree.validator_set_state()?;
-        if !is_validator(signer, &validator_set_state) {return Ok(())};
+        if !is_validator(signer, &validator_set_state) {
+            return Ok(())
+        };
 
+        // Check whether the Timeout Vote is cryptographically correct and that the current view is an epoch-change view.
         if timeout_vote.is_correct(signer) && is_epoch_change_view(&timeout_vote.view, self.config.epoch_length) {
             let fallback_tc = 
                 match &timeout_vote.highest_tc {
@@ -237,12 +244,15 @@ impl<N: Network> Pacemaker<N> {
                     _ => None
                 };
 
+            // Try to collect the Timeout Vote to create a new Timeout Certificate.
             if let Some(new_tc) = self.state.timeout_vote_collectors.collect(signer, timeout_vote) {
 
                 Event::CollectTC(CollectTCEvent{timestamp: SystemTime::now(), timeout_certificate: new_tc.clone()}).publish(&self.event_publisher);
 
-                // If a new TC for the current view is collected the replica should (possibly) update its highest_tc 
-                // and broadcast the collected TC.
+                // If a newly collected Timeout Certificate has a higher view than `highest_tc`, update `highest_tc`.
+                //
+                // Note: we do not call `update_view` in this conditional block. We will call it when we receive an
+                // Advance View message (e.g., the Advance View message we may send out in this conditional block).
                 if block_tree.highest_tc()?.is_none() || new_tc.view > block_tree.highest_tc()?.unwrap().view {
 
                     let mut wb = BlockTreeWriteBatch::new();
@@ -250,6 +260,8 @@ impl<N: Network> Pacemaker<N> {
                     block_tree.write(wb);
                     Event::UpdateHighestTC(UpdateHighestTCEvent{timestamp: SystemTime::now(), highest_tc: new_tc.clone()}).publish(&self.event_publisher);
 
+                    // If I am a validator and I haven't broadcasted an Advance View message in the current view, broadcast
+                    // an Advance View message containing the newly collected Timeout Certificate. 
                     if is_validator(&self.config.keypair.public(), &validator_set_state) 
                         && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < self.view_info.view)) {
 
@@ -260,7 +272,9 @@ impl<N: Network> Pacemaker<N> {
                         }
                         self.state.last_advance_view = Some(self.view_info.view);
                     }
-                }   
+                }
+            
+            // If we fail to collect a new Timeout Certificate, process the `fallback_tc` in the vote.
             } else if let Some(tc) = fallback_tc {
 
                 // In case the replica is behind, the "fallback tc" contained in the timeout vote message
@@ -279,9 +293,11 @@ impl<N: Network> Pacemaker<N> {
     }
 
     /// Update the [internal state of the pacemaker][PacemakerState] and possibly the block tree in response 
-    /// to receiving an [AdvanceView].
+    /// to receiving an [`AdvanceView`] message.
     /// 
-    /// Note: the AdvanceView message must be for the current view.
+    /// ## Preconditions 
+    /// 
+    /// The Advance View message must be for the current view.
     fn on_receive_advance_view<K: KVStore>(
         &mut self, 
         advance_view: AdvanceView,
@@ -291,20 +307,28 @@ impl<N: Network> Pacemaker<N> {
         Event::ReceiveAdvanceView(ReceiveAdvanceViewEvent{timestamp: SystemTime::now(), origin: origin.clone(), advance_view: advance_view.clone()})
         .publish(&self.event_publisher);
 
+        // If we are not a validator, ignore the Advance View.
         let validator_set_state = block_tree.validator_set_state()?;
-        if !is_validator(origin, &validator_set_state) {return Ok(())}
+        if !is_validator(origin, &validator_set_state) {
+            return Ok(())
+        }
 
+        // Check whether the progress certificate contained in the Advance View message is "valid". What this
+        // entails differs depending on whether the certificate is a Quorum Certificate or a Timeout 
+        // Certificate.
         let progress_certificate = advance_view.progress_certificate.clone();
-        let valid = match &progress_certificate {
+        let is_valid = match &progress_certificate {
             ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(block_tree)?,
             ProgressCertificate::TimeoutCertificate(tc) => 
                 tc.is_correct(&block_tree)? && is_epoch_change_view(&tc.view, self.config.epoch_length) 
         };
 
-        if valid {
-            // Set highestTC if needed.
-            // Note: we do not update the highestQC here, since checking the safety of QCs and updating
-            // highestQC is a responsibility of the HotStuff protocol.
+        if is_valid {
+            // If the received certificate is a Timeout Certificate and has a higher view number than `highest_tc`,
+            // update the `highest_tc`.
+            //
+            // Note: we do not update `highest_qc` here, since checking the safety of QCs and updating `highest_qc` 
+            // is a responsibility of the HotStuff sub-protocol.
             if let ProgressCertificate::TimeoutCertificate(tc) = &progress_certificate {
                 if block_tree.highest_tc()?.is_none() || tc.view > block_tree.highest_tc()?.unwrap().view {
                     block_tree.set_highest_tc(&tc)?;
@@ -313,7 +337,8 @@ impl<N: Network> Pacemaker<N> {
                 }
             };
 
-            // If I am a validator, re-broadcast the received advance view message.
+            // If I am a validator and I haven't broadcasted an Advance View message in the current view,
+            // re-broadcast the received Advance View message.
             if is_validator(&self.config.keypair.public(), &block_tree.validator_set_state()?) 
                 && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < self.view_info.view)) {
                 self.sender.broadcast(Message::from(PacemakerMessage::AdvanceView(advance_view.clone())));
@@ -330,12 +355,16 @@ impl<N: Network> Pacemaker<N> {
         Ok(())
     }
 
-    /// Update the current view to the given next view. This may involve setting timeouts for the views
-    /// of a new epoch, in case the next view is in a future epoch.
+    /// Update the current view to the specified `next_view`. This may involve setting timeouts for the
+    /// views of a new epoch, in case the next view is in a future epoch.
     /// 
-    /// Note: this method, by being the unique method used to update the pacemaker [ViewInfo], and checking 
-    /// if the next view is greater than the current view, guarantees monotonically increasing views. If it 
-    /// is applied to a next view lesser or equal to the current view an [UpdateViewError] will be returned.
+    /// This method, by being the unique method used to update the pacemaker [ViewInfo], and checking if the
+    /// next view is greater than the current view, guarantees that views are monotonically increasing. 
+    /// 
+    /// ## Errors
+    /// 
+    /// This function should only be called if `next_view` is greater than the current view. Otherwise, an
+    /// [`UpdateViewError`] will be returned.
     fn update_view(&mut self, next_view: ViewNumber, validator_set_state: &ValidatorSetState) -> Result<(), PacemakerError>{
 
         let cur_view = self.view_info.view;
@@ -360,13 +389,19 @@ impl<N: Network> Pacemaker<N> {
         Ok(())
     }
 
-    /// Extend the timeout of the current view. This should only be applied if the current view is an
-    /// epoch-change view. Otherwise an [ExtendViewError] will be returned.
+    /// Extend the timeout of the current view
+    /// 
+    /// # Errors
+    /// 
+    /// This function should only be called if the current view is an epoch-change view. Otherwise, an
+    /// [`ExtendViewError`] will be returned.
     fn extend_view(&mut self) -> Result<(), ExtendViewError> {
+        // Confirm that the current view is an epoch-change view.
         let cur_view = self.view_info.view;
         if !is_epoch_change_view(&cur_view, self.config.epoch_length) {
             return Err(ExtendViewError::TriedToExtendNonEpochView{view: cur_view.clone()})
         };
+
         self.state.extend_epoch_view_timeout(self.view_info.view, &self.config);
         let new_timeout = self.state.timeouts.get(&cur_view).ok_or(ExtendViewError::GetViewTimeoutError{view: cur_view})?;
         self.view_info = self.view_info.with_new_timeout(*new_timeout);
@@ -375,7 +410,8 @@ impl<N: Network> Pacemaker<N> {
 
 }
 
-/// Immutable parameters that determine the behaviour of the [Pacemaker] and should never change.
+/// Immutable parameters that determine the behaviour of the [Pacemaker] and should never change after
+/// a replica starts.
 #[derive(Clone)]
 pub(crate) struct PacemakerConfiguration {
     pub(crate) chain_id: ChainID,
@@ -389,6 +425,8 @@ pub(crate) struct PacemakerConfiguration {
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
     timeout_vote_collectors: Collectors<TimeoutVoteCollector>,
+
+    // The view in which this replica last broadcasted an Advance View message.
     last_advance_view: Option<ViewNumber>,
 }
 
