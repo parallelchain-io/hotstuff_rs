@@ -174,7 +174,7 @@ impl<N: Network> Pacemaker<N> {
 
         // 3. Check if a QC for the current view is available and if I am a validator, and if so 
         //    broadcast an advance view message.
-        if block_tree.highest_qc()?.view == cur_view 
+        if block_tree.highest_qc()?.view >= cur_view 
             && !block_tree.highest_qc()?.is_genesis_qc()
             && is_validator(&self.config.keypair.public(), &validator_set_state) 
             && (self.state.last_advance_view.is_none() || self.state.last_advance_view.is_some_and(|v| v < cur_view)) {
