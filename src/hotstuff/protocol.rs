@@ -58,6 +58,7 @@
 //! if a DecideQC exists, a quorum from the new validator set has committed the validator set update
 //! and is ready to make progress.
 
+use std::iter::successors;
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
 
@@ -79,7 +80,7 @@ use crate::state::write_batch::BlockTreeWriteBatch;
 use crate::types::basic::{BlockHeight, CryptoHash};
 use crate::types::block::Block;
 use crate::types::collectors::{Certificate, Collectors};
-use crate::types::validators::{ValidatorSetState, ValidatorSetUpdates};
+use crate::types::validators::{ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus};
 use crate::types::{
     basic::ChainID, 
     keypair::Keypair
@@ -614,6 +615,98 @@ impl ViewStatus {
     }
 }
 
+ /// Commits a block and its ancestors if they have not been committed already. 
+/// 
+/// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set,
+/// in sequence (from lowest height to highest height).
+pub(crate) fn commit_block<K:KVStore>(
+    block_tree: &mut BlockTree<K>,
+    wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
+    block: &CryptoHash,
+) -> Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> {
+
+    // Obtain an iterator over the "block" and its ancestors, all the way until genesis, from newest ("block") to oldest.
+    let blocks_iter =
+        successors(
+        Some(*block), 
+        |b| 
+            block_tree.block_justify(b).ok()
+            .map(|qc| if !qc.is_genesis_qc() {Some(qc.block)} else {None})
+            .flatten()
+        );
+
+    // Newest committed block height, we do not consider the blocks from this height downwards.
+    let min_height = block_tree.highest_committed_block_height()?;
+
+    // Obtain an iterator over the uncomitted blocks among "block" and its ancestors from oldest to newest,
+    // the newest block being "block".
+    // This is required because we want to commit blocks in correct order, applying updates from oldest to
+    // newest.
+    let uncommitted_blocks_iter = 
+        blocks_iter.take_while(|b| min_height.is_none() || min_height.is_some_and(|h| block_tree.block_height(b).unwrap().unwrap() > h));
+    let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
+    let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
+    
+    // Helper closure that
+    // (1) commits block b, applying all related updates to the write batch,
+    // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional
+    //     validator set updates associated with b,
+    // (3) returns the extended vector of blocks committed so far (updated accumulator).
+    let commit = 
+        |committed_blocks_res: Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError>, b: &CryptoHash| 
+        ->  Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> 
+    {   
+        let mut committed_blocks = committed_blocks_res?;
+
+        let block_height = block_tree.block_height(b)?.ok_or(BlockTreeError::BlockExpectedButNotFound{block: b.clone()})?;
+        // Work steps:
+
+        // Set block at height.
+        wb.set_block_at_height(block_height, b)?;
+
+        // Delete all of block's siblings.
+        block_tree.delete_siblings(wb, b)?;
+
+        // Apply pending app state updates.
+        if let Some(pending_app_state_updates) = block_tree.pending_app_state_updates(b)? {
+            wb.apply_app_state_updates(&pending_app_state_updates);
+            wb.delete_pending_app_state_updates(b);
+        }
+
+        // Apply pending validator set updates.
+        if let ValidatorSetUpdatesStatus::Pending(validator_set_updates) = block_tree.validator_set_updates_status(b)? {
+
+            let mut committed_validator_set = block_tree.committed_validator_set()?;
+            let previous_validator_set = committed_validator_set.clone();
+            committed_validator_set.apply_updates(&validator_set_updates);
+
+            wb.set_committed_validator_set(&committed_validator_set)?;
+            wb.set_previous_validator_set(&previous_validator_set)?;
+            wb.set_validator_set_update_block_height(block_height)?;
+            wb.set_validator_set_update_completed(false)?;
+            wb.set_committed_validator_set_updates(block)?;
+
+            committed_blocks.push((*b, Some(validator_set_updates.clone())));
+        } else {
+            committed_blocks.push((*b, None));
+        }
+
+        // Update the highest committed block.
+        wb.set_highest_committed_block(b)?;
+
+        // Return the blocks committed so far together with their corresponding validator set updates.
+        Ok(committed_blocks)
+    };
+
+    // Iterate over the uncommitted blocks from oldest to newest, 
+    // (1) applying related updates (by mutating the write batch), and
+    // (2) building up the vector of committed blocks (by pushing the newely committed blocks to
+    //     the accumulator vector).
+    // Finally, return the accumulator.
+    uncommitted_blocks_ordered_iter.fold(Ok(Vec::new()), commit)
+
+}
+
 /// Performs the necessary block tree updates on seeing a safe [qc](QuorumCertificate) justifying a 
 /// [nugde](Nudge) or a [block](crate::types::block::Block). These updates may include:
 /// 1. Updating the highestQC,
@@ -654,7 +747,7 @@ pub(crate) fn update_block_tree<K: KVStore>(
 
     // 3. Commit block(s) if needed.
     if let Some(block) = safety::block_to_commit(justify, block_tree)? {
-        committed_blocks = block_tree.commit_block(&mut wb, &block)?;
+        committed_blocks = commit_block(block_tree, &mut wb, &block)?;
     }
 
     // 4. Set validator set updates as completed if needed.
