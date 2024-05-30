@@ -183,7 +183,7 @@ impl ProgressMessageStub {
 
     /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or
     /// return immediately, depending on the message type. Messages older than current view are dropped
-    /// immediately. [BlockSyncTriggerMessage][crate::block_sync::messages::BlockSyncTriggerMessage]
+    /// immediately. [BlockSyncAdvertiseMessage][crate::block_sync::messages::BlockSyncAdvertiseMessage]
     /// messages are not associated with a view, and so they are returned immediately.
     pub(crate) fn recv(
         &mut self,
@@ -213,14 +213,14 @@ impl ProgressMessageStub {
                         match msg.clone() {
                             ProgressMessage::HotStuffMessage(msg) => {self.msg_buffer.insert(msg, sender);},
                             ProgressMessage::PacemakerMessage(msg) => {self.msg_buffer.insert(msg, sender);},
-                            _ => (),
+                            ProgressMessage::BlockSyncAdvertiseMessage(_) => (),
                         }
                     }
                     
                     // Return the message if either:
                     // 1. It is a HotStuff message for the current view, or
                     // 2. If it is a Pacemaker message for the current view or a future view, or
-                    // 3. If it is a BlockSyncTrigger message.
+                    // 3. If it is a BlockSyncAdvertise message.
                     let return_msg = match &msg {
                         ProgressMessage::HotStuffMessage(hotstuff_msg) => hotstuff_msg.view() == cur_view,
                         ProgressMessage::PacemakerMessage(pacemaker_msg) => pacemaker_msg.view() >= cur_view,
