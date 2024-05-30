@@ -298,7 +298,7 @@ impl<N: Network> Pacemaker<N> {
     /// 
     /// ## Preconditions 
     /// 
-    /// The Advance View message must be for the current view.
+    /// The Advance View message must be for the current or higher view.
     fn on_receive_advance_view<K: KVStore>(
         &mut self, 
         advance_view: AdvanceView,
