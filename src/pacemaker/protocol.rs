@@ -307,7 +307,7 @@ impl<N: Network> Pacemaker<N> {
         Event::ReceiveAdvanceView(ReceiveAdvanceViewEvent{timestamp: SystemTime::now(), origin: origin.clone(), advance_view: advance_view.clone()})
         .publish(&self.event_publisher);
 
-        // If we are not a validator, ignore the Advance View.
+        // If the sender is not a validator, ignore the Advance View.
         let validator_set_state = block_tree.validator_set_state()?;
         if !is_validator(origin, &validator_set_state) {
             return Ok(())
