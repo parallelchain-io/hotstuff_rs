@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the [Keypair] type as an object used to sign messages and access the public key.
+//! Definitions for the [`Keypair`] type as an object used to sign messages and access the public key.
 
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 

@@ -9,14 +9,14 @@
 //! 
 //! When the thread receives a message containing an [event](crate::events::Event), it triggers the
 //! execution of all handlers defined for the contained event type, where the handlers for each event
-//! type are stored in [EventHandlers](EventHandlers).
+//! type are stored in [`EventHandlers`].
 //! 
 //! When no handlers are present in a replica's instance of `EventHandlers` this thread is not started.
 //! 
 //! ## Event Handlers
 //! 
 //! A replica's instance of `EventHandlers` contains:
-//! 1. The handlers provided upon building the replica via [ReplicaSpec](crate::replica::ReplicaSpec),
+//! 1. The handlers provided upon building the replica via [`ReplicaSpec`](crate::replica::ReplicaSpec),
 //!    and 
 //! 2. If logging is enabled via replica's [config](crate::replica::Configuration) then also
 //!    the default logging handlers defined in [logging](crate::logging).
@@ -32,9 +32,9 @@ use crate::logging::Logger;
 pub(crate) type HandlerPtr<T> = Box<dyn Fn(&T) + Send>;
 
 /// Stores the two optional handlers enabled for an event type that implements the
-/// [Logger](crate::logging::Logger) trait, namely one logging handler, defined in
-/// [logging](crate::logging), and one user-defined handler, passed to
-/// [ReplicaSpec](crate::replica::ReplicaSpec).
+/// [`Logger`](crate::logging::Logger) trait, namely one logging handler, defined in
+/// [`logging`](crate::logging), and one user-defined handler, passed to
+/// [`ReplicaSpec`](crate::replica::ReplicaSpec).
 /// 
 /// Note that the user-defined handler is expected to include all expected event-handling
 /// functionalities per event.

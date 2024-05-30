@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements the [BlockSyncServer] for the block sync protocol, which helps the replicas lagging 
+//! Implements the [`BlockSyncServer`] for the block sync protocol, which helps the replicas lagging 
 //! behind catch up with the head of the blockchain in a safe and live manner. A replica might be
 //! lagging behind for various reasons, such as network outage, downtime, or deliberate action
 //! by Byzantine leaders.
@@ -159,12 +159,12 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
 
 }
 
-/// Immutable parameters that define the behaviour of the [BlockSyncServer]:
+/// Immutable parameters that define the behaviour of the [`BlockSyncServer`]:
 /// 1. Chain ID: used to identify the blockchain for which the server handles sync requests.
 /// 2. Keypair (of the corresponding replica): used to sign messages.
-/// 3. Request limit: Max. number of blocks this server can provide in a [BlockSyncResponse],
+/// 3. Request limit: Max. number of blocks this server can provide in a [`BlockSyncResponse`],
 /// 4. Advertise time: period of time which defines how frequently the sync server should
-///    broadcast [BlockSyncAdvertiseMessage]s.
+///    broadcast [`BlockSyncAdvertiseMessage`]s.
 pub(crate) struct BlockSyncServerConfiguration {
     pub(crate) chain_id: ChainID,
     pub(crate) keypair: Keypair,

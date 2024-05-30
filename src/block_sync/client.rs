@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements the [BlockSyncClient], which can help a replica catch up with the head of the blockchain
+//! Implements the [`BlockSyncClient`], which can help a replica catch up with the head of the blockchain
 //! by requesting blocks from the sync server of another replica. The client is responsible for:
 //! 1. Triggering block sync (when a replica can't make progress for long enough or sees evidence that
 //!    others are ahead), and
@@ -33,11 +33,11 @@
 //! 
 //! In the first two cases, the sync server may be blacklisted if the above-mentioned behaviour is
 //! inconsistent with the server's promise to provide blocks up to a given height, as conveyed
-//! through its earlier [AdvertiseBlock] message.
+//! through its earlier [`AdvertiseBlock`] message.
 //! 
 //! ## Block sync trigger
 //! hotstuff-rs offers two complementary and configurable block sync trigger mechanims:
-//! 1. Event-based sync trigger: on receiving an [AdvertiseQC] message with a correct QC from the future.
+//! 1. Event-based sync trigger: on receiving an [`AdvertiseQC`] message with a correct QC from the future.
 //!    By how many views the received QC must be ahead of the current view to trigger sync can be 
 //!    configured by setting block_sync_trigger_min_view_difference in 
 //!    [configuration](crate::replica::Configuration).
@@ -115,7 +115,7 @@ impl<N: Network> BlockSyncClient<N> {
         }
     }
 
-    /// Process a received [BlockSyncAdvertiseMessage].
+    /// Process a received [`BlockSyncAdvertiseMessage`].
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self, 
         msg: BlockSyncAdvertiseMessage, 
@@ -129,7 +129,7 @@ impl<N: Network> BlockSyncClient<N> {
         }
     }
 
-    /// Update the [BlockSyncClient]'s internal state, and possibly trigger sync on reaching sync trigger 
+    /// Update the [`BlockSyncClient`]'s internal state, and possibly trigger sync on reaching sync trigger 
     /// timeout.
     pub(crate) fn tick<K: KVStore>(&mut self, block_tree: &mut BlockTree<K>, app: &mut impl App<K>) -> Result<(), BlockSyncClientError> {
 
@@ -153,7 +153,7 @@ impl<N: Network> BlockSyncClient<N> {
         Ok(())
     }
 
-    /// Process an [AdvertiseBlock] message. This can lead to registering the sender as an available sync
+    /// Process an [`AdvertiseBlock`] message. This can lead to registering the sender as an available sync
     /// server and storing information on the server's claimed highest committed block height.
     fn on_receive_advertise_block<K: KVStore>(
         &mut self, 
@@ -183,7 +183,7 @@ impl<N: Network> BlockSyncClient<N> {
         Ok(())
     }
 
-    /// Process an [AdvertiseQC] message. This can lead to triggering sync if the criteria for event-based
+    /// Process an [`AdvertiseQC`] message. This can lead to triggering sync if the criteria for event-based
     /// sync trigger are met.
     fn on_receive_advertise_qc<K: KVStore>(
         &mut self,
@@ -360,12 +360,12 @@ impl<N: Network> BlockSyncClient<N> {
 
 }
 
-/// Immutable parameters that define the behaviour of the [BlockSyncClient]:
+/// Immutable parameters that define the behaviour of the [`BlockSyncClient`]:
 /// 1. Chain ID of the target blockchain,
 /// 2. Max. number of blocks per block sync request,
 /// 3. Timeout for waiting for a single block sync response,
 /// 4. Time after which a blacklisted sync server should be removed from the blacklist.
-/// 5. By how many views a QC received via [AdvertiseQC] must be ahead of the current 
+/// 5. By how many views a QC received via [`AdvertiseQC`] must be ahead of the current 
 ///    view in order to trigger sync (event-based sync trigger).
 /// 6. How much time needs to pass without any progress (i.e., updating the highestQC)
 ///    or sync attempts in order to trigger sync (timeout-based sync trigger).

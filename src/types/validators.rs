@@ -4,7 +4,7 @@
 */
 
 //! Definitions for the types that store information about validator sets and potential updates to validator sets:
-//! [ValidatorSet], [ValidatorSetUpdates], [ValidatorSetUpdatesStatus], [ValidatorSetState].
+//! [`ValidatorSet`], [`ValidatorSetUpdates`], [`ValidatorSetUpdatesStatus`], [`ValidatorSetState`].
 
 use std::{
     collections::{HashMap, HashSet}, 
@@ -22,7 +22,7 @@ type VerifyingKeyBytes = [u8; 32];
 /// Identities of validators and their voting powers.
 ///
 /// The validator set maintains the list of validators in ascending order of their [public keys](VerifyingKey), and avails methods:
-/// [ValidatorSet::validators] and [ValidatorSet::validators_and_powers] to get them in this order.
+/// [`ValidatorSet::validators`] and [`ValidatorSet::validators_and_powers`] to get them in this order.
 /// 
 /// # Limits to total power
 /// 
@@ -137,7 +137,7 @@ impl ValidatorSet {
     }
 }
 
-/// Intermediate representation of [ValidatorSet] for safe serialization and deserialization.
+/// Intermediate representation of [`ValidatorSet`] for safe serialization and deserialization.
 /// 
 /// To serialize an instance of `ValidatorSet`, convert it a `ValidatorSetBytes` using this type's implementation of
 /// `Into`, then, serialize the `ValidatorSetBytes` using Borsh. Reverse the steps to deserialize a `ValidatorSet`.
@@ -279,9 +279,9 @@ impl ValidatorSetState {
 
 }
 
-/// Wraps around [ValidatorSetUpdates], providing additional information on whether the updates have
-/// already been applied or not. The [BlockTree][crate::state::block_tree::BlockTree] should store a
-/// mapping from blocks to their associated [ValidatorSetUpdatesStatus].
+/// Wraps around [`ValidatorSetUpdates`], providing additional information on whether the updates have
+/// already been applied or not. The [`BlockTree`][crate::state::block_tree::BlockTree] should store a
+/// mapping from blocks to their associated [`ValidatorSetUpdatesStatus`].
 pub enum ValidatorSetUpdatesStatus {
     None,
     Pending(ValidatorSetUpdates),
@@ -304,7 +304,7 @@ impl ValidatorSetUpdatesStatus {
     }
 }
 
-/// [ValidatorSetUpdatesStatus] where public keys of validators are stored as bytes.
+/// [`ValidatorSetUpdatesStatus`] where public keys of validators are stored as bytes.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ValidatorSetUpdatesStatusBytes {
     None,

@@ -102,7 +102,7 @@ use super::{
 /// Note that before inserting to the block tree, the caller should also check if
 /// no block with the same block hash is already in the block tree.
 ///
-/// This function evaluates [safe_qc], then checks 2.
+/// This function evaluates [`safe_qc`], then checks 2.
 ///
 /// # Precondition
 /// 
@@ -115,7 +115,7 @@ pub(crate) fn safe_block<K: KVStore>(block: &Block, block_tree: &BlockTree<K>, c
 }
 
 /// Returns whether a qc can cause updates of the block tree, whether as part of a block using
-/// [BlockTree::insert_block], or to be set as the highest qc, or, if it is a precommit or commit qc,
+/// [`BlockTree::insert_block`], or to be set as the highest qc, or, if it is a precommit or commit qc,
 /// to have the view of its prepare qc set as the locked view.
 ///
 /// For this, it is necessary that:
@@ -180,10 +180,10 @@ pub fn safe_nudge<K: KVStore>(nudge: &Nudge, cur_view: ViewNumber, block_tree: &
 ///    same block.
 /// 4. If the justify is a prepareQC, then we do not lock anything. This is for the sake of consistency
 ///    with the decision not to commit ancestor blocks on seeing a prepareQC or a precommitQC in 
-///    [block_to_commit].
+///    [`block_to_commit`].
 /// 
 /// ## Precondition
-/// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
+/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>) 
@@ -241,7 +241,7 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 ///   be committed on seeing a decideQC.
 /// 
 /// # Precondition
-/// The block or nudge with this justify must satisfy [safe_block] or [safe_nudge] respectively.
+/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
 pub(crate) fn block_to_commit<K: KVStore>(
     justify: &QuorumCertificate, 
     block_tree: &BlockTree<K>) 

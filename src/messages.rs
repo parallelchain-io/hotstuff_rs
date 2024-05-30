@@ -23,9 +23,9 @@ pub enum Message {
 }
 
 /// A message that serves to advance the consensus process, which may involve:
-/// 1. Participating in consesus via a [HotStuffMessage],
-/// 2. Syncing views with other replicas via a [PacemakerMessage] (required for consensus),
-/// 3. Triggering block sync on seeing a [BlockSyncTriggerMessage], which indicates that
+/// 1. Participating in consesus via a [`HotStuffMessage`],
+/// 2. Syncing views with other replicas via a [`PacemakerMessage`] (required for consensus),
+/// 3. Triggering block sync on seeing a [`BlockSyncAdvertiseMessage`], which indicates that
 ///    the replica is lagging behind the others (required for consensus).
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressMessage {
@@ -68,8 +68,8 @@ impl ProgressMessage {
 }
 
 /// A signed message must consist of:
-/// 1. Message bytes [SignedMessage::message_bytes]: the values that the signature is over, and
-/// 2. Signature bytes [SignedMessage::signature_bytes]: the signature in bytes.
+/// 1. Message bytes ([`SignedMessage::message_bytes`]): the values that the signature is over, and
+/// 2. Signature bytes ([`SignedMessage::signature_bytes`]): the signature in bytes.
 /// Given the two values satisfying the above, and a public key of the signer, 
 /// the signature can be verified against the message.
 pub(crate) trait SignedMessage: Clone {

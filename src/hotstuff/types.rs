@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! Definitions of types specific to the [`HotStuff`][crate::hotstuff::protocol::HotStuff] protocol.
 
 use std::collections::HashMap;
 
@@ -23,7 +23,7 @@ use super::messages::Vote;
 
 /// Proof that at least a quorum of validators have voted for a given 
 /// [proposal][crate::hotstuff::messages::Proposal] or [nudge][crate::hotstuff::messages::Nudge].
-/// Required for extending a block in the [HotStuff][crate::hotstuff::protocol::HotStuff], and for
+/// Required for extending a block in the [`HotStuff`][crate::hotstuff::protocol::HotStuff], and for
 /// optimistic advance to a new view as part of the [pacemaker][crate::pacemaker::protocol::Pacemaker]
 /// protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
@@ -202,7 +202,7 @@ impl Phase {
     }
 }
 
-/// Serves to incrementally form a [QuorumCertificate] by keeping track of votes for the same chain id, 
+/// Serves to incrementally form a [`QuorumCertificate`] by keeping track of votes for the same chain id, 
 /// view, block, and phase by replicas from a given [validator set](ValidatorSet).
 #[derive(Clone)]
 pub(crate) struct VoteCollector {

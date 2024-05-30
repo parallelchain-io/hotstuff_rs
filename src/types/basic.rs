@@ -3,16 +3,16 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The types and traits defined in [crate::types] are either common across the sub-protocols used by
+//! The types and traits defined in [`crate::types`] are either common across the sub-protocols used by
 //! Hotstuff-rs. 
 //! 
 //! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in 
 //! the respective directories.
 //! 
-//! The types defined in [crate::types::basic] include:
+//! The types defined in [`crate::types::basic`] include:
 //! 1. "Inert" types, i.e., those that are sent around and inspected, but have no active behavior. These
 //!    types follow the newtype pattern and the API for using these types is defined in this module.
-//! 2. The [UpdateSet] type, which represents generic-type state updates associated with committing a 
+//! 2. The [`UpdateSet`] type, which represents generic-type state updates associated with committing a 
 //!    block.
 
 use std::{
@@ -151,7 +151,7 @@ impl Data {
     }
 }
 
-/// Number of [Datum] stored in a block's [Data].
+/// Number of [`Datum`] stored in a block's [`Data`].
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct DataLen(u32);
 
@@ -161,7 +161,7 @@ impl DataLen {
     }
 }
 
-/// Single datum stored in a block's [Data].
+/// Single datum stored in a block's [`Data`].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Datum(Vec<u8>);
 
@@ -189,7 +189,7 @@ impl Power {
     }
 }
 
-/// Total power obtained via summing up the [Power]s of a set of validators.
+/// Total power obtained via summing up the [`Power`]s of a set of validators.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct TotalPower(u128);
 

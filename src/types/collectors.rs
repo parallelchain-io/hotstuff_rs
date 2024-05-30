@@ -5,8 +5,8 @@
 
 //! Defines the generic [`SignedMessage`] and [`Collector`] traits. 
 //! 
-//! Implementations used by the [Pacemaker][crate::pacemaker::types] and 
-//! [HotStuff][crate::hotstuff::types] protocols can be found in the respective modules. [`Collectors`]
+//! Implementations used by the [`Pacemaker`][crate::pacemaker::types] and 
+//! [`HotStuff`][crate::hotstuff::types] protocols can be found in the respective modules. [`Collectors`]
 //! groups collectors for all active validator sets into a single struct, which can be easily updated
 //! on view or validator set state updates.
 
@@ -53,7 +53,7 @@ pub trait Certificate {
 
 }
 
-/// Collects [correct][SignedMessage::is_correct] [signed messages][SignedMessage] into a [Certificate].
+/// Collects [correct][SignedMessage::is_correct] [signed messages][SignedMessage] into a [`Certificate`].
 /// Otherwise, stores the collected signatures collected from members of a given [validator set](ValidatorSet).
 pub(crate) trait Collector: Clone {
     type S: SignedMessage;

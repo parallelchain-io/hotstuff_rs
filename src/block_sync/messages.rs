@@ -5,12 +5,12 @@
 
 //! Definitions for structured messages that are sent between replicas as part of the block sync protocol. 
 //! This includes:
-//! 1. Block sync protocol messages ([BlockSyncMessage]): exchanged between a sync client and sync server
+//! 1. Block sync protocol messages ([`BlockSyncMessage`]): exchanged between a sync client and sync server
 //!    when the client is trying to sync with the server.
-//! 2. Block sync server advertisements ([BlockSyncAdvertiseMessage]): periodically broadcasted by sync
+//! 2. Block sync server advertisements ([`BlockSyncAdvertiseMessage`]): periodically broadcasted by sync
 //!    servers to update the sync clients on (1) their availability and commitment to providing blocks
-//!    at least up to a given height ([AdvertiseBlock]), and (2) whether the quorum is making progress 
-//!    in a future view, as evidence by the server's local highestQC ([AdvertiseQC]).
+//!    at least up to a given height ([`AdvertiseBlock`]), and (2) whether the quorum is making progress 
+//!    in a future view, as evidence by the server's local highestQC ([`AdvertiseQC`]).
 
 use std::mem;
 
@@ -49,8 +49,8 @@ pub struct BlockSyncRequest {
 }
 
 /// Sync response sent by a sync server to a sync client requesting blocks. The response includes:
-/// 1. Blocks: entire [Block]s that the client can validate and insert into their blockchain,
-/// 2. HighestQC: highest-viewed [QuorumCertificate] known to the server, which the client can
+/// 1. Blocks: entire [`Block`]s that the client can validate and insert into their blockchain,
+/// 2. HighestQC: highest-viewed [`QuorumCertificate`] known to the server, which the client can
 ///    validate and use to find out what is the latest consensus decision is.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockSyncResponse {

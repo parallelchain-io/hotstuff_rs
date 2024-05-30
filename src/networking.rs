@@ -7,8 +7,8 @@
 //! functions that replicas use to interact with the network.
 //!
 //! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their
-//! [VerifyingKey](ed25519_dalek::VerifyingKey). Networking providers interact with HotStuff-rs' threads
-//! through implementations of the [Network] trait. This trait has five methods that collectively allow
+//! [`VerifyingKey`](ed25519_dalek::VerifyingKey). Networking providers interact with HotStuff-rs' threads
+//! through implementations of the [`Network`] trait. This trait has five methods that collectively allow
 //! peers to exchange progress protocol and sync protocol messages.  
 
 use std::collections::{BTreeMap, VecDeque};
@@ -41,12 +41,12 @@ pub trait Network: Clone + Send {
     fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
 }
 
-/// Spawn the poller thread, which polls the [Network] for messages and distributes them into receivers
+/// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receivers
 /// for:
-/// 1. Progress messages (processed by the [Algorithm][crate::algorithm::Algorithm]'s execute loop), and
-/// 2. Block sync requests (processed by [BlockSyncServer][crate::block_sync::server::BlockSyncServer]),
+/// 1. Progress messages (processed by the [`Algorithm`][crate::algorithm::Algorithm]'s execute loop), and
+/// 2. Block sync requests (processed by [`BlockSyncServer`][crate::block_sync::server::BlockSyncServer]),
 ///    and 
-/// 3. Block sync responses (processed by [BlockSyncClient][crate::block_sync::client::BlockSyncClient]).
+/// 3. Block sync responses (processed by [`BlockSyncClient`][crate::block_sync::client::BlockSyncClient]).
 pub(crate) fn start_polling<N: Network + 'static>(
     mut network: N,
     shutdown_signal: Receiver<()>,
@@ -95,8 +95,8 @@ pub(crate) fn start_polling<N: Network + 'static>(
     )
 }
 
-/// Handle for sending and broadcasting messages to the [Network]. It can be used to send or broadcast 
-/// messages of message types that implement the [Into<Message>] trait. 
+/// Handle for sending and broadcasting messages to the [`Network`]. It can be used to send or broadcast 
+/// messages of message types that implement the [`Into<Message>`] trait. 
 #[derive(Clone)]
 pub(crate) struct SenderHandle<N: Network> {
     network: N,
@@ -183,7 +183,7 @@ impl ProgressMessageStub {
 
     /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or
     /// return immediately, depending on the message type. Messages older than current view are dropped
-    /// immediately. [BlockSyncAdvertiseMessage][crate::block_sync::messages::BlockSyncAdvertiseMessage]
+    /// immediately. [`BlockSyncAdvertiseMessage`][crate::block_sync::messages::BlockSyncAdvertiseMessage]
     /// messages are not associated with a view, and so they are returned immediately.
     pub(crate) fn recv(
         &mut self,
@@ -248,7 +248,7 @@ pub(crate) enum ProgressMessageReceiveError {
     Disconnected,
 }
 
-/// Message buffer intended for storing received [ProgressMessage]s for future views. Its size is
+/// Message buffer intended for storing received [`ProgressMessage`]s for future views. Its size is
 /// bounded by its capacity, and when the capacity is reached messages for highest views may be
 /// removed.
 struct ProgressMessageBuffer {
@@ -368,7 +368,7 @@ impl ProgressMessageBuffer {
     }
 }
 
-/// A receiving end for sync responses. The [BlockSyncClientStub::recv_response] method returns 
+/// A receiving end for sync responses. The [`BlockSyncClientStub::recv_response`] method returns 
 /// the received response.
 pub(crate) struct BlockSyncClientStub {
     responses: Receiver<(VerifyingKey, BlockSyncResponse)>,
@@ -411,7 +411,7 @@ pub enum BlockSyncResponseReceiveError {
     Timeout,
 }
 
-/// A receiving end for sync requests. The [BlockSyncServerStub::recv_request] method returns the
+/// A receiving end for sync requests. The [`BlockSyncServerStub::recv_request`] method returns the
 /// received request.
 pub(crate) struct BlockSyncServerStub {
     requests: Receiver<(VerifyingKey, BlockSyncRequest)>,

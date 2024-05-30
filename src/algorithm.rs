@@ -4,9 +4,9 @@
 */
 
 //! Implementation of the hotstuff-rs SMR protocol, which invokes the following sub-protocols:
-//! 1. [HotStuff]: for blockchain consensus on a per-view basis,
-//! 2. [Pacemaker]: for synchronizing views among the peers,
-//! 3. [BlockSyncClient]: for triggering and handling the block sync procedure when needed.
+//! 1. [`HotStuff`]: for blockchain consensus on a per-view basis,
+//! 2. [`Pacemaker`]: for synchronizing views among the peers,
+//! 3. [`BlockSyncClient`]: for triggering and handling the block sync procedure when needed.
 
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};

@@ -15,13 +15,13 @@
 //! 
 //! The base protocol for consensus on blocks that do not update the validator set implements the
 //! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes 
-//! for its ancestors too. Thus, the base protocol consists of exchanging [Proposal], [Vote], and
-//! [NewView] messages, where the votes are from [Phase::Generic] phase. 
+//! for its ancestors too. Thus, the base protocol consists of exchanging [`Proposal`], [`Vote`], and
+//! [`NewView`] messages, where the votes are from [`Phase::Generic`] phase. 
 //! 
 //! A view in this protocol generally proceeds as follows:
 //! 1. The leader of the view proposes a block with its highestQC as the justify of the block.
 //! 2. Replicas process the proposal: check if it is well-formed and cryptographically correct,
-//!    query the [App] to validate the block, if so then they insert the block and apply the
+//!    query the [`App`] to validate the block, if so then they insert the block and apply the
 //!    state updates associated with the block's justify. This may include updating the highestQC,
 //!    updating the lockedQC, and committing a great-grandparent block. They also vote for the
 //!    proposal.
@@ -41,13 +41,13 @@
 //! the block has to be re-proposed, which guarantees safety.
 //! 
 //! The consensus phases for a validator-set-updating block B proceed as follows:
-//! 1. "Prepare" phase: the leader broadcasts a proposal for B, replicas send [Phase::Prepare] votes.
-//! 2. "Precommit" phase: the leader broadcasts a [Nudge] with a [Phase::Prepare] QC for B, replicas
-//!     send [Phase::Precommit] votes.
-//! 3. "Commit" phase: the leader broadcasts a [Nudge] with a [Phase::Precommit] QC for B, replicas
-//!     send [Phase::Commit] votes.
-//! 4. "Decide" phase: the leader broadcasts a [Nudge] with a [Phase::Commit] QC for B, replicas 
-//!     send [Phase::Decide] votes.
+//! 1. "Prepare" phase: the leader broadcasts a proposal for B, replicas send [`Phase::Prepare`] votes.
+//! 2. "Precommit" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Prepare`] QC for B, replicas
+//!     send [`Phase::Precommit`] votes.
+//! 3. "Commit" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Precommit`] QC for B, replicas
+//!     send [`Phase::Commit`] votes.
+//! 4. "Decide" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Commit`] QC for B, replicas 
+//!     send [`Phase::Decide`] votes.
 //! 
 //! The "decide" phase is special as it enforces a liveness-preserving transition between the two
 //! validator sets. Concretely, on seeing a CommitQC, a new validator set becomes committed and its 
@@ -129,13 +129,13 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
-    /// Returns if the HotStuff internal view is outdated with respect to the view from [ViewInfo] provided
-    /// by the [Pacemaker](crate::pacemaker::protocol::Pacemaker).
+    /// Returns if the HotStuff internal view is outdated with respect to the view from [`ViewInfo`] provided
+    /// by the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker).
     pub(crate) fn is_view_outdated(&self, new_view_info: &ViewInfo) -> bool {
         new_view_info.view != self.view_info.view
     }
 
-    /// On receiving new [ViewInfo] from the [Pacemaker](crate::pacemaker::protocol::Pacemaker): send messages
+    /// On receiving new [`ViewInfo`] from the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker): send messages
     /// and perform state updates associated with exiting the current view, update the local view info. 
     /// 
     /// This involves the following steps:
@@ -144,9 +144,9 @@ impl<N: Network> HotStuff<N> {
     /// 3. If serving as a leader of the newly entered view, propose or nudge.
     /// 
     /// ## Precondition
-    /// [Self::is_view_outdated] returns true. This is the case when the 
-    /// [Pacemaker](crate::pacemaker::protocol::Pacemaker) updated the view info but the update has not been
-    /// propagated to the [HotStuff] protocol yet.
+    /// [`Self::is_view_outdated`] returns true. This is the case when the 
+    /// [`Pacemaker`](crate::pacemaker::protocol::Pacemaker) updated the view info but the update has not been
+    /// propagated to the [`HotStuff`] protocol yet.
     pub(crate) fn enter_view<K: KVStore>(
         &mut self, 
         new_view_info: ViewInfo,
@@ -615,7 +615,7 @@ impl ViewStatus {
     }
 }
 
- /// Commits a block and its ancestors if they have not been committed already. 
+/// Commits a block and its ancestors if they have not been committed already. 
 /// 
 /// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set,
 /// in sequence (from lowest height to highest height).
@@ -771,10 +771,10 @@ pub(crate) fn update_block_tree<K: KVStore>(
 
 
 /// Publish all events resulting from calling [update_block_tree]. These events have to do with changing
-/// persistent state, and  possibly include: [UpdateHighestQCEvent], [UpdateLockedQCEvent], 
-/// [PruneBlockEvent], [CommitBlockEvent], [UpdateValidatorSetEvent].
+/// persistent state, and  possibly include: [`UpdateHighestQCEvent`], [`UpdateLockedQCEvent`], 
+/// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
 /// 
-/// Invariant: this method is invoked immediately after the corresponding changes are written to the [BlockTree].
+/// Invariant: this method is invoked immediately after the corresponding changes are written to the [`BlockTree`].
 fn publish_update_block_tree_events(
     event_publisher: &Option<Sender<Event>>,
     update_highest_qc: Option<QuorumCertificate>,

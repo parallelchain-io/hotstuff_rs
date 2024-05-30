@@ -12,7 +12,7 @@
 //! 
 //! Each of these significant occurences correspond to a variant of the [event enum](Event). Each 
 //! variant tuple in turn contains an inner struct type. For example, the 
-//! [insert block variant](Event::InsertBlock) contains the [InsertBlockEvent] struct type.
+//! [insert block variant](Event::InsertBlock) contains the [`InsertBlockEvent`] struct type.
 //! 
 //! Each inner struct stores information that summarizes the particular kind of event. This information
 //! always includes a timestamp corresponding to the exact time when the event occured.
@@ -87,7 +87,7 @@ pub enum Event {
 }
 
 impl Event {
-    /// Publishes a given instance of the [Event](Event) enum on the event publisher channel (if the channel
+    /// Publishes a given instance of the [`Event`] enum on the event publisher channel (if the channel
     /// is defined).
     pub fn publish(self, event_publisher: &Option<Sender<Event>>) {
         if let Some(event_publisher) = event_publisher {
@@ -96,7 +96,7 @@ impl Event {
     }
 }
 
-/// A new block was inserted into the [Block Tree](crate::state::block_tree::BlockTree) in a persistent
+/// A new block was inserted into the [`BlockTree`](crate::state::block_tree::BlockTree) in a persistent
 /// manner. Includes all information about the insrted block contained in the 
 /// [Block](crate::types::block::Block) struct.
 pub struct InsertBlockEvent {
@@ -118,22 +118,22 @@ pub struct PruneBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
 }
-/// The Highest Quroum Certificate, stored in the [Block Tree](crate::state::block_tree::BlockTree), 
-/// was updated. Includes the new Highest [Quroum Certificate](crate::hotstuff::types::QuorumCertificate).
+/// The Highest Quroum Certificate, stored in the [`Block Tree`](crate::state::block_tree::BlockTree), 
+/// was updated. Includes the new Highest [`Quroum Certificate`](crate::hotstuff::types::QuorumCertificate).
 pub struct UpdateHighestQCEvent {
     pub timestamp: SystemTime,
     pub highest_qc: QuorumCertificate,
 }
 
-/// The Locked QC stored in the [Block Tree](crate::state::BlockTree) was updated.
+/// The Locked QC stored in the [`Block Tree`](crate::state::block_tree::BlockTree) was updated.
 /// Includes the new locked [quorum certificate](crate::hotstuff::types::QuorumCertificate).
 pub struct UpdateLockedQCEvent {
     pub timestamp: SystemTime,
     pub locked_qc: QuorumCertificate,
 }
 
-/// The Highest Timeout Certificate, stored in the [Block Tree](crate::state::block_tree::BlockTree), 
-/// was updated. Includes the new Highest [Timeout Certificate](crate::pacemaker::types::TimeoutCertificate).
+/// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree), 
+/// was updated. Includes the new Highest [`TimeoutCertificate`](crate::pacemaker::types::TimeoutCertificate).
 pub struct UpdateHighestTCEvent {
     pub timestamp: SystemTime,
     pub highest_tc: TimeoutCertificate,
@@ -253,14 +253,14 @@ pub struct ViewTimeoutEvent {
     pub view: ViewNumber,
 }
 
-/// The replica collected a new [Quorum Certificate](crate::hotstuff::types::QuorumCertificate) from the
+/// The replica collected a new [`QuorumCertificate`](crate::hotstuff::types::QuorumCertificate) from the
 /// votes it received from the validators in the current view.
 pub struct CollectQCEvent {
     pub timestamp: SystemTime,
     pub quorum_certificate: QuorumCertificate,
 }
 
-/// The replica collected a new [Timeout Certificate](crate::pacemaker::types::TimeoutCertificate) from
+/// The replica collected a new [`TimeoutCertificate`](crate::pacemaker::types::TimeoutCertificate) from
 /// the votes it received from the validators in the current view.
 pub struct CollectTCEvent {
     pub timestamp: SystemTime,

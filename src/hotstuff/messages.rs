@@ -4,7 +4,7 @@
 */
 
 //! Definitions for structured messages that are sent between replicas as part of the
-//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! [`HotStuff`][crate::hotstuff::protocol::HotStuff] protocol.
 //! 
 //! ## Messages
 //! 
@@ -52,7 +52,7 @@ pub enum HotStuffMessage {
 }
 
 impl HotStuffMessage {
-    /// Create a [Proposal] message for a given chain id, view, and block.
+    /// Create a [`Proposal`] message for a given chain id, view, and block.
     pub fn proposal(chain_id: ChainID, view: ViewNumber, block: Block) -> HotStuffMessage {
         HotStuffMessage::Proposal(Proposal {
             chain_id,
@@ -61,7 +61,7 @@ impl HotStuffMessage {
         })
     }
 
-    /// Create a [Nudge] message for a given chain id, view, and justifying QC.
+    /// Create a [`Nudge`] message for a given chain id, view, and justifying QC.
     /// # Panics
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
     pub fn nudge(
@@ -79,7 +79,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Create a [NewView] message for a given chain id, view, and highestQC.
+    /// Create a [`NewView`] message for a given chain id, view, and highestQC.
     pub fn new_view(
         chain_id: ChainID,
         view: ViewNumber,
@@ -92,7 +92,7 @@ impl HotStuffMessage {
         })
     }
 
-    /// Create a [Vote] for a given chain id, view, block, and phase, by signing over the values with the 
+    /// Create a [`Vote`] for a given chain id, view, block, and phase, by signing over the values with the 
     /// replica's private key.
     pub(crate) fn vote(
         me: &Keypair,
@@ -115,7 +115,7 @@ impl HotStuffMessage {
         })
     }
 
-    /// Returns the chain ID associated with a given [HotStuffMessage].
+    /// Returns the chain ID associated with a given [`HotStuffMessage`].
     pub fn chain_id(&self) -> ChainID {
         match self {
             HotStuffMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
@@ -125,7 +125,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Returns the view number associated with a given [HotStuffMessage].
+    /// Returns the view number associated with a given [`HotStuffMessage`].
     pub fn view(&self) -> ViewNumber {
         match self {
             HotStuffMessage::Proposal(Proposal { view, .. }) => *view,
@@ -135,7 +135,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Returns the number of bytes required to store a given instance of the [HotStuffMessage] enum.
+    /// Returns the number of bytes required to store a given instance of the [`HotStuffMessage`] enum.
     pub fn size(&self) -> u64 {
         match self {
             HotStuffMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,

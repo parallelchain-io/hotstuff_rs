@@ -4,7 +4,7 @@
 */
 
 //! Definitions for structured messages that are sent between replicas as part of the 
-//! [Pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+//! [`Pacemaker`][crate::pacemaker::protocol::Pacemaker] protocol.
 //! 
 //! ## Messages
 //! 
@@ -124,15 +124,15 @@ impl SignedMessage for TimeoutVote {
 }
 
 /// A message containing a proof that the view can be advanced. The proof can be either a 
-/// [QuorumCertificate] or a [TimeoutCertificate] for the view.
+/// [`QuorumCertificate`] or a [`TimeoutCertificate`] for the view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvanceView {
     pub progress_certificate: ProgressCertificate,
 }
 
 /// Proof that either:
-/// 1. A quorum made a decision in the current view ([QuorumCertificate]), or
-/// 2. A quorum voted for terminating the current view on timing out ([TimeoutCertificate]).
+/// 1. A quorum made a decision in the current view ([`QuorumCertificate`]), or
+/// 2. A quorum voted for terminating the current view on timing out ([`TimeoutCertificate`]).
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressCertificate {
     TimeoutCertificate(TimeoutCertificate),

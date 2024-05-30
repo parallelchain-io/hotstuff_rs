@@ -7,19 +7,19 @@
 //! operation of the protocol, and for its application.
 //!
 //! This state may be stored in any key-value store of the library user's own choosing, as long as that
-//! KV store can provide a type that implements [KVStore]. This state can be mutated through an instance
-//! of [BlockTree], and read through an instance of [BlockTreeSnapshot], which can be created using
-//! [BlockTreeCamera](crate::state::block_tree_camera::BlockTreeCamera).
+//! KV store can provide a type that implements [`KVStore`]. This state can be mutated through an instance
+//! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
+//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera).
 //!
 //! In normal operation, HotStuff-rs code will internally be making all writes to the 
-//! [Block Tree](crate::state::block_tree::BlockTree), and users can get a 
-//! [BlockTreeCamera](crate::state::block_tree_camera::BlockTreeCamera) using replica's 
+//! [`Block Tree`](crate::state::block_tree::BlockTree), and users can get a 
+//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) using replica's 
 //! [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
 //! an error that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of 
-//! BlockTree using [BlockTree::new_unsafe] and an instance of the corresponding [BlockTreeWriteBatch]
-//! using [BlockTreeWriteBatch::new_unsafe].
+//! BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding [`BlockTreeWriteBatch`]
+//! using [`BlockTreeWriteBatch::new_unsafe`].
 //!
 //! ## State variables
 //!

@@ -14,7 +14,7 @@
 //! - The builder-pattern interface to construct a [specification of the replica](ReplicaSpec) with:
 //!   1. `ReplicaSpec::builder` to construct a `ReplicaSpecBuilder`, 
 //!   2. The setters of the `ReplicaSpecBuilder`, and 
-//!   3. The `ReplicaSpecBuilder::build` method to construct a [ReplicaSpec],
+//!   3. The `ReplicaSpecBuilder::build` method to construct a [`ReplicaSpec`],
 //! - The function to [start](ReplicaSpec::start) a [Replica] given its specification,
 //! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::BlockTree), 
 //! - [The type](Replica) which keeps the replica alive.
@@ -156,11 +156,11 @@ use std::sync::mpsc::{self, Sender};
 ///
 /// ## Sync response timeout
 /// 
-/// Durations stored in [Configuration::block_sync_response_timeout] must be "well below"
-/// [u64::MAX] seconds. A good limit is to cap them at [u32::MAX].
+/// Durations stored in [`Configuration::block_sync_response_timeout`] must be "well below"
+/// [`u64::MAX`] seconds. A good limit is to cap them at [u32::MAX].
 /// 
-/// In the most popular target platforms, Durations can only go up to [u64::MAX] seconds, so keeping
-/// returned durations lower than [u64::MAX] avoids overflows in calling code, which may add to the
+/// In the most popular target platforms, Durations can only go up to [`u64::MAX`] seconds, so keeping
+/// returned durations lower than [`u64::MAX`] avoids overflows in calling code, which may add to the
 /// returned duration.
 /// 
 /// ## Log Events
@@ -526,8 +526,8 @@ impl<K: KVStore> Replica<K> {
         block_tree.initialize(&initial_app_state, &initial_validator_set_state).expect("Block Tree initialization failed!")
     }
 
-    /// Returns a [Block Tree Camera](crate::state::block_tree_camera::BlockTreeCamera) which can be used
-    /// to peek into the [Block Tree](crate::state::block_tree::BlockTree).
+    /// Returns a [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) which can be used
+    /// to peek into the [`BlockTree`](crate::state::block_tree::BlockTree).
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }
