@@ -418,6 +418,8 @@ pub(crate) struct PacemakerConfiguration {
     pub(crate) chain_id: ChainID,
     pub(crate) keypair: Keypair,
     pub(crate) epoch_length: EpochLength,
+
+    // How long a view can take before timing out.
     pub(crate) max_view_time: Duration,
 }
 

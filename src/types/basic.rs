@@ -309,7 +309,7 @@ impl Sub<ViewNumber> for ViewNumber {
     }
 }
 
-/// Length of a [Pacemaker][crate::pacemaker] epoch.
+/// How many views are in a [Pacemaker][crate::pacemaker] epoch.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct EpochLength(u32);
 

@@ -209,6 +209,14 @@ impl ProgressMessageStub {
                     }
 
                     // If the message is for a future view then cache it.
+                    //
+                    // Note:
+                    // If `msg` is a Pacemaker Message and `msg.view > cur_view`, then we will cache the message *and*
+                    // return it. This is to give the message two opportunities to be processed: 1. When the message is
+                    // first received, and 2. When the replica is in `msg.view` and therefore caught up with the validator
+                    // set.
+                    // 
+                    // This behavior is not absolutely necessary, but helps with liveness.
                     if msg.view().is_some_and(|view| view > cur_view) {
                         match msg.clone() {
                             ProgressMessage::HotStuffMessage(msg) => {self.msg_buffer.insert(msg, sender);},
