@@ -17,7 +17,7 @@ impl Keypair {
     pub(crate) fn new(signing_key: SigningKey) -> Keypair {
         Keypair(signing_key)
     }
-    
+
     /// Convenience method for creating signatures over values or messages represented as vectors of bytes.
     pub(crate) fn sign(&self, message: &Vec<u8>) -> SignatureBytes {
         SignatureBytes::new(self.0.sign(message).to_bytes())
@@ -27,4 +27,3 @@ impl Keypair {
         self.0.verifying_key()
     }
 }
-

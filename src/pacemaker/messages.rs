@@ -3,15 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the 
+//! Definitions for structured messages that are sent between replicas as part of the
 //! [`Pacemaker`][crate::pacemaker::protocol::Pacemaker] protocol.
-//! 
+//!
 //! ## Messages
-//! 
+//!
 //! The Pacemaker protocol involves two types of messages:
-//! 1. [`TimeoutVote`], which a replica sends to signal to others that its epoch-change view has timed 
+//! 1. [`TimeoutVote`], which a replica sends to signal to others that its epoch-change view has timed
 //!    out.
-//! 2. [`AdvanceView`], which a replica sends to prove to others that it is safe to move to the next 
+//! 2. [`AdvanceView`], which a replica sends to prove to others that it is safe to move to the next
 //!    view. The proof consists of either:
 //!     - a `QuorumCertificate`, which serves as evidence that progress has been made in the current
 //!       view, or
@@ -24,10 +24,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
-use crate::types::{
-    basic::*, 
-    keypair::*,
-};
+use crate::types::{basic::*, keypair::*};
 
 use super::types::TimeoutCertificate;
 
@@ -38,41 +35,44 @@ pub enum PacemakerMessage {
 }
 
 impl PacemakerMessage {
-
     pub(crate) fn timeout_vote(
         me: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
         highest_tc: Option<TimeoutCertificate>,
     ) -> PacemakerMessage {
-        let message = &(chain_id, view)
-            .try_to_vec()
-            .unwrap();
+        let message = &(chain_id, view).try_to_vec().unwrap();
         let signature = me.sign(message);
 
-        PacemakerMessage::TimeoutVote(TimeoutVote { 
+        PacemakerMessage::TimeoutVote(TimeoutVote {
             chain_id,
             view,
             signature,
-            highest_tc
+            highest_tc,
         })
     }
 
     pub fn advance_view(progress_certificate: ProgressCertificate) -> PacemakerMessage {
-        PacemakerMessage::AdvanceView(AdvanceView { progress_certificate })
+        PacemakerMessage::AdvanceView(AdvanceView {
+            progress_certificate,
+        })
     }
 
     pub fn chain_id(&self) -> ChainID {
         match self {
-            PacemakerMessage::TimeoutVote(TimeoutVote { chain_id, ..}) => *chain_id,
-            PacemakerMessage::AdvanceView(AdvanceView { progress_certificate }) => progress_certificate.chain_id()
+            PacemakerMessage::TimeoutVote(TimeoutVote { chain_id, .. }) => *chain_id,
+            PacemakerMessage::AdvanceView(AdvanceView {
+                progress_certificate,
+            }) => progress_certificate.chain_id(),
         }
     }
 
     pub fn view(&self) -> ViewNumber {
         match self {
-            PacemakerMessage::TimeoutVote(TimeoutVote { view, ..}) => *view,
-            PacemakerMessage::AdvanceView(AdvanceView { progress_certificate }) => progress_certificate.view()
+            PacemakerMessage::TimeoutVote(TimeoutVote { view, .. }) => *view,
+            PacemakerMessage::AdvanceView(AdvanceView {
+                progress_certificate,
+            }) => progress_certificate.view(),
         }
     }
 
@@ -82,7 +82,6 @@ impl PacemakerMessage {
             PacemakerMessage::AdvanceView(_) => mem::size_of::<AdvanceView>() as u64,
         }
     }
-
 }
 
 impl Cacheable for PacemakerMessage {
@@ -101,7 +100,7 @@ impl Into<ProgressMessage> for PacemakerMessage {
     }
 }
 
-/// A vote in favour of terminating a given view and moving to the next view. The signature is over 
+/// A vote in favour of terminating a given view and moving to the next view. The signature is over
 /// chain id and view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct TimeoutVote {
@@ -113,9 +112,7 @@ pub struct TimeoutVote {
 
 impl SignedMessage for TimeoutVote {
     fn message_bytes(&self) -> Vec<u8> {
-        (self.chain_id, self.view)
-            .try_to_vec()
-            .unwrap()
+        (self.chain_id, self.view).try_to_vec().unwrap()
     }
 
     fn signature_bytes(&self) -> SignatureBytes {
@@ -123,7 +120,7 @@ impl SignedMessage for TimeoutVote {
     }
 }
 
-/// A message containing a proof that the view can be advanced. The proof can be either a 
+/// A message containing a proof that the view can be advanced. The proof can be either a
 /// [`QuorumCertificate`] or a [`TimeoutCertificate`] for the view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvanceView {
@@ -140,18 +137,19 @@ pub enum ProgressCertificate {
 }
 
 impl ProgressCertificate {
-
     pub fn chain_id(&self) -> ChainID {
         match self {
-            ProgressCertificate::TimeoutCertificate(TimeoutCertificate { chain_id, ..}) => *chain_id,
-            ProgressCertificate::QuorumCertificate(QuorumCertificate { chain_id, ..}) => *chain_id,
+            ProgressCertificate::TimeoutCertificate(TimeoutCertificate { chain_id, .. }) => {
+                *chain_id
+            }
+            ProgressCertificate::QuorumCertificate(QuorumCertificate { chain_id, .. }) => *chain_id,
         }
     }
 
     pub fn view(&self) -> ViewNumber {
         match self {
-            ProgressCertificate::TimeoutCertificate(TimeoutCertificate { view, ..}) => *view,
-            ProgressCertificate::QuorumCertificate(QuorumCertificate { view, ..}) => *view,
+            ProgressCertificate::TimeoutCertificate(TimeoutCertificate { view, .. }) => *view,
+            ProgressCertificate::QuorumCertificate(QuorumCertificate { view, .. }) => *view,
         }
     }
 }

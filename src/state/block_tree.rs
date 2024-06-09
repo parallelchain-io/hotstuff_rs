@@ -11,13 +11,13 @@
 //! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
 //! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera).
 //!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the 
-//! [`Block Tree`](crate::state::block_tree::BlockTree), and users can get a 
-//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) using replica's 
+//! In normal operation, HotStuff-rs code will internally be making all writes to the
+//! [`Block Tree`](crate::state::block_tree::BlockTree), and users can get a
+//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) using replica's
 //! [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
-//! an error that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of 
+//! an error that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of
 //! BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding [`BlockTreeWriteBatch`]
 //! using [`BlockTreeWriteBatch::new_unsafe`].
 //!
@@ -25,7 +25,7 @@
 //!
 //! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples
 //! that sit at a particular key path or prefix in the library user's chosen KV store. These variables are:
-//! 
+//!
 //! |Variable|"Type"|Description|
 //! |---|---|---|
 //! |Blocks|[CryptoHash] -> [Block]||
@@ -45,18 +45,18 @@
 //! |Highest Timeout Certificate|[TimeoutCertificate]|Among the timeout certificates this validator has seen and verified the signatures of, the one with the highest view number.|
 //! |Highest Committed Block|[CryptoHash]|The hash of the committed block that has the highest height.|
 //! |Newest BlocK|[CryptoHash]The hash of the most recent block to be inserted into the block tree.|
-//! 
+//!
 //! ### Persistence in KV Store
-//! 
-//! The location of each of these variables in a KV store is defined in [paths](crate::state::paths). 
-//! Note that the fields of a block are itself stored in different tuples. This is so that user code 
-//! can get a subset of a block's data without loading the entire block from storage (which can be 
+//!
+//! The location of each of these variables in a KV store is defined in [paths](crate::state::paths).
+//! Note that the fields of a block are itself stored in different tuples. This is so that user code
+//! can get a subset of a block's data without loading the entire block from storage (which can be
 //! expensive). The key suffixes on which each of block's fields are stored are also defined in paths.
 //!
 //! ## Initial state
 //!
 //! All variables in the Block Tree start out empty except eight. These eight variables are:
-//! 
+//!
 //! |Variable|Initial value|
 //! |---|---|
 //! |Committed App State|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
@@ -68,16 +68,18 @@
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 
-use std::cmp::max;
-use std::iter::successors;
+use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
 use crate::types::basic::{ChildrenList, CryptoHash, ViewNumber};
 use crate::types::*;
-use crate::hotstuff::types::QuorumCertificate;
+use std::cmp::max;
+use std::iter::successors;
 
 use self::basic::{AppStateUpdates, BlockHeight, Data, DataLen, Datum};
 use self::block::Block;
-use self::validators::{ValidatorSetUpdatesStatus, ValidatorSet, ValidatorSetState, ValidatorSetUpdates};
+use self::validators::{
+    ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus,
+};
 
 use super::app_block_tree_view::AppBlockTreeView;
 use super::block_tree_camera::BlockTreeSnapshot;
@@ -102,7 +104,7 @@ impl<K: KVStore> BlockTree<K> {
         &mut self,
         initial_app_state: &AppStateUpdates,
         initial_validator_set_state: &ValidatorSetState,
-    ) -> Result<(), BlockTreeError>{
+    ) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
 
         wb.apply_app_state_updates(initial_app_state);
@@ -141,7 +143,7 @@ impl<K: KVStore> BlockTree<K> {
         block: &Block,
         app_state_updates: Option<&AppStateUpdates>,
         validator_set_updates: Option<&ValidatorSetUpdates>,
-    ) -> Result<(), BlockTreeError> {   
+    ) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
 
         // Insert block.
@@ -162,9 +164,7 @@ impl<K: KVStore> BlockTree<K> {
 
         self.write(wb);
 
-
         Ok(())
-
     }
 
     pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
@@ -200,7 +200,7 @@ impl<K: KVStore> BlockTree<K> {
     /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending
     /// app state updates). Siblings
     /// here refer to other blocks that share the same parent as the specified block.
-    /// 
+    ///
     ///  # Precondition
     /// Block is in its parents' (or the genesis) children list.
     ///
@@ -261,18 +261,20 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     pub(crate) fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
-        Ok(
+        Ok(max(
+            self.highest_view_entered()?,
             max(
-                self.highest_view_entered()?,
-                max(
-                    self.highest_qc()?.view,
-                    self.highest_tc()?.map(|tc| tc.view).unwrap_or(ViewNumber::init()),
-                )
-            )
-        )
+                self.highest_qc()?.view,
+                self.highest_tc()?
+                    .map(|tc| tc.view)
+                    .unwrap_or(ViewNumber::init()),
+            ),
+        ))
     }
 
-    pub(crate) fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+    pub(crate) fn highest_committed_block_height(
+        &self,
+    ) -> Result<Option<BlockHeight>, BlockTreeError> {
         let highest_committed_block = self.highest_committed_block()?;
         if let Some(block) = highest_committed_block {
             Ok(self.block_height(&block)?)
@@ -295,60 +297,69 @@ impl<K: KVStore> BlockTree<K> {
 
     /* ↓↓↓ Get AppBlockTreeView for ProposeBlockRequest and ValidateBlockRequest */
 
-    pub(crate) fn app_view<'a>(&'a self, parent: Option<&CryptoHash>) -> Result<AppBlockTreeView<'a, K>, BlockTreeError> {
+    pub(crate) fn app_view<'a>(
+        &'a self,
+        parent: Option<&CryptoHash>,
+    ) -> Result<AppBlockTreeView<'a, K>, BlockTreeError> {
         let highest_committed_block_height = self.highest_committed_block_height()?;
-        let parent = 
-            match parent {
-                None => None,
-                Some(&b) => Some(b)
-            };
+        let parent = match parent {
+            None => None,
+            Some(&b) => Some(b),
+        };
 
-        // Obtain an iterator over the ancestors starting from the parent, all the way until genesis, 
+        // Obtain an iterator over the ancestors starting from the parent, all the way until genesis,
         // from newest (parent) to oldest.
-        let ancestors_iter =
-            successors(
-            parent, 
-            |b| 
-                self.block_justify(b).ok()
-                .map(|qc| if !qc.is_genesis_qc() {Some(qc.block)} else {None})
+        let ancestors_iter = successors(parent, |b| {
+            self.block_justify(b)
+                .ok()
+                .map(|qc| {
+                    if !qc.is_genesis_qc() {
+                        Some(qc.block)
+                    } else {
+                        None
+                    }
+                })
                 .flatten()
-            );
-        
-        let ancestors_heights_iter = 
-            ancestors_iter
+        });
+
+        let ancestors_heights_iter = ancestors_iter
             .clone()
-            .map(|block| 
-                self.block_height(&block)
-                .map(|res| if res.is_none() {Err(BlockTreeError::BlockExpectedButNotFound{block: block.clone()})} else {Ok(res.unwrap())})
-            )
+            .map(|block| {
+                self.block_height(&block).map(|res| {
+                    if res.is_none() {
+                        Err(BlockTreeError::BlockExpectedButNotFound {
+                            block: block.clone(),
+                        })
+                    } else {
+                        Ok(res.unwrap())
+                    }
+                })
+            })
             .flatten()
             .flatten();
 
         // Obtain an iterator over the uncomitted ancestors starting from the parent,
         // ending at the lowest uncommitted ancestor.
-        let uncommitted_ancestors_iter =
-            ancestors_iter
+        let uncommitted_ancestors_iter = ancestors_iter
             .zip(ancestors_heights_iter)
-            .take_while(|(_, height)| 
-                highest_committed_block_height.is_none() || 
-                highest_committed_block_height.is_some_and(|h| height > &h)
-            )
+            .take_while(|(_, height)| {
+                highest_committed_block_height.is_none()
+                    || highest_committed_block_height.is_some_and(|h| height > &h)
+            })
             .map(|(b, _)| b);
 
         // Obtain a vector of optional app state updates associated with ancestors
         // starting from the parent, ending at the oldest uncommitted ancestor.
-        let pending_ancestors_app_state_updates: Vec<Option<AppStateUpdates>> = 
+        let pending_ancestors_app_state_updates: Vec<Option<AppStateUpdates>> =
             uncommitted_ancestors_iter
-            .map(|block| self.pending_app_state_updates(&block))
-            .flatten()
-            .collect();
+                .map(|block| self.pending_app_state_updates(&block))
+                .flatten()
+                .collect();
 
-        Ok(
-            AppBlockTreeView {
-                block_tree: self,
-                pending_ancestors_app_state_updates
-            }
-        )
+        Ok(AppBlockTreeView {
+            block_tree: self,
+            pending_ancestors_app_state_updates,
+        })
     }
 
     /* ↓↓↓ Basic state getters ↓↓↓ */
@@ -357,19 +368,31 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.block(block)?)
     }
 
-    pub(crate) fn block_height(&self, block: &CryptoHash) -> Result<Option<BlockHeight>, BlockTreeError> {
+    pub(crate) fn block_height(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<BlockHeight>, BlockTreeError> {
         Ok(self.0.block_height(block)?)
     }
 
-    pub(crate) fn block_data_hash(&self, block: &CryptoHash) -> Result<Option<CryptoHash>, BlockTreeError> {
+    pub(crate) fn block_data_hash(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<CryptoHash>, BlockTreeError> {
         Ok(self.0.block_data_hash(block)?)
     }
 
-    pub(crate) fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, BlockTreeError> {
+    pub(crate) fn block_justify(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<QuorumCertificate, BlockTreeError> {
         Ok(self.0.block_justify(block)?)
     }
 
-    pub(crate) fn block_data_len(&self, block: &CryptoHash) -> Result<Option<DataLen>, BlockTreeError> {
+    pub(crate) fn block_data_len(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<DataLen>, BlockTreeError> {
         Ok(self.0.block_data_len(block)?)
     }
 
@@ -381,7 +404,10 @@ impl<K: KVStore> BlockTree<K> {
         self.0.block_datum(block, datum_index)
     }
 
-    pub(crate) fn block_at_height(&self, height: BlockHeight) -> Result<Option<CryptoHash>, BlockTreeError> {
+    pub(crate) fn block_at_height(
+        &self,
+        height: BlockHeight,
+    ) -> Result<Option<CryptoHash>, BlockTreeError> {
         Ok(self.0.block_at_height(height)?)
     }
 
@@ -393,7 +419,10 @@ impl<K: KVStore> BlockTree<K> {
         self.0.committed_app_state(key)
     }
 
-    pub(crate) fn pending_app_state_updates(&self, block: &CryptoHash) -> Result<Option<AppStateUpdates>, BlockTreeError> {
+    pub(crate) fn pending_app_state_updates(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<AppStateUpdates>, BlockTreeError> {
         Ok(self.0.pending_app_state_updates(block)?)
     }
 
@@ -401,7 +430,10 @@ impl<K: KVStore> BlockTree<K> {
         Ok(self.0.committed_validator_set()?)
     }
 
-    pub(crate) fn validator_set_updates_status(&self, block: &CryptoHash) -> Result<ValidatorSetUpdatesStatus, BlockTreeError> {
+    pub(crate) fn validator_set_updates_status(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<ValidatorSetUpdatesStatus, BlockTreeError> {
         Ok(self.0.validator_set_updates_status(block)?)
     }
 
@@ -432,19 +464,18 @@ impl<K: KVStore> BlockTree<K> {
     pub(crate) fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
         Ok(self.0.highest_view_voted()?)
     }
-
 }
 
 /// Error when reading or writing to the [BlockTree]. Three kinds of errors may be encountered:
 /// 1. Error when trying to get a value from the underlying [key value store][KVStore],
 /// 2. Error when trying to set a value for a given key in the underlying [key value store][KVStore],
-/// 3. Unable to find a block that matches a given block tree query, even though the block should be 
+/// 3. Unable to find a block that matches a given block tree query, even though the block should be
 ///    present in the block tree.
 #[derive(Debug)]
 pub enum BlockTreeError {
     KVGetError(KVGetError),
     KVSetError(KVSetError),
-    BlockExpectedButNotFound{block: CryptoHash}
+    BlockExpectedButNotFound { block: CryptoHash },
 }
 
 impl From<KVGetError> for BlockTreeError {

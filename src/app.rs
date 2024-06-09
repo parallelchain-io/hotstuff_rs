@@ -13,35 +13,41 @@
 //! The App trait has three methods, each of which returns a response when called with a request:
 //! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
 //!    block. Your app should respond with the data and the data hash of a block extending the
-//!    parent block included in the request, as well as the 
-//!    [app state updates](crate::types::basic::AppStateUpdates) 
+//!    parent block included in the request, as well as the
+//!    [app state updates](crate::types::basic::AppStateUpdates)
 //!    and [validator set updates](crate::types::validators::ValidatorSetUpdates) that executing it causes.
 //! 2. `validate_block` is called  when the replica receives a proposal. Your app should respond
-//!    with whether the block is valid (according to the semantics of the application), and again 
-//!    with the [app state updates](crate::types::basic::AppStateUpdates) and 
+//!    with whether the block is valid (according to the semantics of the application), and again
+//!    with the [app state updates](crate::types::basic::AppStateUpdates) and
 //!    [validator set updates](crate::types::validators::ValidatorSetUpdates)
 //!    that executing the block causes.
 //! 3. `validate_block_for_sync` is called when the replica is syncing. Your app should respond
 //!    with whether the block is valid (according to the semantics of the application), and again
-//!    with the [app state updates](crate::types::basic::AppStateUpdates) and 
+//!    with the [app state updates](crate::types::basic::AppStateUpdates) and
 //!    [validator set updates](crate::types::validators::ValidatorSetUpdates)\
 //!    that executing the block causes.
 
-use crate::{state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore}, types::{
-    basic::{AppStateUpdates, CryptoHash, Data, ViewNumber},
-    block::Block,
-    validators::ValidatorSetUpdates,
-}};
+use crate::{
+    state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
+    types::{
+        basic::{AppStateUpdates, CryptoHash, Data, ViewNumber},
+        block::Block,
+        validators::ValidatorSetUpdates,
+    },
+};
 
 pub trait App<K: KVStore>: Send {
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
     fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
-    fn validate_block_for_sync(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
+    fn validate_block_for_sync(
+        &mut self,
+        request: ValidateBlockRequest<K>,
+    ) -> ValidateBlockResponse;
 }
 
 /// Request for the app to produce a new block extending the parent block. Contains information about
-/// the current [view number](crate::types::basic::ViewNumber), the parent 
-/// [block](crate::types::basic::CryptoHash) (if any), and the relevant 
+/// the current [view number](crate::types::basic::ViewNumber), the parent
+/// [block](crate::types::basic::CryptoHash) (if any), and the relevant
 /// [state of the Block Tree](crate::state::app_block_tree_view::AppBlockTreeView).
 pub struct ProduceBlockRequest<'a, K: KVStore> {
     cur_view: ViewNumber,
@@ -76,7 +82,7 @@ impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
 }
 
 /// Response from the app upon receiving a [request to produce a new block](ProduceBlockRequest).
-/// Contains the new block's [data](crate::types::basic::Data), the 
+/// Contains the new block's [data](crate::types::basic::Data), the
 /// [hash of the data](crate::types::basic::CryptoHash),
 /// the [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any),
 /// and the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with the
@@ -89,7 +95,7 @@ pub struct ProduceBlockResponse {
 }
 
 /// Request for the app to validate a proposed block. Contains information about the proposed
-/// [block](crate::types::block::Block), and the relevant 
+/// [block](crate::types::block::Block), and the relevant
 /// [state of the Block Tree](crate::state::app_block_tree_view::AppBlockTreeView).
 pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
     proposed_block: &'a Block,
@@ -113,9 +119,9 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
     }
 }
 
-/// Response from the app upon receiving a [request to validate a block](ValidateBlockRequest). 
+/// Response from the app upon receiving a [request to validate a block](ValidateBlockRequest).
 /// The response can either:
-/// 1. Assert that the block is valid, and return the 
+/// 1. Assert that the block is valid, and return the
 ///    [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any), as
 ///    well as the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with
 ///    the block (if any), or

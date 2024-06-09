@@ -5,11 +5,11 @@
 
 //! Definitions for structured messages that are sent between replicas as part of the
 //! [`HotStuff`][crate::hotstuff::protocol::HotStuff] protocol.
-//! 
+//!
 //! ## Messages
-//! 
+//!
 //! HotStuff-rs' modified HotStuff protocol involves four types of messages:
-//! 1. [`Proposal`]: broadcasted by the leader of a given view, who proposes to extend the blockchain by 
+//! 1. [`Proposal`]: broadcasted by the leader of a given view, who proposes to extend the blockchain by
 //!    inserting a block contained in the proposal.
 //! 2. [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
 //!    a next voting phase for a block with a given quorum certificate.
@@ -17,15 +17,15 @@
 //!    contains a cryptographic signature over the information passed through a vote.
 //! 4. [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
 //!    on the highestQC that replicas know of.
-//! 
+//!
 //! ## `NewView` and view synchronization
-//! 
+//!
 //! In the original HotStuff protocol, the leader of the next view keeps track of the number of
 //! `NewView` messages collected in the current view with the aim of advancing to the next view once a
 //! quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
 //! view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
 //! not come with a "fully-featured" BFT view synchronization mechanism.
-//! 
+//!
 //! HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
 //! form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
 //! unnecessary.
@@ -35,11 +35,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
-use crate::types::{
-    basic::*, 
-    block::*, 
-    keypair::*,
-};
+use crate::types::{basic::*, block::*, keypair::*};
 
 use super::types::{Phase, QuorumCertificate};
 
@@ -92,7 +88,7 @@ impl HotStuffMessage {
         })
     }
 
-    /// Create a [`Vote`] for a given chain id, view, block, and phase, by signing over the values with the 
+    /// Create a [`Vote`] for a given chain id, view, block, and phase, by signing over the values with the
     /// replica's private key.
     pub(crate) fn vote(
         me: &Keypair,
@@ -101,9 +97,7 @@ impl HotStuffMessage {
         block: CryptoHash,
         phase: Phase,
     ) -> HotStuffMessage {
-        let message_bytes = &(chain_id, view, block, phase)
-            .try_to_vec()
-            .unwrap();
+        let message_bytes = &(chain_id, view, block, phase).try_to_vec().unwrap();
         let signature = me.sign(message_bytes);
 
         HotStuffMessage::Vote(Vote {
@@ -111,7 +105,7 @@ impl HotStuffMessage {
             view,
             block,
             phase,
-            signature
+            signature,
         })
     }
 
@@ -170,7 +164,7 @@ impl Into<ProgressMessage> for HotStuffMessage {
     }
 }
 
-/// Broadcasted by the leader of a given view, who proposes to extend the blockchain by inserting a 
+/// Broadcasted by the leader of a given view, who proposes to extend the blockchain by inserting a
 /// block contained in the proposal.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
@@ -179,7 +173,7 @@ pub struct Proposal {
     pub block: Block,
 }
 
-/// Broadcasted by the leader of a given view, who nudges other validators to participate in a next 
+/// Broadcasted by the leader of a given view, who nudges other validators to participate in a next
 /// voting phase for a block with a given quorum certificate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
@@ -188,7 +182,7 @@ pub struct Nudge {
     pub justify: QuorumCertificate,
 }
 
-/// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a 
+/// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a
 /// cryptographic signature over the information passed through a vote.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
@@ -205,13 +199,13 @@ impl SignedMessage for Vote {
             .try_to_vec()
             .unwrap()
     }
-    
+
     fn signature_bytes(&self) -> SignatureBytes {
         self.signature
     }
 }
 
-/// Sent by a replica to the next leader on view timeout, serves to update the next leader on the 
+/// Sent by a replica to the next leader on view timeout, serves to update the next leader on the
 /// highestQC that replicas know of.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {

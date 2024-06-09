@@ -7,25 +7,25 @@
 //!
 //! The logs defined in this module are printed if the user enabled them via replica's
 //! [config](crate::replica::Configuration).
-//! 
+//!
 //! HotStuff-rs logs using the [log](https://docs.rs/log/latest/log/) crate. To get these messages
-//! printed onto a terminal or to a file, set up a 
+//! printed onto a terminal or to a file, set up a
 //! [logging implementation](https://docs.rs/log/latest/log/#available-logging-implementations).
-//! 
+//!
 //! ## Log message format
-//! 
+//!
 //! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are
 //! always:
 //! 1. The name of the event in PascalCase (defined in this module as constants).
 //! 2. The time the event was emitted (as number of seconds since the Unix Epoch).
-//! 
+//!
 //! The rest of the values differ depending on the kind of event. For example, the following snippet
 //! is how a [ReceiveProposal](crate::events::ReceiveProposalEvent) is printed:
-//! 
+//!
 //! ```text
 //! ReceiveProposal, 1701329264, Id5u7f6, fNGCJyk, 0
 //! ```
-//! 
+//!
 //! In the snippet:
 //! - The third value is the first seven characters of the Base64 encoding of the public address of the
 //!   origin of the proposal.
@@ -33,10 +33,10 @@
 //!   block.
 //! - The fifth value is the height of the proposed block.
 
-use std::time::SystemTime;
+use crate::{events::*, pacemaker::messages::ProgressCertificate};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use log;
-use crate::{events::*, pacemaker::messages::ProgressCertificate};
+use std::time::SystemTime;
 
 // Names of each event in PascalCase for printing:
 pub const INSERT_BLOCK: &str = "InsertBlock";
@@ -95,7 +95,12 @@ impl Logger for InsertBlockEvent {
 impl Logger for CommitBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |commit_block_event: &CommitBlockEvent| {
-            log::info!("{}, {}, {}", COMMIT_BLOCK, secs_since_unix_epoch(commit_block_event.timestamp), first_seven_base64_chars(&commit_block_event.block.bytes()))
+            log::info!(
+                "{}, {}, {}",
+                COMMIT_BLOCK,
+                secs_since_unix_epoch(commit_block_event.timestamp),
+                first_seven_base64_chars(&commit_block_event.block.bytes())
+            )
         };
         Box::new(logger)
     }
@@ -104,7 +109,12 @@ impl Logger for CommitBlockEvent {
 impl Logger for PruneBlockEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |prune_block_event: &PruneBlockEvent| {
-            log::info!("{}, {}, {}", PRUNE_BLOCK, secs_since_unix_epoch(prune_block_event.timestamp), first_seven_base64_chars(&prune_block_event.block.bytes()))
+            log::info!(
+                "{}, {}, {}",
+                PRUNE_BLOCK,
+                secs_since_unix_epoch(prune_block_event.timestamp),
+                first_seven_base64_chars(&prune_block_event.block.bytes())
+            )
         };
         Box::new(logger)
     }
@@ -350,7 +360,9 @@ impl Logger for ReceiveAdvanceViewEvent {
                 RECEIVE_ADVANCE_VIEW,
                 secs_since_unix_epoch(receive_advance_view_event.timestamp),
                 first_seven_base64_chars(&receive_advance_view_event.origin.to_bytes()),
-                progress_certificate_info(&receive_advance_view_event.advance_view.progress_certificate),
+                progress_certificate_info(
+                    &receive_advance_view_event.advance_view.progress_certificate
+                ),
             )
         };
         Box::new(logger)
@@ -418,7 +430,12 @@ impl Logger for CollectTCEvent {
 impl Logger for StartSyncEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |start_sync_event: &StartSyncEvent| {
-            log::info!("{}, {}, {}", START_SYNC, secs_since_unix_epoch(start_sync_event.timestamp), first_seven_base64_chars(&start_sync_event.peer.to_bytes()))
+            log::info!(
+                "{}, {}, {}",
+                START_SYNC,
+                secs_since_unix_epoch(start_sync_event.timestamp),
+                first_seven_base64_chars(&start_sync_event.peer.to_bytes())
+            )
         };
         Box::new(logger)
     }
@@ -427,7 +444,13 @@ impl Logger for StartSyncEvent {
 impl Logger for EndSyncEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
         let logger = |end_sync_event: &EndSyncEvent| {
-            log::info!("{}, {}, {}, {}", END_SYNC, secs_since_unix_epoch(end_sync_event.timestamp), first_seven_base64_chars(&end_sync_event.peer.to_bytes()), end_sync_event.blocks_synced)
+            log::info!(
+                "{}, {}, {}, {}",
+                END_SYNC,
+                secs_since_unix_epoch(end_sync_event.timestamp),
+                first_seven_base64_chars(&end_sync_event.peer.to_bytes()),
+                end_sync_event.blocks_synced
+            )
         };
         Box::new(logger)
     }
@@ -443,7 +466,7 @@ impl Logger for ReceiveSyncRequestEvent {
                 first_seven_base64_chars(&receive_sync_request_event.peer.to_bytes()),
                 receive_sync_request_event.start_height,
                 receive_sync_request_event.limit
-            )  
+            )
         };
         Box::new(logger)
     }
@@ -459,7 +482,7 @@ impl Logger for SendSyncResponseEvent {
                 first_seven_base64_chars(&send_sync_response_event.peer.to_bytes()),
                 first_seven_base64_chars(&send_sync_response_event.highest_qc.block.bytes()),
                 send_sync_response_event.blocks.len(),
-            )  
+            )
         };
         Box::new(logger)
     }
@@ -476,17 +499,21 @@ fn first_seven_base64_chars(bytes: &[u8]) -> String {
 }
 
 fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
-    timestamp.duration_since(SystemTime::UNIX_EPOCH)
+    timestamp
+        .duration_since(SystemTime::UNIX_EPOCH)
         .expect("Event occured before the Unix Epoch.")
         .as_secs()
 }
 
 fn progress_certificate_info(progress_certificate: &ProgressCertificate) -> String {
     match progress_certificate {
-        ProgressCertificate::QuorumCertificate(qc) => {
-            String::from(format!("Quorum Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}", 
-            qc.view, qc.phase, first_seven_base64_chars(&qc.block.bytes()), qc.signatures.iter().filter(|sig| sig.is_some()).count()))
-        },
+        ProgressCertificate::QuorumCertificate(qc) => String::from(format!(
+            "Quorum Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}",
+            qc.view,
+            qc.phase,
+            first_seven_base64_chars(&qc.block.bytes()),
+            qc.signatures.iter().filter(|sig| sig.is_some()).count()
+        )),
         ProgressCertificate::TimeoutCertificate(tc) => {
             String::from(format!("Timeout Certificate, view: {}", tc.view))
         }

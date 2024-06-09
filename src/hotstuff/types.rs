@@ -10,18 +10,18 @@ use std::collections::HashMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
+use super::messages::Vote;
 use crate::state::{
-    block_tree::{BlockTree, BlockTreeError}, 
-    kv_store::KVStore
+    block_tree::{BlockTree, BlockTreeError},
+    kv_store::KVStore,
 };
 use crate::types::{
-    basic::*, 
-    collectors::{Certificate, Collector}, 
-    validators::*
+    basic::*,
+    collectors::{Certificate, Collector},
+    validators::*,
 };
-use super::messages::Vote;
 
-/// Proof that at least a quorum of validators have voted for a given 
+/// Proof that at least a quorum of validators have voted for a given
 /// [proposal][crate::hotstuff::messages::Proposal] or [nudge][crate::hotstuff::messages::Nudge].
 /// Required for extending a block in the [`HotStuff`][crate::hotstuff::protocol::HotStuff], and for
 /// optimistic advance to a new view as part of the [pacemaker][crate::pacemaker::protocol::Pacemaker]
@@ -42,7 +42,7 @@ impl Certificate for QuorumCertificate {
     /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         if self.is_genesis_qc() {
-            return Ok(true)
+            return Ok(true);
         };
 
         let block_height = block_tree.block_height(&self.block)?;
@@ -50,7 +50,9 @@ impl Certificate for QuorumCertificate {
         let validator_set_state = block_tree.validator_set_state()?;
 
         let result = match (block_height, validator_set_state.update_height()) {
-            (None, _) | (Some(_), &None) => self.is_correctly_signed(validator_set_state.committed_validator_set()),
+            (None, _) | (Some(_), &None) => {
+                self.is_correctly_signed(validator_set_state.committed_validator_set())
+            }
             (Some(height), &Some(update_height)) => {
                 if height < update_height {
                     self.is_correctly_signed(validator_set_state.previous_validator_set())
@@ -62,30 +64,33 @@ impl Certificate for QuorumCertificate {
                             // Check if the validator set updates associated with this block have been committed.
                             // This tells us which validator set is expected to have voted on this QC.
                             match block_tree.validator_set_updates_status(&self.block)? {
-                                ValidatorSetUpdatesStatus::Committed => {
-                                    self.is_correctly_signed(validator_set_state.committed_validator_set())
-                                },
+                                ValidatorSetUpdatesStatus::Committed => self.is_correctly_signed(
+                                    validator_set_state.committed_validator_set(),
+                                ),
                                 ValidatorSetUpdatesStatus::Pending(vs_updates) => {
                                     // This may be the case if the block justified by this QC is received via sync,
                                     // hence the updates have not been applied yet. In this case we need to compute
                                     // the validator set expected to have voted "decide" for the block.
-                                    let mut new_validator_set = block_tree.committed_validator_set()?;
+                                    let mut new_validator_set =
+                                        block_tree.committed_validator_set()?;
                                     new_validator_set.apply_updates(&vs_updates);
                                     self.is_correctly_signed(&new_validator_set)
-                                },
-                                ValidatorSetUpdatesStatus::None => false
-                            }
-                        },
-                        Phase::Prepare | Phase::Precommit | Phase::Commit => {
-                            match block_tree.validator_set_updates_status(&self.block)? {
-                                ValidatorSetUpdatesStatus::Committed => 
-                                    self.is_correctly_signed(validator_set_state.previous_validator_set()),
-                                ValidatorSetUpdatesStatus::Pending(_) => 
-                                    self.is_correctly_signed(validator_set_state.committed_validator_set()),
-                                ValidatorSetUpdatesStatus::None => false
+                                }
+                                ValidatorSetUpdatesStatus::None => false,
                             }
                         }
-                        _ => false // Note: cannot panic here, since safe_qc has not been checked yet.
+                        Phase::Prepare | Phase::Precommit | Phase::Commit => {
+                            match block_tree.validator_set_updates_status(&self.block)? {
+                                ValidatorSetUpdatesStatus::Committed => self.is_correctly_signed(
+                                    validator_set_state.previous_validator_set(),
+                                ),
+                                ValidatorSetUpdatesStatus::Pending(_) => self.is_correctly_signed(
+                                    validator_set_state.committed_validator_set(),
+                                ),
+                                ValidatorSetUpdatesStatus::None => false,
+                            }
+                        }
+                        _ => false, // Note: cannot panic here, since safe_qc has not been checked yet.
                     }
                 }
             }
@@ -170,12 +175,9 @@ pub enum Phase {
     // ↓↓↓ For phased flow ↓↓↓ //
     Prepare,
 
-
     Precommit,
 
-
     Commit,
-
 
     Decide,
 }
@@ -202,7 +204,7 @@ impl Phase {
     }
 }
 
-/// Serves to incrementally form a [`QuorumCertificate`] by keeping track of votes for the same chain id, 
+/// Serves to incrementally form a [`QuorumCertificate`] by keeping track of votes for the same chain id,
 /// view, block, and phase by replicas from a given [validator set](ValidatorSet).
 #[derive(Clone)]
 pub(crate) struct VoteCollector {
@@ -216,11 +218,7 @@ impl Collector for VoteCollector {
     type C = QuorumCertificate;
     type S = Vote;
 
-    fn new(
-        chain_id: ChainID,
-        view: ViewNumber,
-        validator_set: ValidatorSet,
-    ) -> Self {
+    fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         Self {
             chain_id,
             view,
@@ -249,13 +247,9 @@ impl Collector for VoteCollector {
     ///
     /// # Preconditions
     /// vote.is_correct(signer)
-    fn collect(
-        &mut self,
-        signer: &VerifyingKey,
-        vote: Vote,
-    ) -> Option<QuorumCertificate> {
+    fn collect(&mut self, signer: &VerifyingKey, vote: Vote) -> Option<QuorumCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
-            return None
+            return None;
         }
 
         // Check if the signer is actually in the validator set.
@@ -264,7 +258,10 @@ impl Collector for VoteCollector {
             if let std::collections::hash_map::Entry::Vacant(e) =
                 self.signature_sets.entry((vote.block, vote.phase))
             {
-                e.insert((SignatureSet::new(self.validator_set.len()), TotalPower::new(0)));
+                e.insert((
+                    SignatureSet::new(self.validator_set.len()),
+                    TotalPower::new(0),
+                ));
             }
 
             let (signature_set, signature_set_power) = self
@@ -272,7 +269,7 @@ impl Collector for VoteCollector {
                 .get_mut(&(vote.block, vote.phase))
                 .unwrap();
 
-            // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the 
+            // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the
             // signature set.
             if signature_set.get(pos).is_none() {
                 signature_set.set(pos, Some(vote.signature));

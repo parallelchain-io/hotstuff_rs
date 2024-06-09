@@ -7,7 +7,9 @@
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{AppStateUpdates, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber};
+use crate::types::basic::{
+    AppStateUpdates, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+};
 use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus};
 use crate::types::{basic::BlockHeight, block::Block};
 
@@ -51,7 +53,11 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         // Get committed blocks starting from the specified height.
         let mut cursor = height;
         while let Some(block_hash) = self.0.block_at_height(cursor)? {
-            res.push(self.0.block(&block_hash)?.ok_or(BlockTreeError::BlockExpectedButNotFound{block: block_hash.clone()})?);
+            res.push(self.0.block(&block_hash)?.ok_or(
+                BlockTreeError::BlockExpectedButNotFound {
+                    block: block_hash.clone(),
+                },
+            )?);
             cursor += 1;
 
             if res.len() == limit as usize {
@@ -81,7 +87,12 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         if let Some(newest_block) = self.0.newest_block()? {
             let mut cursor = newest_block;
             loop {
-                let block = self.0.block(&cursor)?.ok_or(BlockTreeError::BlockExpectedButNotFound{block: cursor.clone()})?;
+                let block =
+                    self.0
+                        .block(&cursor)?
+                        .ok_or(BlockTreeError::BlockExpectedButNotFound {
+                            block: cursor.clone(),
+                        })?;
                 let block_justify = block.justify.clone();
                 res.push(block);
 
@@ -102,7 +113,9 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(res)
     }
 
-    pub(crate) fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+    pub(crate) fn highest_committed_block_height(
+        &self,
+    ) -> Result<Option<BlockHeight>, BlockTreeError> {
         let highest_committed_block = self.highest_committed_block()?;
         if let Some(block) = highest_committed_block {
             Ok(self.block_height(&block)?)
@@ -121,7 +134,10 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(self.0.block_height(block)?)
     }
 
-    pub fn block_data_hash(&self, block: &CryptoHash) -> Result<Option<CryptoHash>, BlockTreeError> {
+    pub fn block_data_hash(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<CryptoHash>, BlockTreeError> {
         Ok(self.0.block_data_hash(block)?)
     }
 
@@ -141,7 +157,10 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         self.0.block_datum(block, datum_index)
     }
 
-    pub fn block_at_height(&self, height: BlockHeight) -> Result<Option<CryptoHash>, BlockTreeError> {
+    pub fn block_at_height(
+        &self,
+        height: BlockHeight,
+    ) -> Result<Option<CryptoHash>, BlockTreeError> {
         Ok(self.0.block_at_height(height)?)
     }
 
@@ -153,7 +172,10 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         self.0.committed_app_state(key)
     }
 
-    pub fn pending_app_state_updates(&self, block: &CryptoHash) -> Result<Option<AppStateUpdates>, BlockTreeError> {
+    pub fn pending_app_state_updates(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<Option<AppStateUpdates>, BlockTreeError> {
         Ok(self.0.pending_app_state_updates(block)?)
     }
 
@@ -161,7 +183,10 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(self.0.committed_validator_set()?)
     }
 
-    pub fn validator_set_updates_status(&self, block: &CryptoHash) -> Result<ValidatorSetUpdatesStatus, BlockTreeError> {
+    pub fn validator_set_updates_status(
+        &self,
+        block: &CryptoHash,
+    ) -> Result<ValidatorSetUpdatesStatus, BlockTreeError> {
         Ok(self.0.validator_set_updates_status(block)?)
     }
 

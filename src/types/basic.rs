@@ -4,23 +4,24 @@
 */
 
 //! The types and traits defined in [`crate::types`] are either common across the sub-protocols used by
-//! Hotstuff-rs. 
-//! 
-//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in 
+//! Hotstuff-rs.
+//!
+//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in
 //! the respective directories.
-//! 
+//!
 //! The types defined in [`crate::types::basic`] include:
 //! 1. "Inert" types, i.e., those that are sent around and inspected, but have no active behavior. These
 //!    types follow the newtype pattern and the API for using these types is defined in this module.
-//! 2. The [`UpdateSet`] type, which represents generic-type state updates associated with committing a 
+//! 2. The [`UpdateSet`] type, which represents generic-type state updates associated with committing a
 //!    block.
 
-use std::{
-    collections::{hash_map, hash_set, HashMap, HashSet}, 
-    fmt::{self, Debug, Display, Formatter}, 
-    hash::Hash, ops::{Add, AddAssign, Sub, SubAssign}
-};
 use borsh::{BorshDeserialize, BorshSerialize};
+use std::{
+    collections::{hash_map, hash_set, HashMap, HashSet},
+    fmt::{self, Debug, Display, Formatter},
+    hash::Hash,
+    ops::{Add, AddAssign, Sub, SubAssign},
+};
 
 /// Id of the blockchain, used to identify the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
@@ -102,7 +103,7 @@ impl ChildrenList {
     }
 }
 
-/// The hash of a block. Given a [block][crate::types::block::Block] 
+/// The hash of a block. Given a [block][crate::types::block::Block]
 /// the hash is obtained [like this][crate::types::block::Block::hash].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct CryptoHash([u8; 32]);
@@ -262,14 +263,16 @@ impl SignatureSet {
 }
 
 /// HotStuff view number.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize,
+)]
 pub struct ViewNumber(u64);
 
 impl ViewNumber {
     pub fn new(int: u64) -> Self {
         Self(int)
     }
-    
+
     pub const fn init() -> Self {
         Self(0)
     }

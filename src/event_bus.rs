@@ -4,20 +4,20 @@
 */
 
 //! A thread that receives events emitted from the [algorithm](crate::algorithm) and
-//! [sync server](crate::block_sync::server::BlockSyncServer) threads and calls registered event 
+//! [sync server](crate::block_sync::server::BlockSyncServer) threads and calls registered event
 //! handlers.
-//! 
+//!
 //! When the thread receives a message containing an [event](crate::events::Event), it triggers the
 //! execution of all handlers defined for the contained event type, where the handlers for each event
 //! type are stored in [`EventHandlers`].
-//! 
+//!
 //! When no handlers are present in a replica's instance of `EventHandlers` this thread is not started.
-//! 
+//!
 //! ## Event Handlers
-//! 
+//!
 //! A replica's instance of `EventHandlers` contains:
 //! 1. The handlers provided upon building the replica via [`ReplicaSpec`](crate::replica::ReplicaSpec),
-//!    and 
+//!    and
 //! 2. If logging is enabled via replica's [config](crate::replica::Configuration) then also
 //!    the default logging handlers defined in [logging](crate::logging).
 
@@ -28,14 +28,14 @@ use std::thread::JoinHandle;
 use crate::events::*;
 use crate::logging::Logger;
 
-/// Pointer to a handler closure, parametrised by the argument (for our use case, event) type. 
+/// Pointer to a handler closure, parametrised by the argument (for our use case, event) type.
 pub(crate) type HandlerPtr<T> = Box<dyn Fn(&T) + Send>;
 
 /// Stores the two optional handlers enabled for an event type that implements the
 /// [`Logger`](crate::logging::Logger) trait, namely one logging handler, defined in
 /// [`logging`](crate::logging), and one user-defined handler, passed to
 /// [`ReplicaSpec`](crate::replica::ReplicaSpec).
-/// 
+///
 /// Note that the user-defined handler is expected to include all expected event-handling
 /// functionalities per event.
 pub(crate) struct HandlerPair<T: Logger> {
@@ -46,8 +46,7 @@ pub(crate) struct HandlerPair<T: Logger> {
 impl<T: Logger> HandlerPair<T> {
     // Checks if no event handlers are defined for this event.
     pub(crate) fn is_empty(&self) -> bool {
-        self.user_defined_handler.is_none()
-        && self.logging_handler.is_none()
+        self.user_defined_handler.is_none() && self.logging_handler.is_none()
     }
 
     /// Creates a new [HandlerPair](HandlerPair) with the user-defined handler, and the default logging
@@ -55,12 +54,12 @@ impl<T: Logger> HandlerPair<T> {
     pub(crate) fn new(log: bool, user_defined_handler: Option<HandlerPtr<T>>) -> HandlerPair<T> {
         HandlerPair {
             user_defined_handler,
-            logging_handler: if log { Some(T::get_logger()) } else { None }
+            logging_handler: if log { Some(T::get_logger()) } else { None },
         }
     }
 }
 
-/// Stores the [handler pair](HandlerPair) of user-defined and optional logging handlers for each 
+/// Stores the [handler pair](HandlerPair) of user-defined and optional logging handlers for each
 /// pre-defined event type from [events](crate::events).
 pub(crate) struct EventHandlers {
     pub(crate) insert_block_handlers: HandlerPair<InsertBlockEvent>,
@@ -97,8 +96,8 @@ pub(crate) struct EventHandlers {
 }
 
 impl EventHandlers {
-    /// Creates the [handler pairs](HandlerPair) for all pre-defined event types from 
-    /// [events](crate::events) given the user-defined handlers, and information on whether logging is 
+    /// Creates the [handler pairs](HandlerPair) for all pre-defined event types from
+    /// [events](crate::events) given the user-defined handlers, and information on whether logging is
     /// enabled.
     pub(crate) fn new(
         log: bool,
@@ -130,7 +129,6 @@ impl EventHandlers {
         receive_sync_request_handler: Option<HandlerPtr<ReceiveSyncRequestEvent>>,
         send_sync_response_handler: Option<HandlerPtr<SendSyncResponseEvent>>,
     ) -> EventHandlers {
-
         EventHandlers {
             insert_block_handlers: HandlerPair::new(log, insert_block_handler),
             commit_block_handlers: HandlerPair::new(log, commit_block_handler),
@@ -158,155 +156,315 @@ impl EventHandlers {
             start_sync_handlers: HandlerPair::new(log, start_sync_handler),
             end_sync_handlers: HandlerPair::new(log, end_sync_handler),
             receive_sync_request_handlers: HandlerPair::new(log, receive_sync_request_handler),
-            send_sync_response_handlers: HandlerPair::new(log, send_sync_response_handler)
+            send_sync_response_handlers: HandlerPair::new(log, send_sync_response_handler),
         }
-
     }
 
     /// Checks if no handlers are defined, i.e., neither user-defined handlers were defined nor logging is
     /// enabled.
     pub(crate) fn is_empty(&self) -> bool {
         self.insert_block_handlers.is_empty()
-        && self.commit_block_handlers.is_empty()
-        && self.prune_block_handlers.is_empty()
-        && self.update_highest_qc_handlers.is_empty()
-        && self.update_locked_qc_handlers.is_empty()
-        && self.update_highest_tc_handlers.is_empty()
-        && self.update_validator_set_handlers.is_empty()
-        && self.propose_handlers.is_empty()
-        && self.nudge_handlers.is_empty()
-        && self.vote_handlers.is_empty()
-        && self.new_view_handlers.is_empty()
-        && self.timeout_vote_handlers.is_empty()
-        && self.advance_view_handlers.is_empty()
-        && self.receive_proposal_handlers.is_empty()
-        && self.receive_nudge_handlers.is_empty()
-        && self.receive_vote_handlers.is_empty()
-        && self.receive_new_view_handlers.is_empty()
-        && self.receive_timeout_vote_handlers.is_empty()
-        && self.receive_advance_view_handlers.is_empty()
-        && self.start_view_handlers.is_empty()
-        && self.view_timeout_handlers.is_empty()
-        && self.collect_qc_handlers.is_empty()
-        && self.collect_tc_handlers.is_empty()
-        && self.start_sync_handlers.is_empty()
-        && self.end_sync_handlers.is_empty()
-        && self.receive_sync_request_handlers.is_empty()
-        && self.send_sync_response_handlers.is_empty()
+            && self.commit_block_handlers.is_empty()
+            && self.prune_block_handlers.is_empty()
+            && self.update_highest_qc_handlers.is_empty()
+            && self.update_locked_qc_handlers.is_empty()
+            && self.update_highest_tc_handlers.is_empty()
+            && self.update_validator_set_handlers.is_empty()
+            && self.propose_handlers.is_empty()
+            && self.nudge_handlers.is_empty()
+            && self.vote_handlers.is_empty()
+            && self.new_view_handlers.is_empty()
+            && self.timeout_vote_handlers.is_empty()
+            && self.advance_view_handlers.is_empty()
+            && self.receive_proposal_handlers.is_empty()
+            && self.receive_nudge_handlers.is_empty()
+            && self.receive_vote_handlers.is_empty()
+            && self.receive_new_view_handlers.is_empty()
+            && self.receive_timeout_vote_handlers.is_empty()
+            && self.receive_advance_view_handlers.is_empty()
+            && self.start_view_handlers.is_empty()
+            && self.view_timeout_handlers.is_empty()
+            && self.collect_qc_handlers.is_empty()
+            && self.collect_tc_handlers.is_empty()
+            && self.start_sync_handlers.is_empty()
+            && self.end_sync_handlers.is_empty()
+            && self.receive_sync_request_handlers.is_empty()
+            && self.send_sync_response_handlers.is_empty()
     }
 
-    /// Triggers the execution of each of the two handlers - the user-defined and the logging handler, if 
+    /// Triggers the execution of each of the two handlers - the user-defined and the logging handler, if
     /// defined - for a given event type from [events](crate::events).
     pub(crate) fn fire_handlers(&self, event: Event) {
-
         match event {
             Event::InsertBlock(insert_block_event) => {
-                self.insert_block_handlers.user_defined_handler.iter().for_each(|handler| handler(&insert_block_event));
-                self.insert_block_handlers.logging_handler.iter().for_each(|handler| handler(&insert_block_event));
-            },
+                self.insert_block_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&insert_block_event));
+                self.insert_block_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&insert_block_event));
+            }
             Event::CommitBlock(commit_block_event) => {
-                self.commit_block_handlers.user_defined_handler.iter().for_each(|handler| handler(&commit_block_event));
-                self.commit_block_handlers.logging_handler.iter().for_each(|handler| handler(&commit_block_event));
+                self.commit_block_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&commit_block_event));
+                self.commit_block_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&commit_block_event));
             }
             Event::PruneBlock(prune_block_event) => {
-                self.prune_block_handlers.user_defined_handler.iter().for_each(|handler| handler(&prune_block_event));
-                self.prune_block_handlers.logging_handler.iter().for_each(|handler| handler(&prune_block_event));
+                self.prune_block_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&prune_block_event));
+                self.prune_block_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&prune_block_event));
             }
             Event::UpdateHighestQC(update_highest_qc_event) => {
-                self.update_highest_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
-                self.update_highest_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_qc_event));
+                self.update_highest_qc_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_highest_qc_event));
+                self.update_highest_qc_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_highest_qc_event));
             }
             Event::UpdateLockedQC(update_locked_qc_event) => {
-                self.update_locked_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
-                self.update_locked_qc_handlers.logging_handler.iter().for_each(|handler| handler(&update_locked_qc_event));
+                self.update_locked_qc_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_locked_qc_event));
+                self.update_locked_qc_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_locked_qc_event));
             }
             Event::UpdateHighestTC(update_highest_tc_event) => {
-                self.update_highest_tc_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
-                self.update_highest_tc_handlers.logging_handler.iter().for_each(|handler| handler(&update_highest_tc_event));
+                self.update_highest_tc_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_highest_tc_event));
+                self.update_highest_tc_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_highest_tc_event));
             }
             Event::UpdateValidatorSet(update_validator_set_event) => {
-                self.update_validator_set_handlers.user_defined_handler.iter().for_each(|handler| handler(&update_validator_set_event));
-                self.update_validator_set_handlers.logging_handler.iter().for_each(|handler| handler(&update_validator_set_event));
+                self.update_validator_set_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_validator_set_event));
+                self.update_validator_set_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&update_validator_set_event));
             }
             Event::Propose(propose_event) => {
-                self.propose_handlers.user_defined_handler.iter().for_each(|handler| handler(&propose_event));
-                self.propose_handlers.logging_handler.iter().for_each(|handler| handler(&propose_event));
+                self.propose_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&propose_event));
+                self.propose_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&propose_event));
             }
             Event::Nudge(nudge_event) => {
-                self.nudge_handlers.user_defined_handler.iter().for_each(|handler| handler(&nudge_event));
-                self.nudge_handlers.logging_handler.iter().for_each(|handler| handler(&nudge_event));
+                self.nudge_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&nudge_event));
+                self.nudge_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&nudge_event));
             }
             Event::Vote(vote_event) => {
-                self.vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&vote_event));
-                self.vote_handlers.logging_handler.iter().for_each(|handler| handler(&vote_event));
+                self.vote_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&vote_event));
+                self.vote_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&vote_event));
             }
             Event::NewView(new_view_event) => {
-                self.new_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&new_view_event));
-                self.new_view_handlers.logging_handler.iter().for_each(|handler| handler(&new_view_event));
+                self.new_view_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&new_view_event));
+                self.new_view_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&new_view_event));
             }
             Event::TimeoutVote(timeout_vote_event) => {
-                self.timeout_vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&timeout_vote_event));
-                self.timeout_vote_handlers.logging_handler.iter().for_each(|handler| handler(&timeout_vote_event));
+                self.timeout_vote_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&timeout_vote_event));
+                self.timeout_vote_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&timeout_vote_event));
             }
             Event::AdvanceView(advance_view_event) => {
-                self.advance_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&advance_view_event));
-                self.advance_view_handlers.logging_handler.iter().for_each(|handler| handler(&advance_view_event));
+                self.advance_view_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&advance_view_event));
+                self.advance_view_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&advance_view_event));
             }
             Event::ReceiveProposal(receive_proposal_event) => {
-                self.receive_proposal_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_proposal_event));
-                self.receive_proposal_handlers.logging_handler.iter().for_each(|handler| handler(&receive_proposal_event));
+                self.receive_proposal_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_proposal_event));
+                self.receive_proposal_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_proposal_event));
             }
             Event::ReceiveNudge(receive_nudge_event) => {
-                self.receive_nudge_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_nudge_event));
-                self.receive_nudge_handlers.logging_handler.iter().for_each(|handler| handler(&receive_nudge_event));
+                self.receive_nudge_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_nudge_event));
+                self.receive_nudge_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_nudge_event));
             }
             Event::ReceiveVote(receive_vote_event) => {
-                self.receive_vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_vote_event));
-                self.receive_vote_handlers.logging_handler.iter().for_each(|handler| handler(&receive_vote_event));
+                self.receive_vote_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_vote_event));
+                self.receive_vote_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_vote_event));
             }
             Event::ReceiveNewView(receive_new_view) => {
-                self.receive_new_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_new_view));
-                self.receive_new_view_handlers.logging_handler.iter().for_each(|handler| handler(&receive_new_view));
+                self.receive_new_view_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_new_view));
+                self.receive_new_view_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_new_view));
             }
             Event::ReceiveTimeoutVote(receive_timeout_vote_event) => {
-                self.receive_timeout_vote_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_timeout_vote_event));
-                self.receive_timeout_vote_handlers.logging_handler.iter().for_each(|handler| handler(&receive_timeout_vote_event));
+                self.receive_timeout_vote_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_timeout_vote_event));
+                self.receive_timeout_vote_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_timeout_vote_event));
             }
             Event::ReceiveAdvanceView(receive_advance_view_event) => {
-                self.receive_advance_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_advance_view_event));
-                self.receive_advance_view_handlers.logging_handler.iter().for_each(|handler| handler(&receive_advance_view_event));
+                self.receive_advance_view_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_advance_view_event));
+                self.receive_advance_view_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_advance_view_event));
             }
             Event::StartView(start_view_event) => {
-                self.start_view_handlers.user_defined_handler.iter().for_each(|handler| handler(&start_view_event));
-                self.start_view_handlers.logging_handler.iter().for_each(|handler| handler(&start_view_event));
+                self.start_view_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&start_view_event));
+                self.start_view_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&start_view_event));
             }
             Event::ViewTimeout(view_timeout_event) => {
-                self.view_timeout_handlers.user_defined_handler.iter().for_each(|handler| handler(&view_timeout_event));
-                self.view_timeout_handlers.logging_handler.iter().for_each(|handler| handler(&view_timeout_event));
+                self.view_timeout_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&view_timeout_event));
+                self.view_timeout_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&view_timeout_event));
             }
             Event::CollectQC(collect_qc_event) => {
-                self.collect_qc_handlers.user_defined_handler.iter().for_each(|handler| handler(&collect_qc_event));
-                self.collect_qc_handlers.logging_handler.iter().for_each(|handler| handler(&collect_qc_event));
+                self.collect_qc_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&collect_qc_event));
+                self.collect_qc_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&collect_qc_event));
             }
             Event::CollectTC(collect_tc_event) => {
-                self.collect_tc_handlers.user_defined_handler.iter().for_each(|handler| handler(&collect_tc_event));
-                self.collect_tc_handlers.logging_handler.iter().for_each(|handler| handler(&collect_tc_event));
+                self.collect_tc_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&collect_tc_event));
+                self.collect_tc_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&collect_tc_event));
             }
             Event::StartSync(start_sync_event) => {
-                self.start_sync_handlers.user_defined_handler.iter().for_each(|handler| handler(&start_sync_event));
-                self.start_sync_handlers.logging_handler.iter().for_each(|handler| handler(&start_sync_event));
+                self.start_sync_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&start_sync_event));
+                self.start_sync_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&start_sync_event));
             }
             Event::EndSync(end_sync_event) => {
-                self.end_sync_handlers.user_defined_handler.iter().for_each(|handler| handler(&end_sync_event));
-                self.end_sync_handlers.logging_handler.iter().for_each(|handler| handler(&end_sync_event));
+                self.end_sync_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&end_sync_event));
+                self.end_sync_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&end_sync_event));
             }
             Event::ReceiveSyncRequest(receive_sync_request_event) => {
-                self.receive_sync_request_handlers.user_defined_handler.iter().for_each(|handler| handler(&receive_sync_request_event));
-                self.receive_sync_request_handlers.logging_handler.iter().for_each(|handler| handler(&receive_sync_request_event));
+                self.receive_sync_request_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_sync_request_event));
+                self.receive_sync_request_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&receive_sync_request_event));
             }
             Event::SendSyncResponse(send_sync_response_event) => {
-                self.send_sync_response_handlers.user_defined_handler.iter().for_each(|handler| handler(&send_sync_response_event));
-                self.send_sync_response_handlers.logging_handler.iter().for_each(|handler| handler(&send_sync_response_event));
+                self.send_sync_response_handlers
+                    .user_defined_handler
+                    .iter()
+                    .for_each(|handler| handler(&send_sync_response_event));
+                self.send_sync_response_handlers
+                    .logging_handler
+                    .iter()
+                    .for_each(|handler| handler(&send_sync_response_event));
             }
         }
     }
@@ -318,7 +476,7 @@ impl EventHandlers {
 pub(crate) fn start_event_bus(
     event_handlers: EventHandlers,
     event_subscriber: Receiver<Event>,
-    shutdown_signal: Receiver<()>, 
+    shutdown_signal: Receiver<()>,
 ) -> JoinHandle<()> {
     thread::spawn(move || loop {
         match shutdown_signal.try_recv() {
@@ -331,9 +489,8 @@ pub(crate) fn start_event_bus(
 
         if let Ok(event) = event_subscriber.try_recv() {
             (&event_handlers).fire_handlers(event)
-        } else if let Err(TryRecvError::Disconnected) = event_subscriber.try_recv()  {
+        } else if let Err(TryRecvError::Disconnected) = event_subscriber.try_recv() {
             panic!("The algorithm thread (event publisher) disconnected from the channel")
         }
-
     })
 }

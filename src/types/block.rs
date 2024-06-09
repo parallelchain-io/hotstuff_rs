@@ -6,8 +6,8 @@
 //! Definitions for the 'block' type and its methods.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-pub use sha2::Sha256 as CryptoHasher;
 use sha2::Digest;
+pub use sha2::Sha256 as CryptoHasher;
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::state::block_tree::{BlockTree, BlockTreeError};
@@ -15,7 +15,6 @@ use crate::state::kv_store::KVStore;
 use crate::types::basic::*;
 
 use super::collectors::Certificate;
-
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
@@ -55,8 +54,13 @@ impl Block {
     }
 
     /// Checks if hash and justify are cryptographically correct.
-    pub fn is_correct<K : KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
-        Ok(self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
-            && self.justify.is_correct(block_tree)?)
+    pub fn is_correct<K: KVStore>(
+        &self,
+        block_tree: &BlockTree<K>,
+    ) -> Result<bool, BlockTreeError> {
+        Ok(
+            self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
+                && self.justify.is_correct(block_tree)?,
+        )
     }
 }

@@ -4,7 +4,6 @@
 */
 //! Defines the useful utilities.
 
-
 /// Takes references to two byteslices and returns a vector containing the bytes of the first one, and
 /// then the bytes of the second one.
 pub(super) fn combine(a: &[u8], b: &[u8]) -> Vec<u8> {
