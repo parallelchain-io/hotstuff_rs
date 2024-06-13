@@ -3,27 +3,46 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements the [`BlockSyncClient`], which can help a replica catch up with the head of the blockchain
-//! by requesting blocks from the sync server of another replica. The client is responsible for:
-//! 1. Triggering block sync (when a replica can't make progress for long enough or sees evidence that
-//!    others are ahead), and
+//! Implements the [`BlockSyncClient`], which helps a replica catch up with the head of the blockchain
+//! by requesting blocks from the sync server of another replica.
+//!
+//! The client is responsible for:
+//! 1. Triggering Block Sync when:
+//!     1. A replica has not made progress for a configurable amount of time.
+//!     2. Or, sees evidence that others are ahead.
 //! 2. Managing the list of peers available as sync servers and a blacklist for sync servers that have
-//!    provided incorrect information in the past, and
-//! 3. Selecting a peer to sync with from the list of available peers, and
+//!    provided incorrect information in the past.
+//! 3. Selecting a peer to sync with from the list of available peers.
 //! 4. Attempting to sync with a given peer.
 //!
-//! ## Available sync servers
-//! In general, available sync servers are current and potential validators that:
-//! 1. Are "In sync" or ahead of the replica in terms of highest committed block height,
-//! 2. Notify the replica's sync client about their availability,
-//! 3. Have not provided false information to the block sync client within a certain period of time specified
-//!    by the blacklist expiry time. By "false information" we mean incorrect blocks or incorrect highest
-//!    committed block height (used to determine 1).
+//! ## Triggering Block Sync
 //!
-//! Keeping track of which peers can be considered available sync servers is done by maintaining a hashmap
-//! of available sync servers, and a queue of blacklisted sync servers together with their expiry times.
+//! HotStuff-rs replicas implement two complementary and configurable block sync trigger mechanisms:
+//! 1. Event-based sync trigger: on receiving an [`AdvertiseQC`] message with a correct QC from the
+//!    future. By how many views the received QC must be ahead of the current view to trigger sync can
+//!    be configured by setting `block_sync_trigger_min_view_difference` in the replica
+//!    [configuration](crate::replica::Configuration).
+//! 2. Timeout-based sync trigger: when no "progress" is made for a sufficiently long time. Here
+//!    "progress" is understood as updating the highestQC stored in the [block tree](BlockTree) - in the
+//!    context of the HotStuff SMR, updating the highestQC means that the validators are achieving
+//!    consensus and extending the blockchain. The amount of time without progress or sync attempts
+//!    required to trigger sync can be configured by setting `block_sync_trigger_timeout` in the replica
+//!    configuration.
 //!
-//! ## Block sync process
+//! The two sync trigger mechanims offer fallbacks for different liveness-threatening scenarios that a
+//! replica may face:
+//! 1. The event-based sync trigger can help a replica catch up with the head of the blockchain in case
+//!    there is a quorum of validators known to the replica making progress ahead, but the replica has
+//!    fallen behind them in terms of view number.
+//! 2. The timeout-based sync trigger can help a replica catch up in case there is either no quorum
+//!    ahead (e.g., if others have also fallen out of sync with each other), or the validator set making
+//!    progress ahead is unknown to the replica because it doesn't know about the most recent validator
+//!    set updates. Note that in the latter case, sync will only be succesful if some of the sync peers
+//!    known to the replica are up-to-date with the head of the blockchain. Otherwise, a manual sync
+//!    attempt may be required to recover from this situation.
+//!
+//! ## Block Sync procedure
+//!
 //! When sync is triggered, the sync client picks a random sync server from its list of available sync
 //! servers, and iteratively sends it sync requests and processes the received sync responses until
 //! the sync is terminated. Sync can be terminated if either:
@@ -35,31 +54,18 @@
 //! inconsistent with the server's promise to provide blocks up to a given height, as conveyed
 //! through its earlier [`AdvertiseBlock`] message.
 //!
-//! ## Block sync trigger
-//! hotstuff-rs offers two complementary and configurable block sync trigger mechanims:
-//! 1. Event-based sync trigger: on receiving an [`AdvertiseQC`] message with a correct QC from the future.
-//!    By how many views the received QC must be ahead of the current view to trigger sync can be
-//!    configured by setting block_sync_trigger_min_view_difference in
-//!    [configuration](crate::replica::Configuration).
-//! 2. Timeout-based sync trigger: when no "progress" is made for a sufficiently long time. Here "pogress"
-//!    is understood as updating the highestQC stored in the [block tree](BlockTree) - in the context of
-//!    the HotStuff SMR, updating the highestQC means that the validators are achieving consensus and
-//!    extending the blockchain. The amount of time without progress or sync attempts required to trigger
-//!    sync can be configured by setting the block_sync_trigger_timeout in
-//!    [configuration](crate::replica::Configuration).
+//! ## Available sync servers
 //!
-//! The two sync trigger mechanims offer fallbacks for different liveness-threatening scenarios that a
-//! replica may face:
-//! 1. The event-based sync trigger can help a replica catch up with the head of the blockchain
-//!    in case there is a quorum of validators known to the replica making progress ahead, but
-//!    the replica has fallen behind them in terms of view number.
-//! 2. The timeout-based sync trigger can help a replica catch up in case there is either no
-//!    quorum ahead (e.g., if others have also fallen out of sync with each other), or the
-//!    validator set making progress ahead is unknown to the replica because it doesn't know
-//!    about the most recent validator set updates. Note that in the latter case, sync will
-//!    only be succesfull if some of the sync peers known to the replica are up-to-date with
-//!    the head of the blockchain. Otherwise, a manual sync attempt may be required to recover
-//!    from this situation.
+//! In general, available sync servers are current and potential validators that:
+//! 1. Are "in sync" or ahead of the replica in terms of highest committed block height,
+//! 2. Notify the replica's sync client about their availability,
+//! 3. Have not provided false information to the block sync client within a certain period of time
+//!    specified by the blacklist expiry time. By "false information" we mean incorrect blocks or
+//!    incorrect highest committed block height (used to determine 1).
+//!
+//! Keeping track of which peers can be considered available sync servers is done by maintaining a
+//! hashmap of available sync servers, and a queue of blacklisted sync servers together with their
+//! expiry times.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::Sender;
@@ -229,7 +235,7 @@ impl<N: Network> BlockSyncClient<N> {
             return Ok(());
         }
 
-        // If the received QC is correct and the difference between its view and the highest view
+        // If the received QC is correct *and* the difference between its view and the highest view
         // entered is sufficiently big, then trigger sync.
         let view_difference = (advertise_qc.highest_qc.view - highest_view_entered) as u64;
         if view_difference >= self.config.block_sync_trigger_min_view_difference
@@ -448,28 +454,47 @@ impl<N: Network> BlockSyncClient<N> {
     }
 }
 
-/// Immutable parameters that define the behaviour of the [`BlockSyncClient`]:
-/// 1. Chain ID of the target blockchain,
-/// 2. Max. number of blocks per block sync request,
-/// 3. Timeout for waiting for a single block sync response,
-/// 4. Time after which a blacklisted sync server should be removed from the blacklist.
-/// 5. By how many views a QC received via [`AdvertiseQC`] must be ahead of the current
-///    view in order to trigger sync (event-based sync trigger).
-/// 6. How much time needs to pass without any progress (i.e., updating the highestQC)
-///    or sync attempts in order to trigger sync (timeout-based sync trigger).
+/// Configuration parameters that define the behaviour of the [`BlockSyncClient`]. These should not
+/// change after the block sync client starts.
 pub(crate) struct BlockSyncClientConfiguration {
+    /// Chain ID of the target blockchain. The block sync client will only process advertise messages whose
+    /// Chain ID matches the configured value.
     pub(crate) chain_id: ChainID,
+
+    /// The maximum number of blocks requested with every block sync request.
     pub(crate) request_limit: u32,
+
+    /// Timeout for waiting for a single block sync response.
     pub(crate) response_timeout: Duration,
+
+    /// Time after which a blacklisted sync server should be removed from the block sync blacklist.
     pub(crate) blacklist_expiry_time: Duration,
+
+    /// By how many views a QC received via [`AdvertiseQC`] must be ahead of the current view in order to
+    /// trigger sync (via the event-based sync trigger).
     pub(crate) block_sync_trigger_min_view_difference: u64,
+
+    /// How much time needs to pass without any progress (i.e., updating the highest QC) or sync attempts in
+    /// order to trigger sync (via the timeout-based sync trigger).
     pub(crate) block_sync_trigger_timeout: Duration,
 }
 
 struct BlockSyncClientState {
+    /// Replicas that are currently available to be sync servers,
     available_sync_servers: HashMap<VerifyingKey, BlockHeight>,
+
+    /// A list of replicas (identified by their public addresses) that will be ignored by the block sync
+    /// client until the paired instant. "Ignored" here means that:
+    /// - These replicas will not be selected as sync servers.
+    /// - Advertise messages received from these replicas will be ignored.
     blacklist: VecDeque<(VerifyingKey, Instant)>,
+
+    /// The most recent instant in time when either:
+    /// 1. Progress was made (the highest QC was updated).
+    /// 2. The block sync procedure was completed (not necessarily successfully).
     last_progress_or_sync_time: Instant,
+
+    /// Cached value of `block_tree.highest_qc().view`.
     highest_qc_view: ViewNumber,
 }
 
@@ -531,7 +556,8 @@ impl BlockSyncClientState {
         }
     }
 
-    /// Sample a random sync server from available sync servers.
+    /// Select a random sync server from available sync servers, with the condition that the sync server
+    /// must have advertised a block higher than `highest_committed_block_height`.
     fn random_sync_server(
         &self,
         min_highest_committed_block_height: &Option<BlockHeight>,

@@ -3,14 +3,21 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the block sync protocol.
-//! This includes:
-//! 1. Block sync protocol messages ([`BlockSyncMessage`]): exchanged between a sync client and sync server
-//!    when the client is trying to sync with the server.
-//! 2. Block sync server advertisements ([`BlockSyncAdvertiseMessage`]): periodically broadcasted by sync
-//!    servers to update the sync clients on (1) their availability and commitment to providing blocks
-//!    at least up to a given height ([`AdvertiseBlock`]), and (2) whether the quorum is making progress
-//!    in a future view, as evidence by the server's local highestQC ([`AdvertiseQC`]).
+//! Definitions for structured messages that are sent between replicas as part of the Block Sync
+//! protocol.
+//!
+//! ## Messages
+//!
+//! The Block Sync protocol defines two categories of messages:
+//!
+//! 1. Block Sync Protocol messages ([`BlockSyncMessage`]): exchanged between a sync client and sync
+//!    server when the client is trying to sync with the server.
+//! 2. Block Sync Server Advertisements ([`BlockSyncAdvertiseMessage`]): periodically broadcasted by
+//!    sync servers to update the sync clients on:
+//!     1. Their availability and commitment to providing blocks at least up to a given height
+//!        ([`AdvertiseBlock`]).
+//!     2. Whether the quorum is making progress in a future view, as evidenced by the server's local
+//!        Highest QC ([`AdvertiseQC`]).
 
 use std::mem;
 
@@ -113,7 +120,7 @@ impl BlockSyncAdvertiseMessage {
     }
 }
 
-/// Periodically broadcasted by the sync server to:
+/// A message periodically broadcasted by the sync server to:
 /// 1. Let clients know that the server is available,
 /// 2. Commit to providing blocks at least up to the highest committed block height, as included in this
 ///    message, in case a client decides to sync with the sync server.
@@ -136,9 +143,9 @@ impl SignedMessage for AdvertiseBlock {
     }
 }
 
-/// Periodically broadcasted by the sync server to let clients know about the highestQC the server knows. This information
-/// may serve as an evidence for the fact that a client is lagging behind, and thus make the client trigger
-/// the sync process with some server.
+/// A message periodically broadcasted by the sync server to let clients know about the highestQC the
+/// server knows. This information may serve as an evidence for the fact that a client is lagging
+/// behind, and thus make the client trigger the sync process with some server.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvertiseQC {
     pub highest_qc: QuorumCertificate,

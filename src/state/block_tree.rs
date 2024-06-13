@@ -55,7 +55,9 @@
 //!
 //! ## Initial state
 //!
-//! All variables in the Block Tree start out empty except eight. These eight variables are:
+//! All variables in the Block Tree start out empty except eight. These eight variables, which must be
+//! initialized using the [`initialize`](BlockTree::initialize) function before doing anything else with
+//! the Block Tree, are:
 //!
 //! |Variable|Initial value|
 //! |---|---|
@@ -238,7 +240,8 @@ impl<K: KVStore> BlockTree<K> {
         }
     }
 
-    /// Performs depth-first search to collect all blocks in a branch into a single iterator.
+    /// Performs depth-first search to collect the hashes of all blocks in the branch rooted at `root` into
+    /// a single iterator.
     pub fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
         let mut stack: Vec<CryptoHash> = vec![root];
         let mut branch: Vec<CryptoHash> = vec![];

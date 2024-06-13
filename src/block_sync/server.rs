@@ -4,12 +4,13 @@
 */
 
 //! Implements the [`BlockSyncServer`] for the block sync protocol, which helps the replicas lagging
-//! behind catch up with the head of the blockchain in a safe and live manner. A replica might be
-//! lagging behind for various reasons, such as network outage, downtime, or deliberate action
-//! by Byzantine leaders.
+//! behind catch up with the head of the blockchain in a safe and live manner.
+//!
+//! A replica might be lagging behind for various reasons, such as network outage, downtime, or
+//! deliberate action by Byzantine leaders.
 //!
 //! The server's responsibility as part of the protocol is to:
-//! 1. Respond to block sync requests ("block sync process" part of the protocol),
+//! 1. Respond to block sync requests ("block sync process" part of the protocol).
 //! 2. Periodically broadcast advertisements which serve to notify other replicas about the server's
 //!    availability and view of the blockchain ("block sync trigger" and "block sync server selection").
 //!
@@ -28,10 +29,8 @@
 //! when there is evidence that they are lagging behind, and that they sync with a peer who is ahead
 //! of them.
 //!
-//! A block sync server notifies others about its availability and state of the block tree in two ways:
-//! 1. AdvertiseQC: to let others know about the server's highestQC known, which may trigger sync if they are behind,
-//! 2. AdvertiseBlock: to let others know about the server's highest committed block height, so that they can decide
-//!    if the server is a suitable sync peer.
+//! A block sync server notifies others about its availability and state of the block tree by
+//! broadcasting [`BlockSyncAdvertiseMessage`]s.
 
 use std::{
     cmp::max,
@@ -86,7 +85,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                 Ok(()) => return,
                 Err(TryRecvError::Empty) => (),
                 Err(TryRecvError::Disconnected) => {
-                    panic!("Algorithm thread disconnected from main thread")
+                    unreachable!("The Block Sync Server's `shutdown_signal` channel no longer has any senders connected to it")
                 }
             }
 
@@ -100,6 +99,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                 },
             )) = self.receiver.recv_request()
             {
+                // Ignore requests whose chain ID does not match ours.
                 if chain_id != self.config.chain_id {
                     continue;
                 }
@@ -112,8 +112,8 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                 })
                 .publish(&self.event_publisher);
 
+                // Get, from the block tree, the blocks and the QC that will be used to form the Block Sync Response.
                 let bt_snapshot = self.block_tree_camera.snapshot();
-
                 let blocks_res = bt_snapshot.blocks_from_height_to_newest(
                     start_height,
                     max(limit, self.config.request_limit),
@@ -122,6 +122,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
 
                 match (blocks_res, highest_qc_res) {
                     (Ok(blocks), Ok(highest_qc)) => {
+                        // If there are blocks and a highest QC to return, send a Block Sync Response.
                         self.sender.send(
                             origin,
                             BlockSyncResponse {
@@ -138,20 +139,23 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                         })
                         .publish(&self.event_publisher)
                     }
-                    _ => {}
+                    _ => {
+                        // Otherwise, do not send a response.
+                    }
                 }
             }
 
-            // 2. Advertise if needed:
-            // - highestQC: to let others know about the server's highestQC known, which may trigger sync if they are behind,
-            // - highest committed block height: to let others know about the server's highest committed block height, so that they can
-            //   decide if the server is a suitable sync peer.
+            // 2. If the last advertisement was sent more than `advertise_time` duration ago, broadcast an:
+            // - Advertise QC: to let others know about our local Highest QC, which may trigger them to start
+            //   syncing if they find that they are behind.
+            // - Advertise Block: to let others know about our local Highest Committed Block height, so that they
+            //   can decide whether or not we are a suitable sync server for them.
             if Instant::now() - self.last_advertisement >= self.config.advertise_time {
                 let highest_qc = self
                     .block_tree_camera
                     .snapshot()
                     .highest_qc()
-                    .expect("Block sync server could not obtain the highestQC!");
+                    .expect("Could not obtain the highest QC!");
 
                 let highest_committed_block_height = match self
                     .block_tree_camera
@@ -163,9 +167,11 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                     None => BlockHeight::new(0),
                 };
 
+                // Broadcast an Advertise QC message.
                 let advertise_qc_msg = BlockSyncAdvertiseMessage::advertise_qc(highest_qc);
                 self.sender.broadcast(advertise_qc_msg);
 
+                // Broadcast an Advertise Block message.
                 let advertise_block_msg = BlockSyncAdvertiseMessage::advertise_block(
                     &self.config.keypair,
                     self.config.chain_id,
@@ -173,6 +179,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                 );
                 self.sender.broadcast(advertise_block_msg);
 
+                // Update time of last advertisement.
                 self.last_advertisement = Instant::now()
             }
 
@@ -181,15 +188,18 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
     }
 }
 
-/// Immutable parameters that define the behaviour of the [`BlockSyncServer`]:
-/// 1. Chain ID: used to identify the blockchain for which the server handles sync requests.
-/// 2. Keypair (of the corresponding replica): used to sign messages.
-/// 3. Request limit: Max. number of blocks this server can provide in a [`BlockSyncResponse`],
-/// 4. Advertise time: period of time which defines how frequently the sync server should
-///    broadcast [`BlockSyncAdvertiseMessage`]s.
+/// Parameters that are used to configure the behaviour of the Block Sync Server. These should not
+/// change after the server starts.
 pub(crate) struct BlockSyncServerConfiguration {
+    /// ID of the blockchain for which the server handles sync requests.
     pub(crate) chain_id: ChainID,
+
+    /// Keypair used to sign Advertise Block messages.
     pub(crate) keypair: Keypair,
+
+    /// Maximum number of blocks that this server can provide in a Block Sync Response.
     pub(crate) request_limit: u32,
+
+    /// How often the sync server should broadcast [`BlockSyncAdvertiseMessage`]s.
     pub(crate) advertise_time: Duration,
 }
