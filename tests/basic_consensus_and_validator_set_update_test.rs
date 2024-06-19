@@ -44,7 +44,7 @@ fn basic_consensus_and_validator_set_update_test() {
         vs_updates
     };
 
-    // 1.5 Simultaneously start all replicas.
+    // 1.5 Simultaneously start all 3 replicas.
     let mut nodes: Vec<Node> = keypairs
         .into_iter()
         .zip(network_stubs)
@@ -67,7 +67,7 @@ fn basic_consensus_and_validator_set_update_test() {
 
     // 3. Test dynamically expanding the validator set.
 
-    // 3.1. Submit 2 set validator transactions to the initial validator to register the rest (2) of the peers.
+    // 3.1. Submit 2 Set Validator transactions to the initial validator to register the rest (2) of the peers.
     log::debug!("Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
     let node_1 = nodes[1].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, Power::new(1)));
