@@ -1,6 +1,5 @@
 use std::{thread, time::Duration};
 
-use log::LevelFilter;
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
@@ -12,7 +11,7 @@ use hotstuff_rs::types::{
 mod common;
 
 use common::{
-    logging::setup_logger,
+    logging::log_with_context,
     network::mock_network,
     node::Node,
     number_app::{NumberAppTransaction, NUMBER_KEY},
@@ -20,8 +19,6 @@ use common::{
 
 #[test]
 fn multiple_validator_set_updates_test() {
-    setup_logger(LevelFilter::Trace);
-
     // 1. Initialize test components.
 
     // 1.1. Generate signing keys for 6 replicas.
@@ -59,15 +56,16 @@ fn multiple_validator_set_updates_test() {
     // 2. Test adding one more validator to the validator set.
 
     // 2.1. Submit a Set Validator transaction to an existing validator.
-    log::debug!(
-        "Submitting a set validator transaction to the initial validator to register 1 more validator (small power)."
-    );
+    log_with_context(None, "Submitting a set validator transaction to the initial validator to register 1 more validator (small power).");
     let node_2 = nodes[2].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, Power::new(1)));
 
     // 2.2. Poll the validator set of every replica until each sees 3 validators in their committed
     // validator set.
-    log::debug!("Polling the validator set of every replica until all see 3 validators.");
+    log_with_context(
+        None,
+        "Polling the validator set of every replica until all see 3 validators.",
+    );
     while !nodes
         .iter()
         .all(|node| node.committed_validator_set().len() == 3)
@@ -78,13 +76,16 @@ fn multiple_validator_set_updates_test() {
     // 3. Test adding one more validator (this time with *big* power) to the validator set.
 
     // 3.1. Submit another Set Validator transaction to an existing validator.
-    log::debug!("Submitting a set validator transaction to one of the initial validators to register 1 more validator (big power).");
+    log_with_context(None, "Submitting a set validator transaction to one of the initial validators to register 1 more validator (big power).");
     let node_3 = nodes[3].verifying_key();
     nodes[1].submit_transaction(NumberAppTransaction::SetValidator(node_3, Power::new(3)));
 
     // 3.2. Poll the validator set of every replica until each sees 4 validators in their committed
     // validator set.
-    log::debug!("Polling the validator set of every replica until all see 4 validators.");
+    log_with_context(
+        None,
+        "Polling the validator set of every replica until all see 4 validators.",
+    );
     while !nodes
         .iter()
         .all(|node| node.committed_validator_set().len() == 4)
@@ -97,7 +98,7 @@ fn multiple_validator_set_updates_test() {
     // 4.1. Submit Set Validator transactions to existing validators to:
     //     - Remove all existing validators
     //     - Add new validators: nodes[4] and nodes[5]
-    log::debug!("Submitting a set validator transaction to one of the initial validators to delete the current validators and add two new validators.");
+    log_with_context(None, "Submitting a set validator transaction to one of the initial validators to delete the current validators and add two new validators.");
     let node_4 = nodes[4].verifying_key();
     let node_5 = nodes[5].verifying_key();
     let node_0 = nodes[0].verifying_key();
@@ -111,7 +112,10 @@ fn multiple_validator_set_updates_test() {
 
     // 4.2. Poll the validator set of every replica until each sees 2 validators in their committed
     // validator set.
-    log::debug!("Polling the validator set of every replica until all see 2 validators.");
+    log_with_context(
+        None,
+        "Polling the validator set of every replica until all see 2 validators.",
+    );
     while !nodes
         .iter()
         .all(|node| node.committed_validator_set().len() == 2)

@@ -1,30 +1,21 @@
-use std::{io, sync::Once, thread, time::SystemTime};
+use std::time::SystemTime;
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
-use log::LevelFilter;
 
-static LOGGER_INIT: Once = Once::new();
+use super::verifying_key_bytes::VerifyingKeyBytes;
 
-// Set up a logger that logs all log messages with level Trace and above.
-pub(crate) fn setup_logger(level: LevelFilter) {
-    LOGGER_INIT.call_once(|| {
-        fern::Dispatch::new()
-            .format(|out, message, record| {
-                out.finish(format_args!(
-                    "[{:?}][{}] {}",
-                    thread::current().id(),
-                    record.level(),
-                    message
-                ))
-            })
-            .level(level)
-            .chain(io::stdout())
-            .apply()
-            .unwrap();
-    })
+pub(crate) fn log_with_context(verifying_key: Option<VerifyingKeyBytes>, msg: &str) {
+    println!(
+        "[{}] [{}] {}",
+        secs_since_unix_epoch(),
+        match verifying_key {
+            Some(verifying_key) => first_seven_base64_chars(&verifying_key),
+            None => String::from("-------"),
+        },
+        msg,
+    )
 }
 
-// Get a more readable representation of a bytesequence by base64-encoding it and taking the first 7 characters.
 pub(crate) fn first_seven_base64_chars(bytes: &[u8]) -> String {
     let encoded = STANDARD_NO_PAD.encode(bytes);
     if encoded.len() > 7 {
@@ -34,8 +25,8 @@ pub(crate) fn first_seven_base64_chars(bytes: &[u8]) -> String {
     }
 }
 
-pub(crate) fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
-    timestamp
+fn secs_since_unix_epoch() -> u64 {
+    SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("Event occured before the Unix Epoch.")
         .as_secs()

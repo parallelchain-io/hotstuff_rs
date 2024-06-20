@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant, SystemTime},
 };
 
 use borsh::BorshDeserialize;
@@ -17,11 +17,15 @@ use hotstuff_rs::{
 };
 
 use crate::common::{
-    logging::{first_seven_base64_chars, secs_since_unix_epoch},
     mem_db::MemDB,
     network::NetworkStub,
     number_app::{NumberApp, NumberAppTransaction, NUMBER_KEY},
     verifying_key_bytes::VerifyingKeyBytes,
+};
+
+use super::{
+    logging::{first_seven_base64_chars, log_with_context},
+    verifying_key_bytes,
 };
 
 /// Things the Nodes will have in common:
@@ -72,95 +76,16 @@ impl Node {
             .log_events(false)
             .build();
 
-        let insert_block_handler = |insert_block_event: &InsertBlockEvent| {
-            log::debug!(
-                "Inserted block with hash: {}, timestamp: {}",
-                first_seven_base64_chars(&insert_block_event.block.hash.bytes()),
-                secs_since_unix_epoch(insert_block_event.timestamp)
-            )
-        };
-
-        let receive_proposal_handler = |receive_proposal_event: &ReceiveProposalEvent| {
-            let txn = Vec::<NumberAppTransaction>::deserialize(
-                &mut &*receive_proposal_event.proposal.block.data.vec()[0]
-                    .bytes()
-                    .as_slice(),
-            )
-            .unwrap();
-            let txn_printable = if txn.is_empty() {
-                String::from("no transactions")
-            } else {
-                let all: Vec<String> = txn
-                    .iter()
-                    .map(|tx| match tx {
-                        NumberAppTransaction::Increment => String::from("increment, "),
-                        NumberAppTransaction::SetValidator(_, _) => String::from("set validator, "),
-                        NumberAppTransaction::DeleteValidator(_) => {
-                            String::from("delete validator, ")
-                        }
-                    })
-                    .collect();
-                all.join(" ")
-            };
-            log::debug!(
-                "{}, {}, origin: {}, {}, view: {}, block height: {}, transactions: {}",
-                "Received Proposal",
-                secs_since_unix_epoch(receive_proposal_event.timestamp),
-                first_seven_base64_chars(&receive_proposal_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_proposal_event.proposal.block.hash.bytes()),
-                receive_proposal_event.proposal.view,
-                receive_proposal_event.proposal.block.height.clone(),
-                txn_printable
-            )
-        };
-
-        let commit_block_handler = |commit_block_event: &CommitBlockEvent| {
-            log::debug!(
-                "{}, {}, {}",
-                "Committed block",
-                secs_since_unix_epoch(commit_block_event.timestamp),
-                first_seven_base64_chars(&commit_block_event.block.bytes())
-            )
-        };
-
-        let update_highest_qc_handler = |update_highest_qc_event: &UpdateHighestQCEvent| {
-            log::debug!(
-                "{}, {}, block: {}, view: {}, phase: {:?}, no. of signatures = {}",
-                "Updated HighestQC",
-                secs_since_unix_epoch(update_highest_qc_event.timestamp),
-                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
-                update_highest_qc_event.highest_qc.view,
-                update_highest_qc_event.highest_qc.phase,
-                update_highest_qc_event
-                    .highest_qc
-                    .signatures
-                    .iter()
-                    .filter(|sig| sig.is_some())
-                    .count()
-            )
-        };
-
-        let vote_handler = |vote_event: &VoteEvent| {
-            log::debug!(
-                "{}, {}, {}, {}, {:?}",
-                "Voted",
-                secs_since_unix_epoch(vote_event.timestamp),
-                first_seven_base64_chars(&vote_event.vote.block.bytes()),
-                vote_event.vote.view,
-                vote_event.vote.phase
-            )
-        };
-
         let replica = ReplicaSpec::builder()
             .app(NumberApp::new(tx_queue.clone()))
             .network(network)
             .kv_store(kv_store)
             .configuration(configuration)
-            .on_insert_block(insert_block_handler)
-            .on_receive_proposal(receive_proposal_handler)
-            .on_commit_block(commit_block_handler)
-            .on_update_highest_qc(update_highest_qc_handler)
-            .on_vote(vote_handler)
+            .on_insert_block(insert_block_handler(verifying_key))
+            .on_receive_proposal(receive_proposal_handler(verifying_key))
+            .on_commit_block(commit_block_handler(verifying_key))
+            .on_update_highest_qc(update_highest_qc_handler(verifying_key))
+            .on_vote(vote_handler(verifying_key))
             .build()
             .start();
 
@@ -205,5 +130,107 @@ impl Node {
 
     pub(crate) fn verifying_key(&self) -> VerifyingKeyBytes {
         self.verifying_key
+    }
+}
+
+fn insert_block_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&InsertBlockEvent) + Send + 'static {
+    move |insert_block_event| {
+        log_with_context(
+            Some(verifying_key),
+            &format!(
+                "Inserted Block, block hash: {}",
+                first_seven_base64_chars(&insert_block_event.block.hash.bytes())
+            ),
+        );
+    }
+}
+
+fn receive_proposal_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&ReceiveProposalEvent) + Send + 'static {
+    move |receive_proposal_event| {
+        let txn = Vec::<NumberAppTransaction>::deserialize(
+            &mut &*receive_proposal_event.proposal.block.data.vec()[0]
+                .bytes()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let txn_printable = if txn.is_empty() {
+            String::from("no transactions")
+        } else {
+            let all: Vec<String> = txn
+                .iter()
+                .map(|tx| match tx {
+                    NumberAppTransaction::Increment => String::from("Increment"),
+                    NumberAppTransaction::SetValidator(_, _) => String::from("Set Validator"),
+                    NumberAppTransaction::DeleteValidator(_) => String::from("Delete Validator"),
+                })
+                .collect();
+            all.join(", ")
+        };
+
+        log_with_context(
+            Some(verifying_key),
+            &format!("Received Proposal, origin: {}, view: {}, block hash: {}, block height: {}, transactions: {}",
+                    first_seven_base64_chars(&receive_proposal_event.origin.to_bytes()),
+                    receive_proposal_event.proposal.view,
+                    first_seven_base64_chars(&receive_proposal_event.proposal.block.hash.bytes()),
+                    receive_proposal_event.proposal.block.height.clone(),
+                    txn_printable
+            )
+        );
+    }
+}
+
+fn commit_block_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&CommitBlockEvent) + Send + 'static {
+    move |commit_block_event: &CommitBlockEvent| {
+        log_with_context(
+            Some(verifying_key),
+            &format!(
+                "Committed Block, block hash: {}",
+                first_seven_base64_chars(&commit_block_event.block.bytes())
+            ),
+        );
+    }
+}
+
+fn update_highest_qc_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&UpdateHighestQCEvent) + Send + 'static {
+    move |update_highest_qc_event| {
+        log_with_context(
+            Some(verifying_key),
+            &format!(
+                "Updated Highest QC, block hash: {}, view: {}, phase: {:?}, no. of signatures: {}",
+                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
+                update_highest_qc_event.highest_qc.view,
+                update_highest_qc_event.highest_qc.phase,
+                update_highest_qc_event
+                    .highest_qc
+                    .signatures
+                    .iter()
+                    .filter(|sig| sig.is_some())
+                    .count()
+            ),
+        );
+    }
+}
+
+fn vote_handler(verifying_key: VerifyingKeyBytes) -> impl Fn(&VoteEvent) + Send + 'static {
+    move |vote_event: &VoteEvent| {
+        log_with_context(
+            Some(verifying_key),
+            &format!(
+                "Voted, block hash: {}, view: {}, phase: {:?}",
+                first_seven_base64_chars(&vote_event.vote.block.bytes()),
+                vote_event.vote.view,
+                vote_event.vote.phase,
+            ),
+        );
     }
 }

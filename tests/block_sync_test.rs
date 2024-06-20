@@ -1,6 +1,5 @@
 use std::{thread, time::Duration};
 
-use log::LevelFilter;
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
@@ -12,7 +11,7 @@ use hotstuff_rs::types::{
 mod common;
 
 use common::{
-    logging::setup_logger,
+    logging::log_with_context,
     network::mock_network,
     node::Node,
     number_app::{NumberAppTransaction, NUMBER_KEY},
@@ -20,8 +19,6 @@ use common::{
 
 #[test]
 fn block_sync_test() {
-    setup_logger(LevelFilter::Trace);
-
     let mut csprg = OsRng {};
     let mut keypairs: Vec<SigningKey> = (0..4).map(|_| SigningKey::generate(&mut csprg)).collect();
     let mut network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
@@ -55,22 +52,31 @@ fn block_sync_test() {
         .collect();
 
     // Submit an Increment transaction to the initial validator.
-    log::debug!("Submitting an Increment transaction to the initial validator.");
+    log_with_context(
+        None,
+        "Submitting an Increment transaction to the initial validator.",
+    );
     init_nodes[0].submit_transaction(NumberAppTransaction::Increment);
 
     // Submit an Increment transaction to the initial validator.
-    log::debug!("Submitting an Increment transaction to the initial validator.");
+    log_with_context(
+        None,
+        "Submitting an Increment transaction to the initial validator.",
+    );
     init_nodes[1].submit_transaction(NumberAppTransaction::Increment);
 
     // Poll the app state of every replica until the value is 2.
-    log::debug!("Polling the app state of every replica until the value is 1.");
+    log_with_context(
+        None,
+        "Polling the app state of every replica until the value is 1.",
+    );
     while init_nodes[0].number() != 2 || init_nodes[1].number() != 2 || init_nodes[2].number() != 2
     {
         thread::sleep(Duration::from_millis(500));
     }
 
     // Start the "lagging replica".
-    log::debug!("Start the lagging replica.");
+    log_with_context(None, "Start the lagging replica.");
     let last_node = Node::new(
         last_keypair[0].clone(),
         last_newtork[0].clone(),
@@ -79,7 +85,7 @@ fn block_sync_test() {
     );
 
     // Poll the app state of the lagging replica until it catches up with the others.
-    log::debug!("Polling the app state of the last-joined replica .");
+    log_with_context(None, "Polling the app state of the last-joined replica .");
     while last_node.number() != 2 {
         thread::sleep(Duration::from_millis(500));
     }

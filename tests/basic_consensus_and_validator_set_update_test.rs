@@ -1,17 +1,16 @@
 use std::{thread, time::Duration};
 
+use common::logging::log_with_context;
 use hotstuff_rs::types::{
     basic::{AppStateUpdates, Power},
     collectors::SigningKey,
     validators::ValidatorSetUpdates,
 };
-use log::LevelFilter;
 use rand_core::OsRng;
 
 mod common;
 
 use crate::common::{
-    logging::setup_logger,
     network::mock_network,
     node::Node,
     number_app::{NumberAppTransaction, NUMBER_KEY},
@@ -19,8 +18,6 @@ use crate::common::{
 
 #[test]
 fn basic_consensus_and_validator_set_update_test() {
-    setup_logger(LevelFilter::Trace);
-
     // 1. Initialize test components.
 
     // 1.1. Create signing keys for 3 replicas.
@@ -56,11 +53,17 @@ fn basic_consensus_and_validator_set_update_test() {
     // 2. Test updating the app state with a singleton validator.
 
     // 2.1. Submit an Increment transaction to the initial validator.
-    log::debug!("Submitting an Increment transaction to the initial validator.");
+    log_with_context(
+        None,
+        "Submitting an Increment transaction to the initial validator.",
+    );
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
 
     // 2.2. Poll the app state of every replica until the value is 1.
-    log::debug!("Polling the app state of every replica until the value is 1.");
+    log_with_context(
+        None,
+        "Polling the app state of every replica until the value is 1.",
+    );
     while nodes[0].number() != 1 || nodes[1].number() != 1 || nodes[2].number() != 1 {
         thread::sleep(Duration::from_millis(500));
     }
@@ -68,14 +71,17 @@ fn basic_consensus_and_validator_set_update_test() {
     // 3. Test dynamically expanding the validator set.
 
     // 3.1. Submit 2 Set Validator transactions to the initial validator to register the rest (2) of the peers.
-    log::debug!("Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
+    log_with_context(None, "Submitting 2 set validator transactions to the initial validator to register the rest (2) of the peers.");
     let node_1 = nodes[1].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_1, Power::new(1)));
     let node_2 = nodes[2].verifying_key();
     nodes[0].submit_transaction(NumberAppTransaction::SetValidator(node_2, Power::new(1)));
 
     // 3.2. Poll the validator set of every replica until we have 3 validators.
-    log::debug!("Polling the validator set of every replica until we have 3 validators.");
+    log_with_context(
+        None,
+        "Polling the validator set of every replica until we have 3 validators.",
+    );
     while nodes[0].committed_validator_set().len() != 3
         || nodes[1].committed_validator_set().len() != 3
         || nodes[2].committed_validator_set().len() != 3
@@ -86,13 +92,19 @@ fn basic_consensus_and_validator_set_update_test() {
     // 4. Test updating the app state now that we have 3 validators.
 
     // 4.1. Push an Increment transaction to each of the 3 validators we have now.
-    log::debug!("Submitting an increment transaction to each of the 3 validators we have now.");
+    log_with_context(
+        None,
+        "Submitting an increment transaction to each of the 3 validators we have now.",
+    );
     nodes[0].submit_transaction(NumberAppTransaction::Increment);
     nodes[1].submit_transaction(NumberAppTransaction::Increment);
     nodes[2].submit_transaction(NumberAppTransaction::Increment);
 
     // 4.2. Poll the app state of every replica until the value is 4.
-    log::debug!("Polling the app state of every replica until the value is 4");
+    log_with_context(
+        None,
+        "Polling the app state of every replica until the value is 4",
+    );
     while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 {
         thread::sleep(Duration::from_millis(500));
     }
