@@ -70,7 +70,7 @@ fn multiple_validator_set_updates_test() {
     log::debug!("Polling the validator set of every replica until all see 3 validators.");
     while !nodes
         .iter()
-        .any(|node| node.committed_validator_set().len() != 3)
+        .all(|node| node.committed_validator_set().len() == 3)
     {
         thread::sleep(Duration::from_millis(500));
     }
@@ -87,7 +87,7 @@ fn multiple_validator_set_updates_test() {
     log::debug!("Polling the validator set of every replica until all see 4 validators.");
     while !nodes
         .iter()
-        .any(|node| node.committed_validator_set().len() != 4)
+        .all(|node| node.committed_validator_set().len() == 4)
     {
         thread::sleep(Duration::from_millis(500));
     }
@@ -114,7 +114,7 @@ fn multiple_validator_set_updates_test() {
     log::debug!("Polling the validator set of every replica until all see 2 validators.");
     while !nodes
         .iter()
-        .any(|node| node.committed_validator_set().len() != 2)
+        .all(|node| node.committed_validator_set().len() == 2)
     {
         thread::sleep(Duration::from_millis(500));
     }
