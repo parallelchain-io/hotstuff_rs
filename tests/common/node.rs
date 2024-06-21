@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration, Instant, SystemTime},
+    time::Duration,
 };
 
 use borsh::BorshDeserialize;
@@ -19,14 +19,11 @@ use hotstuff_rs::{
 use crate::common::{
     mem_db::MemDB,
     network::NetworkStub,
-    number_app::{NumberApp, NumberAppTransaction, NUMBER_KEY},
+    number_app::{NumberApp, NumberAppTransaction},
     verifying_key_bytes::VerifyingKeyBytes,
 };
 
-use super::{
-    logging::{first_seven_base64_chars, log_with_context},
-    verifying_key_bytes,
-};
+use super::logging::{first_seven_base64_chars, log_with_context};
 
 /// Things the Nodes will have in common:
 /// - Initial Validator Set.
@@ -101,15 +98,7 @@ impl Node {
     }
 
     pub(crate) fn number(&self) -> u32 {
-        u32::deserialize(
-            &mut &*self
-                .replica
-                .block_tree_camera()
-                .snapshot()
-                .committed_app_state(&NUMBER_KEY)
-                .unwrap(),
-        )
-        .unwrap()
+        NumberApp::number(self.replica.block_tree_camera().snapshot())
     }
 
     pub(crate) fn committed_validator_set(&self) -> ValidatorSet {

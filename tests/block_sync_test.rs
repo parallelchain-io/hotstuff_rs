@@ -2,11 +2,7 @@ use std::{thread, time::Duration};
 
 use rand_core::OsRng;
 
-use hotstuff_rs::types::{
-    basic::{AppStateUpdates, Power},
-    collectors::SigningKey,
-    validators::ValidatorSetUpdates,
-};
+use hotstuff_rs::types::{basic::Power, collectors::SigningKey, validators::ValidatorSetUpdates};
 
 mod common;
 
@@ -14,7 +10,7 @@ use common::{
     logging::log_with_context,
     network::mock_network,
     node::Node,
-    number_app::{NumberAppTransaction, NUMBER_KEY},
+    number_app::{NumberApp, NumberAppTransaction},
 };
 
 #[test]
@@ -25,11 +21,8 @@ fn block_sync_test() {
     let last_keypair = keypairs.split_off(3);
     let last_newtork = network_stubs.split_off(3);
 
-    let init_as = {
-        let mut state = AppStateUpdates::new();
-        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
-        state
-    };
+    let init_as = NumberApp::initial_app_state();
+
     let init_vs_updates = {
         let mut vs_updates = ValidatorSetUpdates::new();
         vs_updates.insert(keypairs[0].verifying_key(), Power::new(1));

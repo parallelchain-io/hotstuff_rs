@@ -9,6 +9,7 @@ use hotstuff_rs::{
     app::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
+    state::{block_tree_camera::BlockTreeSnapshot, kv_store::KVGet},
     types::{
         basic::{AppStateUpdates, CryptoHash, Data, Datum, Power},
         collectors::VerifyingKey,
@@ -22,7 +23,6 @@ use crate::common::{mem_db::MemDB, verifying_key_bytes::VerifyingKeyBytes};
 pub(crate) struct NumberApp {
     tx_queue: Arc<Mutex<Vec<NumberAppTransaction>>>,
 }
-pub(crate) const NUMBER_KEY: [u8; 1] = [0];
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum NumberAppTransaction {
@@ -30,6 +30,8 @@ pub enum NumberAppTransaction {
     SetValidator(VerifyingKeyBytes, Power),
     DeleteValidator(VerifyingKeyBytes),
 }
+
+const NUMBER_KEY: [u8; 1] = [0];
 
 impl App<MemDB> for NumberApp {
     fn produce_block(&mut self, request: ProduceBlockRequest<MemDB>) -> ProduceBlockResponse {
@@ -112,6 +114,16 @@ impl App<MemDB> for NumberApp {
 impl NumberApp {
     pub(crate) fn new(tx_queue: Arc<Mutex<Vec<NumberAppTransaction>>>) -> NumberApp {
         Self { tx_queue }
+    }
+
+    pub(crate) fn initial_app_state() -> AppStateUpdates {
+        let mut state = AppStateUpdates::new();
+        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
+        state
+    }
+
+    pub(crate) fn number<S: KVGet>(block_tree: BlockTreeSnapshot<S>) -> u32 {
+        u32::deserialize(&mut &*block_tree.committed_app_state(&NUMBER_KEY).unwrap()).unwrap()
     }
 
     fn execute(

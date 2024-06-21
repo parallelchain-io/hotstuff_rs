@@ -3,7 +3,7 @@ use std::{thread, time::Duration};
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
-    basic::{AppStateUpdates, Power, ViewNumber},
+    basic::{Power, ViewNumber},
     collectors::SigningKey,
     validators::ValidatorSetUpdates,
 };
@@ -14,7 +14,7 @@ use common::{
     logging::log_with_context,
     network::mock_network,
     node::Node,
-    number_app::{NumberAppTransaction, NUMBER_KEY},
+    number_app::{NumberApp, NumberAppTransaction},
 };
 
 #[test]
@@ -22,11 +22,9 @@ fn pacemaker_initial_view_sync_test() {
     let mut csprg = OsRng {};
     let keypair_1 = SigningKey::generate(&mut csprg);
     let keypair_2 = SigningKey::generate(&mut csprg);
-    let init_as = {
-        let mut state = AppStateUpdates::new();
-        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
-        state
-    };
+
+    let init_as = NumberApp::initial_app_state();
+
     let init_vs_updates = {
         let mut vs_updates = ValidatorSetUpdates::new();
         vs_updates.insert(keypair_1.verifying_key(), Power::new(1));

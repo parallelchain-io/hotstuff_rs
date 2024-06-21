@@ -2,11 +2,7 @@ use std::{thread, time::Duration};
 
 use rand_core::OsRng;
 
-use hotstuff_rs::types::{
-    basic::{AppStateUpdates, Power},
-    collectors::SigningKey,
-    validators::ValidatorSetUpdates,
-};
+use hotstuff_rs::types::{basic::Power, collectors::SigningKey, validators::ValidatorSetUpdates};
 
 mod common;
 
@@ -14,7 +10,7 @@ use common::{
     logging::log_with_context,
     network::mock_network,
     node::Node,
-    number_app::{NumberAppTransaction, NUMBER_KEY},
+    number_app::{NumberApp, NumberAppTransaction},
 };
 
 #[test]
@@ -29,11 +25,7 @@ fn multiple_validator_set_updates_test() {
     let network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
 
     // 1.3. Initialize the app state of the number app to the number 0.
-    let init_as = {
-        let mut state = AppStateUpdates::new();
-        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
-        state
-    };
+    let init_as = NumberApp::initial_app_state();
 
     // 1.4. Initialize the validator set of the cluster to initially contain only two replicas (index 0 and
     // index 1).

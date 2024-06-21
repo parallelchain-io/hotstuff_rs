@@ -1,20 +1,12 @@
 use std::{thread, time::Duration};
 
-use common::logging::log_with_context;
-use hotstuff_rs::types::{
-    basic::{AppStateUpdates, Power},
-    collectors::SigningKey,
-    validators::ValidatorSetUpdates,
-};
+use common::{logging::log_with_context, number_app::NumberApp};
+use hotstuff_rs::types::{basic::Power, collectors::SigningKey, validators::ValidatorSetUpdates};
 use rand_core::OsRng;
 
 mod common;
 
-use crate::common::{
-    network::mock_network,
-    node::Node,
-    number_app::{NumberAppTransaction, NUMBER_KEY},
-};
+use crate::common::{network::mock_network, node::Node, number_app::NumberAppTransaction};
 
 #[test]
 fn basic_consensus_and_validator_set_update_test() {
@@ -28,11 +20,7 @@ fn basic_consensus_and_validator_set_update_test() {
     let network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
 
     // 1.3. Initialize the app state of the Number App to 0.
-    let init_as = {
-        let mut state = AppStateUpdates::new();
-        state.insert(NUMBER_KEY.to_vec(), u32::to_le_bytes(0).to_vec());
-        state
-    };
+    let init_as = NumberApp::initial_app_state();
 
     // 1.4. Initialize the validator set of the cluster to initially contain only the replica with index 0.
     let init_vs_updates = {
