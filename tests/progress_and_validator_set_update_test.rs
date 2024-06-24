@@ -8,8 +8,12 @@ mod common;
 
 use crate::common::{network::mock_network, node::Node, number_app::NumberAppTransaction};
 
+/// Tests app state updates and "simple" validator set updates.
+/// 
+/// Starts a network, increments the number app's number, enlarges the validator set, and then 
+/// increments the number app's number again.
 #[test]
-fn basic_consensus_and_validator_set_update_test() {
+fn progress_and_validator_set_update_test() {
     // 1. Initialize test components.
 
     // 1.1. Create signing keys for 3 replicas.
@@ -52,7 +56,7 @@ fn basic_consensus_and_validator_set_update_test() {
         None,
         "Polling the app state of every replica until the value is 1.",
     );
-    while nodes[0].number() != 1 || nodes[1].number() != 1 || nodes[2].number() != 1 {
+    while !nodes.iter().all(|node| node.number() == 1) {
         thread::sleep(Duration::from_millis(500));
     }
 
@@ -70,10 +74,7 @@ fn basic_consensus_and_validator_set_update_test() {
         None,
         "Polling the validator set of every replica until we have 3 validators.",
     );
-    while nodes[0].committed_validator_set().len() != 3
-        || nodes[1].committed_validator_set().len() != 3
-        || nodes[2].committed_validator_set().len() != 3
-    {
+    while !nodes.iter().all(|node| node.committed_validator_set().len() == 3) {
         thread::sleep(Duration::from_millis(500));
     }
 
@@ -93,7 +94,7 @@ fn basic_consensus_and_validator_set_update_test() {
         None,
         "Polling the app state of every replica until the value is 4",
     );
-    while nodes[0].number() != 4 || nodes[1].number() != 4 || nodes[2].number() != 4 {
+    while !nodes.iter().all(|node| node.number() == 4) {
         thread::sleep(Duration::from_millis(500));
     }
 }

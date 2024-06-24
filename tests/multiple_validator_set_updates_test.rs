@@ -13,6 +13,12 @@ use common::{
     number_app::{NumberApp, NumberAppTransaction},
 };
 
+
+/// Tests "extreme" validator set updates.
+/// 
+/// This test makes two different kinds of validator set updates in sequence:
+/// 1. A validator set update that adds a validator with much more power than the rest.
+/// 2. A validator set update that removes all existing validators and adds completely new ones.
 #[test]
 fn multiple_validator_set_updates_test() {
     // 1. Initialize test components.
