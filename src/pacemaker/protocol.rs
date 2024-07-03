@@ -666,6 +666,8 @@ pub enum ExtendViewError {
     GetViewTimeoutError { view: ViewNumber },
 }
 
+/// Describes a view (most often the current view), in terms of its view number and its view deadline (the
+/// instant in time in which the view should end if no progress was made).
 #[derive(PartialEq, Eq, Clone)]
 pub(crate) struct ViewInfo {
     pub(crate) view: ViewNumber,

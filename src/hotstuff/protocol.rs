@@ -116,7 +116,8 @@ impl<N: Network> HotStuff<N> {
     /// This function executes the following steps:
     /// 1. Send a [`NewView`] message for the current view to the leader of the next view.
     /// 2. Update the internal view info, proposal status, and vote collectors to reflect `new_view_info`.
-    /// 3. If serving as a leader of the newly entered view, broadcast a `Proposal` or a `Nudge`.
+    /// 3. Set `highest_view_entered` in the block tree to the new view, then emit a `StartView` event.
+    /// 4. If serving as a leader of the newly entered view, broadcast a `Proposal` or a `Nudge`.
     ///
     /// ## Precondition
     ///
@@ -157,16 +158,18 @@ impl<N: Network> HotStuff<N> {
             .publish(&self.event_publisher)
         }
 
-        // 2. Update current view info and proposal status.
+        // 2. Update the struct's internal view info, proposal status, and vote collectors to collect
+        //    votes for the new view.
         self.view_info = new_view_info;
         self.proposal_status = ProposalStatus::WaitingForProposal;
-
-        // 3. Update the vote collectors to collect votes for the updated view.
         self.vote_collectors = <Collectors<VoteCollector>>::new(
             self.config.chain_id,
             self.view_info.view,
             &validator_set_state,
         );
+
+        // 3. Set `highest_view_entered` in the block tree to the new view, then emit a `StartView` event.
+        block_tree.set_highest_view_entered(self.view_info.view)?;
 
         Event::StartView(StartViewEvent {
             timestamp: SystemTime::now(),
@@ -174,9 +177,7 @@ impl<N: Network> HotStuff<N> {
         })
         .publish(&self.event_publisher);
 
-        block_tree.set_highest_view_entered(self.view_info.view)?;
-
-        // 4. If I am a proposer for this view then broadcast a nudge or a proposal.
+        // 4. If I am a proposer for the new view, then broadcast a `Proposal` or a `Nudge`.
         if is_proposer(
             &self.config.keypair.public(),
             self.view_info.view,
@@ -191,14 +192,23 @@ impl<N: Network> HotStuff<N> {
 
                 let proposal_msg =
                     HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
-                self.sender_handle.broadcast(proposal_msg);
+                self.sender_handle.broadcast(proposal_msg.clone());
+
+                if let HotStuffMessage::Proposal(proposal) = proposal_msg {
+                    Event::Propose(ProposeEvent {
+                        timestamp: SystemTime::now(),
+                        proposal,
+                    })
+                    .publish(&self.event_publisher)
+                }
+
                 return Ok(());
             }
 
             // Otherwise, propose a new block or nudge based on highest_qc.
             let highest_qc = block_tree.highest_qc()?;
             match highest_qc.phase {
-                // Produce a block proposal.
+                // Produce and broadcast a new Proposal.
                 Phase::Generic | Phase::Decide => {
                     let (parent_block, child_height) = if highest_qc.is_genesis_qc() {
                         (None, BlockHeight::new(0))
@@ -239,7 +249,7 @@ impl<N: Network> HotStuff<N> {
                         .publish(&self.event_publisher)
                     }
                 }
-                // Produce a nudge.
+                // Produce and broadcast a Nudge.
                 Phase::Prepare | Phase::Precommit | Phase::Commit => {
                     let nudge_msg = HotStuffMessage::nudge(
                         self.config.chain_id,

@@ -57,7 +57,9 @@ impl HotStuffMessage {
     }
 
     /// Create a [`Nudge`] message for a given chain id, view, and justifying QC.
+    ///
     /// # Panics
+    ///
     /// justify.phase must be Prepare or Precommit. This function panics otherwise.
     pub fn nudge(
         chain_id: ChainID,

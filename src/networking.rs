@@ -96,7 +96,7 @@ pub(crate) fn start_polling<N: Network + 'static>(
 }
 
 /// Handle for sending and broadcasting messages to the [`Network`]. It can be used to send or broadcast
-/// messages of message types that implement the [`Into<Message>`] trait.
+/// instances of any type that implement the [`Into<Message>`] trait.
 #[derive(Clone)]
 pub(crate) struct SenderHandle<N: Network> {
     network: N,
