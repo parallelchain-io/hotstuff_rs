@@ -63,7 +63,7 @@ use super::voting::vote_recipient;
 pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     view_info: ViewInfo,
-    view_status: ViewStatus,
+    proposal_status: ProposalStatus,
     vote_collectors: Collectors<VoteCollector>,
     sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
@@ -85,11 +85,11 @@ impl<N: Network> HotStuff<N> {
             view_info.view,
             &init_validator_set_state,
         );
-        let view_status = ViewStatus::WaitingForProposal;
+        let proposal_status = ProposalStatus::WaitingForProposal;
         Self {
             config,
             view_info,
-            view_status,
+            proposal_status,
             vote_collectors,
             sender_handle,
             validator_set_update_handle,
@@ -114,9 +114,9 @@ impl<N: Network> HotStuff<N> {
     /// ## Internal procedure
     ///
     /// This function executes the following steps:
-    /// 1. "Exit" the current view by sending a [`NewView`] message to the leader of the next view.
-    /// 2. Update the internal view info and view status, as well as the vote collectors.
-    /// 3. If serving as a leader of the newly entered view, propose or nudge.
+    /// 1. Send a [`NewView`] message for the current view to the leader of the next view.
+    /// 2. Update the internal view info, proposal status, and vote collectors to reflect `new_view_info`.
+    /// 3. If serving as a leader of the newly entered view, broadcast a `Proposal` or a `Nudge`.
     ///
     /// ## Precondition
     ///
@@ -157,9 +157,9 @@ impl<N: Network> HotStuff<N> {
             .publish(&self.event_publisher)
         }
 
-        // 2. Update current view info and status.
+        // 2. Update current view info and proposal status.
         self.view_info = new_view_info;
-        self.view_status = ViewStatus::WaitingForProposal;
+        self.proposal_status = ProposalStatus::WaitingForProposal;
 
         // 3. Update the vote collectors to collect votes for the updated view.
         self.vote_collectors = <Collectors<VoteCollector>>::new(
@@ -281,8 +281,8 @@ impl<N: Network> HotStuff<N> {
                 return Ok(());
             }
 
-            if self.view_status.has_one_leader_proposed(origin)
-                || self.view_status.have_all_leaders_proposed()
+            if self.proposal_status.has_one_leader_proposed(origin)
+                || self.proposal_status.have_all_leaders_proposed()
             {
                 return Ok(());
             }
@@ -321,12 +321,12 @@ impl<N: Network> HotStuff<N> {
             || !safe_block(&proposal.block, block_tree, self.config.chain_id)?
         {
             // Ensure that proposals or nudges from this leader should no longer be accepted in this view.
-            match self.view_status {
-                ViewStatus::WaitingForProposal => {
-                    self.view_status = ViewStatus::OneLeaderProposed { leader: *origin }
+            match self.proposal_status {
+                ProposalStatus::WaitingForProposal => {
+                    self.proposal_status = ProposalStatus::OneLeaderProposed { leader: *origin }
                 }
-                ViewStatus::OneLeaderProposed { leader: _ } => {
-                    self.view_status = ViewStatus::AllLeadersProposed
+                ProposalStatus::OneLeaderProposed { leader: _ } => {
+                    self.proposal_status = ProposalStatus::AllLeadersProposed
                 }
                 _ => {}
             }
@@ -410,12 +410,12 @@ impl<N: Network> HotStuff<N> {
         }
 
         // 6. Stop accepting proposals or nudges from this leader in this view.
-        match self.view_status {
-            ViewStatus::WaitingForProposal => {
-                self.view_status = ViewStatus::OneLeaderProposed { leader: *origin }
+        match self.proposal_status {
+            ProposalStatus::WaitingForProposal => {
+                self.proposal_status = ProposalStatus::OneLeaderProposed { leader: *origin }
             }
-            ViewStatus::OneLeaderProposed { leader: _ } => {
-                self.view_status = ViewStatus::AllLeadersProposed
+            ProposalStatus::OneLeaderProposed { leader: _ } => {
+                self.proposal_status = ProposalStatus::AllLeadersProposed
             }
             _ => {}
         }
@@ -447,12 +447,12 @@ impl<N: Network> HotStuff<N> {
             )?
         {
             // Take note that proposals or nudges from this leader should no longer be accepted in this view.
-            match self.view_status {
-                ViewStatus::WaitingForProposal => {
-                    self.view_status = ViewStatus::OneLeaderProposed { leader: *origin }
+            match self.proposal_status {
+                ProposalStatus::WaitingForProposal => {
+                    self.proposal_status = ProposalStatus::OneLeaderProposed { leader: *origin }
                 }
-                ViewStatus::OneLeaderProposed { leader: _ } => {
-                    self.view_status = ViewStatus::AllLeadersProposed
+                ProposalStatus::OneLeaderProposed { leader: _ } => {
+                    self.proposal_status = ProposalStatus::AllLeadersProposed
                 }
                 _ => {}
             }
@@ -511,12 +511,12 @@ impl<N: Network> HotStuff<N> {
         }
 
         // 5. Stop accepting proposals or nudges from this leader in this view.
-        match self.view_status {
-            ViewStatus::WaitingForProposal => {
-                self.view_status = ViewStatus::OneLeaderProposed { leader: *origin }
+        match self.proposal_status {
+            ProposalStatus::WaitingForProposal => {
+                self.proposal_status = ProposalStatus::OneLeaderProposed { leader: *origin }
             }
-            ViewStatus::OneLeaderProposed { leader: _ } => {
-                self.view_status = ViewStatus::AllLeadersProposed
+            ProposalStatus::OneLeaderProposed { leader: _ } => {
+                self.proposal_status = ProposalStatus::AllLeadersProposed
             }
             _ => {}
         }
@@ -637,38 +637,39 @@ impl From<BlockTreeError> for HotStuffError {
     }
 }
 
-/// Captures the state of progress **within** a view.
+/// Keeps track of the set of `Proposal`s that have been received by the `HotStuff` struct in the current
+/// view.
 ///
-/// Keeping track of `ViewStatus` ensures that a leader can only propose once in a view -- any
+/// Keeping track of `ProposalStatus` ensures that a leader can only propose once in a view -- any
 /// subsequent proposals will be ignored.
 ///
 /// ## Variants
 ///
-/// The `ViewStatus` can either be:
-/// 1. [`WaitingForProposal`](ViewStatus::WaitingForProposal): No proposal or nudge was seen in this
+/// The `ProposalStatus` can either be:
+/// 1. [`WaitingForProposal`](ProposalStatus::WaitingForProposal): No proposal or nudge was seen in this
 ///    view so far. Proposals and nudges from a valid leader (proposer) can be accepted.
-/// 2. [`OneLeaderProposed`](ViewStatus::OneLeaderProposed): The leader with a given public key has already
+/// 2. [`OneLeaderProposed`](ProposalStatus::OneLeaderProposed): The leader with a given public key has already
 ///    proposed or nudged. no more proposals or nudges from this leader can be accepted.
-/// 3. [`AllLeadersProposed`](ViewStatus::AllLeadersProposed): All leaders for the view have proposed or
+/// 3. [`AllLeadersProposed`](ProposalStatus::AllLeadersProposed): All leaders for the view have proposed or
 ///    nudged, hence no more proposals or nudges can be accepted in this view.
 ///
 /// ## Persistence
 ///
 /// Note that a variable of this type is stored in memory allocated to the program at runtime, rather
-/// than persistent storage. This is because losing the information stored in `ViewStatus`, unlike
-/// losing the information about the highest view the replica has voted in, cannot lead to safety
+/// than persistent storage. This is because losing the information stored in `ProposalStatus`, unlike
+/// losing the information about the highest view the replica has voted in, does lead to safety
 /// violations. In the worst case, it can only enable temporary liveness violations.
-pub enum ViewStatus {
+pub enum ProposalStatus {
     WaitingForProposal,
     OneLeaderProposed { leader: VerifyingKey },
     AllLeadersProposed,
 }
 
-impl ViewStatus {
+impl ProposalStatus {
     /// Has this leader already proposed/nudged in the current view?
     fn has_one_leader_proposed(&self, leader: &VerifyingKey) -> bool {
         match self {
-            ViewStatus::OneLeaderProposed { leader: validator } => validator == leader,
+            ProposalStatus::OneLeaderProposed { leader: validator } => validator == leader,
             _ => false,
         }
     }
@@ -676,7 +677,7 @@ impl ViewStatus {
     /// Have all (max. 2) leaders already proposed/nudged in this view?
     /// Note: this can evaluate to true only during the validator set update period.
     fn have_all_leaders_proposed(&self) -> bool {
-        matches!(self, ViewStatus::AllLeadersProposed)
+        matches!(self, ProposalStatus::AllLeadersProposed)
     }
 }
 
