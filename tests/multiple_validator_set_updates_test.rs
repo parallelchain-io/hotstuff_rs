@@ -13,10 +13,9 @@ use common::{
     number_app::{NumberApp, NumberAppTransaction},
 };
 
-
 /// Tests "extreme" validator set updates.
-/// 
-/// This test makes two different kinds of validator set updates in sequence:
+///
+/// Makes two different kinds of validator set updates in sequence:
 /// 1. A validator set update that adds a validator with much more power than the rest.
 /// 2. A validator set update that removes all existing validators and adds completely new ones.
 #[test]
@@ -94,8 +93,8 @@ fn multiple_validator_set_updates_test() {
     // 4. Test replacing the validator set with a totally different, disjoint validator set.
 
     // 4.1. Submit Set Validator transactions to existing validators to:
-    //     - Remove all existing validators
-    //     - Add new validators: nodes[4] and nodes[5]
+    //     - Remove all existing validators, and
+    //     - Add two new validators: nodes[4] and nodes[5]
     log_with_context(None, "Submitting a set validator transaction to one of the initial validators to delete the current validators and add two new validators.");
     let node_4 = nodes[4].verifying_key();
     let node_5 = nodes[5].verifying_key();

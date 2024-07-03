@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the [`HotStuff`][crate::hotstuff::protocol::HotStuff] protocol.
+//! Definitions of types specific to the HotStuff subprotocol.
 
 use std::collections::HashMap;
 

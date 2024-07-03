@@ -14,8 +14,8 @@ use common::{
 };
 
 /// Tests block sync.
-/// 
-/// Starts a network with three replicas, makes progress with them, then starts another replica (a 
+///
+/// Starts a network with three replicas, makes progress with them, then starts another replica (a
 /// "lagging" replica) and confirms that it can sync with the initial three replicas.
 #[test]
 fn block_sync_test() {
@@ -28,7 +28,7 @@ fn block_sync_test() {
     // 1.2. Create a mock network connecting the 4 replicas.
     let mut network_stubs = mock_network(keypairs.iter().map(|kp| kp.verifying_key()));
 
-    // 1.3. Split off the last keypair and network stub (these will be used to create the lagging replica later 
+    // 1.3. Split off the last keypair and network stub (these will be used to create the lagging replica later
     // on in the test).
     let lagging_replica_keypair = keypairs.split_off(3);
     let lagging_replica_network = network_stubs.split_off(3);

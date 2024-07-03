@@ -18,10 +18,10 @@ use common::{
 };
 
 /// Tests that the pacemaker is able to make progress past view 0 (which is an epoch-change view).
-/// 
+///
 /// Sets up a network consisting of two replicas, initially starts one replica only and confirms that
 /// this replica cannot proceed beyond view number 0. Then, starts the other replica and confirms
-/// that the replicas can now proceed.
+/// that the replicas can now enter views higher 0.
 #[test]
 fn pacemaker_initial_view_sync_test() {
     // 1. Initialize test components.
@@ -63,7 +63,7 @@ fn pacemaker_initial_view_sync_test() {
 
     // 2.2. Wait for 5 seconds.
     thread::sleep(Duration::from_millis(5000));
-    
+
     // 2.3. Confirm that its view number remains at 0.
     assert_eq!(first_node.highest_view_entered(), ViewNumber::new(0));
 

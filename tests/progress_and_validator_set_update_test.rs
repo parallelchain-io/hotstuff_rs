@@ -9,8 +9,8 @@ mod common;
 use crate::common::{network::mock_network, node::Node, number_app::NumberAppTransaction};
 
 /// Tests app state updates and "simple" validator set updates.
-/// 
-/// Starts a network, increments the number app's number, enlarges the validator set, and then 
+///
+/// Starts a network, increments the number app's number, enlarges the validator set, and then
 /// increments the number app's number again.
 #[test]
 fn progress_and_validator_set_update_test() {
@@ -74,7 +74,10 @@ fn progress_and_validator_set_update_test() {
         None,
         "Polling the validator set of every replica until we have 3 validators.",
     );
-    while !nodes.iter().all(|node| node.committed_validator_set().len() == 3) {
+    while !nodes
+        .iter()
+        .all(|node| node.committed_validator_set().len() == 3)
+    {
         thread::sleep(Duration::from_millis(500));
     }
 

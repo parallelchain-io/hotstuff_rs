@@ -136,33 +136,41 @@ impl<N: Network> ValidatorSetUpdateHandle<N> {
     }
 }
 
-/// A receiving end for progress messages. Performs pre-processing of the received messages, returning
-/// the messages immediately or storing them in the buffer.
-///
-/// All messages must match the chain id passed to the receiver to be accepted.
+/// A receiving end for [`ProgressMessages`](ProgressMessage).
 ///
 /// ## View-aware buffering
 ///
-/// ### HotStuff Messages
+/// `ProgressMessageStub` performs "view-aware buffering". This means that it inspects incoming
+/// messages' view numbers to decide whether to:
+/// 1. Return it from `recv` for immediate processing.
+/// 2. Place it in its buffer for future processing.
+/// 3. Discard it.
 ///
-/// This type's recv method only returns hotstuff messages for the current view, and caches messages
-/// from future views for future consumption. This helps prevent interruptions to progress when
-/// replicas' views are mostly synchronized but they enter views at slightly different times.
+/// `ProgressMessageStub` applies different view-aware policies depending on whether the incoming
+/// message is a HotStuff message, a Pacemaker message, or a BlockSyncTrigger message. These policies
+/// are detailed below:
 ///
-/// ### Pacemaker Messages
+/// ### HotStuff messages
 ///
-/// This type's recv method returns pacemaker messages for any view greater or equal to the current
-/// view. It also caches all messages for view greater than the current view, for processing in the
-/// appropriate view in case immediate processing is not possible.
+/// `recv` returns HotStuff messages for **only** the current view, and caches messages from future
+/// views for future processing. This helps prevent interruptions to progress when replicas' views are
+/// mostly synchronized but they enter views at slightly different times.
 ///
-/// ### BlockSyncTrigger Messages
+/// ### Pacemaker messages
 ///
-/// This type's recv method returns block sync trigger messages immediately without caching.
+/// `recv` returns Pacemaker messages for any view **greater than or equal to** the current view. It
+/// **also** caches all messages for views greater than the current view, for processing in the intended
+/// view in case immediate processing is not possible.
+///
+/// ### BlockSyncTrigger messages
+///
+/// `recv` returns block sync trigger messages immediately without buffering.
 ///
 /// ## Buffer management
 ///
-/// If a message buffer grows beyond its maximum capacity, some highest-viewed messages might be removed
-/// from the buffer to make space for the new message.
+/// If `ProgressMessageStub`'s message buffer grows beyond the maximum capacity specified in
+/// [`new`](Self::new), some future-viewed messages might be removed from the buffer to make space for
+/// the new message. The logic for removing future-viewed messages removes highest-viewed messages first.
 pub(crate) struct ProgressMessageStub {
     receiver: Receiver<(VerifyingKey, ProgressMessage)>,
     msg_buffer: ProgressMessageBuffer,
@@ -181,7 +189,7 @@ impl ProgressMessageStub {
         }
     }
 
-    /// Receive a message matching the given chain id, and view >= current view (if any). Cache and/or
+    /// Receive a message matching the specified `chain_id`, and view >= current view (if any). Cache and/or
     /// return immediately, depending on the message type. Messages older than current view are dropped
     /// immediately. [`BlockSyncAdvertiseMessage`][crate::block_sync::messages::BlockSyncAdvertiseMessage]
     /// messages are not associated with a view, and so they are returned immediately.

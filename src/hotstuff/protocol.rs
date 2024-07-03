@@ -3,60 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the HotStuff protocol for Byzantine Fault Tolerant State Machine Replication,
-//! adapted for dynamic validator sets.
-//!
-//! ## HotStuff for dynamic validator sets
-//!
-//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements consists of two
-//! operating modes: a **Pipelined** mode, and a **Phased** mode.
-//!
-//! ### Pipelined mode
-//!
-//! The base protocol for consensus on blocks that do not update the validator set implements the
-//! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes
-//! for its ancestors too. Thus, the base protocol consists of exchanging [`Proposal`], [`Vote`], and
-//! [`NewView`] messages, where the votes are from [`Phase::Generic`] phase.
-//!
-//! A view in this protocol generally proceeds as follows:
-//! 1. The leader of the view proposes a block with its highestQC as the justify of the block.
-//! 2. Replicas process the proposal: check if it is well-formed and cryptographically correct,
-//!    query the [`App`] to validate the block, if so then they insert the block and apply the
-//!    state updates associated with the block's justify. This may include updating the highestQC,
-//!    updating the lockedQC, and committing a great-grandparent block. They also vote for the
-//!    proposal.
-//! 3. The next leader collects the votes into a QC, and saves it as its highestQC.
-//!
-//! ### Phased mode
-//!
-//! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
-//! associated validator set updates. This is because in a dynamic validator sets setting a desirable  
-//! property is immediacy - if B is a block that updates the validator set from vs to vs', then its
-//! child shall be proposed and voted for by replicas from vs'.
-//!
-//! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is
-//! supplemented with a "phased" version of HotStuff with an additional "decide" phase. This means that
-//! the voting for a validator-set-updating block proceeds in 4 phases, through which the validators are
-//! only voting for the block, but not for its ancestors. If this 4-phase consensus is interrupted, then
-//! the block has to be re-proposed, which guarantees safety.
-//!
-//! The consensus phases for a validator-set-updating block B proceed as follows:
-//! 1. "Prepare" phase: the leader broadcasts a proposal for B, replicas send [`Phase::Prepare`] votes.
-//! 2. "Precommit" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Prepare`] QC for B, replicas
-//!     send [`Phase::Precommit`] votes.
-//! 3. "Commit" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Precommit`] QC for B, replicas
-//!     send [`Phase::Commit`] votes.
-//! 4. "Decide" phase: the leader broadcasts a [`Nudge`] with a [`Phase::Commit`] QC for B, replicas
-//!     send [`Phase::Decide`] votes.
-//!
-//! The "decide" phase is special as it enforces a liveness-preserving transition between the two
-//! validator sets. Concretely, on seeing a CommitQC, a new validator set becomes committed and its
-//! members vote "decide" for the block, with the goal of producing a DecideQC. However, in case
-//! they fail to do so, the resigning validator set is still active and ready to re-initiate the
-//! "decide" phase by broadcasting the commitQC if needed - the resigning validators only completely
-//! de-activate themselves on seeing a DecideQC for the block. This guarantees the invariant that
-//! if a DecideQC exists, a quorum from the new validator set has committed the validator set update
-//! and is ready to make progress.
+//! Implementation of a participant in the HotStuff subprotocol.
 
 use std::iter::successors;
 use std::sync::mpsc::Sender;
@@ -92,9 +39,27 @@ use crate::types::{basic::ChainID, keypair::Keypair};
 use super::types::QuorumCertificate;
 use super::voting::vote_recipient;
 
-/// An implementation of the HotStuff protocol (https://arxiv.org/abs/1803.05069), adapted to enable
-/// dynamic validator sets. The protocol operates on a per-view basis, where in each view the validator
-/// exchanges messages with other validators, and updates the [block tree][BlockTree].
+/// A participant in the HotStuff subprotocol.
+///
+/// ## Usage
+///
+/// The `HotStuff` struct is meant to be used in an "event-oriented" fashion (note that "event" here
+/// does not refer to the [`Event`] enum defined in the events module, but to "event" in the abstract
+/// sense).
+///
+/// Reflecting this event-orientation, the two most significant crate-public methods of this struct are
+/// "event handlers", which are to be called when specific things happen to the replica. These methods
+/// are:
+/// 1. [`enter_view`](Self::enter_view): called when
+///    [`Pacemaker`](crate::pacemaker::protocol::Pacemaker) causes the replica to enter a new view.
+/// 2. [`on_receive_msg`](Self::on_receive_msg): called when a new [`HotStuffMessage`](HotStuffMessage)
+///    is received.
+///
+/// Besides these two, HotStuff has one more crate-public method, namely
+/// [`is_view_outdated`](Self::is_view_outdated). This should be called after querying `Pacemaker` for
+/// the latest [`ViewInfo`] to decide whether or not the `ViewInfo` is truly "new", that is, whether or
+/// not it is more up-to-date than the latest `ViewInfo` the `HotStuff` struct has received through its
+/// `enter_view` method.
 pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     view_info: ViewInfo,
@@ -134,22 +99,29 @@ impl<N: Network> HotStuff<N> {
 
     /// Returns if the HotStuff internal view is outdated with respect to the view from [`ViewInfo`] provided
     /// by the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker).
+    ///
+    /// ## Next step
+    ///
+    /// If this function returns `true`, [`enter_view`](Self::enter_view) should be called with the latest `ViewInfo`
+    /// at the soonest possible opportunity.
     pub(crate) fn is_view_outdated(&self, new_view_info: &ViewInfo) -> bool {
         new_view_info.view != self.view_info.view
     }
 
-    /// On receiving new [`ViewInfo`] from the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker): send messages
+    /// On receiving new [`ViewInfo`] from the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker), send messages
     /// and perform state updates associated with exiting the current view, update the local view info.
     ///
-    /// This involves the following steps:
-    /// 1. Exit the current view: send a [NewView] message to the leader of the next view.
+    /// ## Internal procedure
+    ///
+    /// This function executes the following steps:
+    /// 1. "Exit" the current view by sending a [`NewView`] message to the leader of the next view.
     /// 2. Update the internal view info and view status, as well as the vote collectors.
     /// 3. If serving as a leader of the newly entered view, propose or nudge.
     ///
     /// ## Precondition
-    /// [`Self::is_view_outdated`] returns true. This is the case when the
-    /// [`Pacemaker`](crate::pacemaker::protocol::Pacemaker) updated the view info but the update has not been
-    /// propagated to the [`HotStuff`] protocol yet.
+    ///
+    /// [`is_view_outdated`](Self::is_view_outdated) returns true. This is the case when the Pacemaker has updated
+    /// `ViewInfo` but the update has not been made available to the [`HotStuff`] struct yet.
     pub(crate) fn enter_view<K: KVStore>(
         &mut self,
         new_view_info: ViewInfo,
@@ -291,7 +263,7 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
-    /// Process the newly received message for the current view according to the protocol.
+    /// Process a newly received message for the current view according to the HotStuff subprotocol.
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self,
         msg: HotStuffMessage,
@@ -644,7 +616,8 @@ impl<N: Network> HotStuff<N> {
     }
 }
 
-/// Immutable parameters that define the behaviour of the [HotStuff] protocol and should never change.
+/// Immutable parameters that define the behaviour of the [`HotStuff`] struct and should never change
+/// after a replica starts.
 #[derive(Clone)]
 pub(crate) struct HotStuffConfiguration {
     pub(crate) chain_id: ChainID,
@@ -664,9 +637,10 @@ impl From<BlockTreeError> for HotStuffError {
     }
 }
 
-/// Captures the state of progress in a view. Keeping track of the `ViewStatus` is important for
-/// ensuring that a leader can only propose once in a view - any subsequent proposals will be
-/// ignored.
+/// Captures the state of progress **within** a view.
+///
+/// Keeping track of `ViewStatus` ensures that a leader can only propose once in a view -- any
+/// subsequent proposals will be ignored.
 ///
 /// ## Variants
 ///

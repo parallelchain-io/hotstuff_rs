@@ -38,7 +38,7 @@
 //! |Validator Set Update Completed|[bool]|Whether the most recently initiated validator set update has been completed. A validator set update is initiated when a commit QC for the corresponding validator-set-updating block is seen.|
 //! |Validator Set Update Block Height|The height of the block associated with the most recently initiated validator set update.|
 //! |Validator Set Updates Status|[CryptoHash] -> [ValidatorSetUpdatesStatus]||
-//! |Locked QC|[QuorumCertificate]| QC of a block that is about to be committed, unless there is evidence for a quorum switching to a conflicting branch. Refer to the HotStuff paper for details.|
+//! |Locked QC|[QuorumCertificate]|QC of a block that is about to be committed, unless there is evidence for a quorum switching to a conflicting branch. Refer to the HotStuff paper for details.|
 //! |Highest Voted View|[ViewNumber]|The highest view that this validator has voted in.|
 //! |Highest View Entered|[ViewNumber]|The highest view that this validator has entered.|
 //! |Highest Quorum Certificate|[QuorumCertificate]|Among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.|
@@ -469,15 +469,17 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Error when reading or writing to the [BlockTree]. Three kinds of errors may be encountered:
-/// 1. Error when trying to get a value from the underlying [key value store][KVStore],
-/// 2. Error when trying to set a value for a given key in the underlying [key value store][KVStore],
-/// 3. Unable to find a block that matches a given block tree query, even though the block should be
-///    present in the block tree.
+/// Errors that may be encountered when reading or writing to the [`BlockTree`].
 #[derive(Debug)]
 pub enum BlockTreeError {
+    /// Error when trying to get a value from the block tree's underlying [key value store][KVStore].
     KVGetError(KVGetError),
+
+    /// Error when trying set a value into block tree's underlying key value store.
     KVSetError(KVSetError),
+
+    /// Unable to find a block with the specific `CryptoHash`, even though an invariant that the block tree
+    /// expects to be maintained suggests that the block should exist.
     BlockExpectedButNotFound { block: CryptoHash },
 }
 

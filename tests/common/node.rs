@@ -1,3 +1,5 @@
+//! `[Node]`, a wrapper that manages access to a replica built around `NumberApp`.
+
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -25,15 +27,12 @@ use crate::common::{
 
 use super::logging::{first_seven_base64_chars, log_with_context};
 
-/// Things the Nodes will have in common:
-/// - Initial Validator Set.
-/// - Configuration.
+/// A single "node" in an integration test cluster built around number app.
 ///
-/// Things that they will differ in:
-/// - App instance.
-/// - Network instance.
-/// - KVStore.
-/// - Keypair.
+/// Users can do two sets of things with a `Node` by calling its methods:
+/// 1. Submit a `NumberAppTransaction` to the node ([`submit_transaction`](Self::submit_transaction)).
+/// 2. Query the state of the replica and/or the app (e.g., [`number`](Self::number),
+/// [`verifying_key`](Self::verifying_key), [`committed_validator_set`](Self::committed_validator_set)).
 pub(crate) struct Node {
     verifying_key: VerifyingKeyBytes,
     tx_queue: Arc<Mutex<Vec<NumberAppTransaction>>>,
@@ -41,10 +40,16 @@ pub(crate) struct Node {
 }
 
 impl Node {
+    /// Create a new `Node` that signs messages using the provided `keypair`, receives and sends messages
+    /// using the provided `network_stub`, initializing its app state and validator set using
+    /// `init_as_updates` and `init_vs_updates` respectively.
+    ///
+    /// The replica in the returned `Node` starts working immediately, and is automatically shut down when
+    /// the node is dropped.
     pub(crate) fn new(
         keypair: SigningKey,
-        network: NetworkStub,
-        init_as: AppStateUpdates,
+        network_stub: NetworkStub,
+        init_as_updates: AppStateUpdates,
         init_vs_updates: ValidatorSetUpdates,
     ) -> Node {
         let kv_store = MemDB::new();
@@ -53,7 +58,7 @@ impl Node {
         init_vs.apply_updates(&init_vs_updates);
         let init_vs_state = ValidatorSetState::new(init_vs.clone(), init_vs, None, true);
 
-        Replica::initialize(kv_store.clone(), init_as, init_vs_state);
+        Replica::initialize(kv_store.clone(), init_as_updates, init_vs_state);
 
         let verifying_key = keypair.verifying_key().to_bytes();
         let tx_queue = Arc::new(Mutex::new(Vec::new()));
@@ -69,13 +74,15 @@ impl Node {
             .block_sync_trigger_timeout(Duration::new(60, 0))
             .progress_msg_buffer_capacity(BufferSize::new(1024))
             .epoch_length(EpochLength::new(50))
+            // `max_view_time` must be **at least** 500 milliseconds, since `NumberApp`'s `produce_block` and
+            // `validate_block` each take a minimum of 250 milliseconds to complete.
             .max_view_time(Duration::from_millis(2000))
             .log_events(false)
             .build();
 
         let replica = ReplicaSpec::builder()
             .app(NumberApp::new(tx_queue.clone()))
-            .network(network)
+            .network(network_stub)
             .kv_store(kv_store)
             .configuration(configuration)
             .on_insert_block(insert_block_handler(verifying_key))
@@ -93,35 +100,41 @@ impl Node {
         }
     }
 
+    /// Push the transaction `txn` to the node's local number app transaction queue.
     pub(crate) fn submit_transaction(&mut self, txn: NumberAppTransaction) {
         self.tx_queue.lock().unwrap().push(txn);
     }
 
+    /// Query the number in the node's local app state.
     pub(crate) fn number(&self) -> u32 {
         NumberApp::number(self.replica.block_tree_camera().snapshot())
     }
 
+    /// Query the committed validator set in the node's local block tree.
     pub(crate) fn committed_validator_set(&self) -> ValidatorSet {
         self.replica
             .block_tree_camera()
             .snapshot()
             .committed_validator_set()
-            .expect("Cannot obtain the committed validator set from the block tree!")
+            .expect("should have been able to get the committed validator set from the block tree")
     }
 
+    /// Query the highest view entered in the node's local block tree.
     pub(crate) fn highest_view_entered(&self) -> ViewNumber {
         self.replica
             .block_tree_camera()
             .snapshot()
             .highest_view_entered()
-            .expect("Cannot obtain the highest view entered from the block tree!")
+            .expect("should have been able to get the highest view entered from the block tree")
     }
 
+    /// Query the verifying key of the node.
     pub(crate) fn verifying_key(&self) -> VerifyingKeyBytes {
         self.verifying_key
     }
 }
 
+/// Return a closure that logs out an `InsertBlockEvent` in a human-readable way.
 fn insert_block_handler(
     verifying_key: VerifyingKeyBytes,
 ) -> impl Fn(&InsertBlockEvent) + Send + 'static {
@@ -136,6 +149,7 @@ fn insert_block_handler(
     }
 }
 
+/// Return a closure that logs out an `ReceiveProposalEvent` in a human-readable way.
 fn receive_proposal_handler(
     verifying_key: VerifyingKeyBytes,
 ) -> impl Fn(&ReceiveProposalEvent) + Send + 'static {
@@ -174,6 +188,7 @@ fn receive_proposal_handler(
     }
 }
 
+/// Return a closure that logs out an `CommitBlockEvent` in a human-readable way.
 fn commit_block_handler(
     verifying_key: VerifyingKeyBytes,
 ) -> impl Fn(&CommitBlockEvent) + Send + 'static {
@@ -188,6 +203,7 @@ fn commit_block_handler(
     }
 }
 
+/// Return a closure that logs out an `UpdateHighestQCEvent` in a human-readable way.
 fn update_highest_qc_handler(
     verifying_key: VerifyingKeyBytes,
 ) -> impl Fn(&UpdateHighestQCEvent) + Send + 'static {
@@ -210,6 +226,7 @@ fn update_highest_qc_handler(
     }
 }
 
+/// Return a closure that logs out an `VoteEvent` in a human-readable way.
 fn vote_handler(verifying_key: VerifyingKeyBytes) -> impl Fn(&VoteEvent) + Send + 'static {
     move |vote_event: &VoteEvent| {
         log_with_context(

@@ -3,17 +3,18 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Methods used to enforce who is allowed to propose and vote at any given point. The methods implement
-//! the key rules of the hotstuff-rs validator set update protocol.
+//! Functions that define which replicas are allowed to propose and vote at any given point in the
+//! execution of the HotStuff subprotocol.
 //!
 //! ## Validator Set Update protocol
-//! hotstuff-rs adds an extra "decide" phase to the phased HotStuff protocol. This phase serves as the
-//! transition phase for the validator set update, and is associated with the following invariant
-//! which implies the liveness as well as immediacy of a validator set update:
 //!
-//! "If there exists a valid decideQC for a validator-set-updating block, then a quorum from the new
-//! validator set has committed the block together with the validator-set-update, and hence is ready
-//! to act as the newly committed validator set"
+//! HotStuff-rs' modified HotStuff SMR adds an extra "decide" phase to the phased HotStuff protocol.
+//! This phase serves as the transition phase for the validator set update, and is associated with
+//! the following invariant which implies the liveness as well as immediacy of a validator set update:
+//!
+//! > "If there exists a valid decideQC for a validator-set-updating block, then a quorum from the new
+//! > validator set has committed the block together with the validator-set-update, and hence is ready
+//! > to act as the newly committed validator set"
 //!
 //! Concretely, suppose B is a block that updates the validator set from vs to vs'. Once a commitQC
 //! for B is seen, vs' becomes the committed validator set, and vs is stored as the previous validator
@@ -67,8 +68,8 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
     }
 }
 
-/// Returns whether the replica with a given public key is allowed to vote for a nudge or proposal with
-/// a given justify.
+/// Returns whether the replica with the given `verifying_key` is allowed to vote for a nudge or
+/// proposal with the given `justify`.
 ///
 /// Usually, a replica is allowed to vote if it belongs to the committed validator set. However,
 /// during the validator set update period replicas from the previous validator set are also
@@ -103,13 +104,15 @@ pub(crate) fn is_voter(
     }
 }
 
-/// Returns whether the replica with a given public key is an active validator. An active
-/// validator can:
+/// Returns whether the replica with the specified `verifying_key` is an active validator, given the
+/// current `validator_set_state`.
+///
+/// An active validator can:
 /// 1. Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
 /// 2. Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
 ///    [advance view messages](crate::pacemaker::messages::AdvanceView).
 ///
-/// In general, memebers of the committed validator set are always active, but during the validator
+/// In general, members of the committed validator set are always active, but during the validator
 /// set update period members of the previous validator set are active too.
 pub(crate) fn is_validator(
     verifying_key: &VerifyingKey,
@@ -129,7 +132,7 @@ pub(crate) fn is_validator(
 ///
 /// ## Return value
 ///
-/// Returns a pair with the following items:
+/// Returns a pair containing the following items:
 /// 1. `VerifyingKey`: the leader in the committed validator set in the specified view.
 /// 2. `Option<VerifyingKey>`: the leader in the resigning validator set in the specified view (`None`
 ///     if the most recently initiated validator set update has been completed).

@@ -1,3 +1,5 @@
+//! A simple, volatile, in-memory implementation of [`KVStore``].
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex, MutexGuard},
@@ -8,10 +10,12 @@ use hotstuff_rs::state::{
     write_batch::WriteBatch,
 };
 
+/// An in-memory implementation of [`KVStore`].
 #[derive(Clone)]
 pub(crate) struct MemDB(Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>);
 
 impl MemDB {
+    /// Create a new, empty `MemDB`.
     pub(crate) fn new() -> MemDB {
         MemDB(Arc::new(Mutex::new(HashMap::new())))
     }
@@ -46,6 +50,7 @@ impl KVGet for MemDB {
     }
 }
 
+// A simple implementation of [`WriteBatch`].
 pub(crate) struct MemWriteBatch {
     insertions: HashMap<Vec<u8>, Vec<u8>>,
     deletions: HashSet<Vec<u8>>,
@@ -70,6 +75,7 @@ impl WriteBatch for MemWriteBatch {
     }
 }
 
+/// A simple implementation of [`KVGet`] used as `KVStore::Snapshot` for `MemDB`.
 pub(crate) struct MemDBSnapshot<'a>(MutexGuard<'a, HashMap<Vec<u8>, Vec<u8>>>);
 
 impl KVGet for MemDBSnapshot<'_> {
