@@ -132,31 +132,29 @@ impl<N: Network> HotStuff<N> {
         let validator_set_state = block_tree.validator_set_state()?;
 
         // 1. Send a NewView message for the current view to the next leader(s).
-        let new_view_msg = HotStuffMessage::new_view(
-            self.config.chain_id,
-            self.view_info.view,
-            block_tree.highest_qc()?,
-        );
+        let new_view = NewView {
+            chain_id: self.config.chain_id,
+            view: self.view_info.view,
+            highest_qc: block_tree.highest_qc()?,
+        };
 
         match leaders(self.view_info.view + 1, &validator_set_state) {
             (committed_vs_leader, None) => self
                 .sender_handle
-                .send(committed_vs_leader, new_view_msg.clone()),
+                .send::<HotStuffMessage>(committed_vs_leader, new_view.clone().into()),
             (committed_vs_leader, Some(prev_vs_leader)) => {
                 self.sender_handle
-                    .send(committed_vs_leader, new_view_msg.clone());
+                    .send::<HotStuffMessage>(committed_vs_leader, new_view.clone().into());
                 self.sender_handle
-                    .send(prev_vs_leader, new_view_msg.clone())
+                    .send::<HotStuffMessage>(prev_vs_leader, new_view.clone().into());
             }
         }
 
-        if let HotStuffMessage::NewView(new_view) = new_view_msg {
-            Event::NewView(NewViewEvent {
-                timestamp: SystemTime::now(),
-                new_view,
-            })
-            .publish(&self.event_publisher)
-        }
+        Event::NewView(NewViewEvent {
+            timestamp: SystemTime::now(),
+            new_view,
+        })
+        .publish(&self.event_publisher);
 
         // 2. Update the struct's internal view info, proposal status, and vote collectors to collect
         //    votes for the new view.
@@ -190,17 +188,19 @@ impl<N: Network> HotStuff<N> {
                     .block(&block_hash)?
                     .ok_or(BlockTreeError::BlockExpectedButNotFound { block: block_hash })?;
 
-                let proposal_msg =
-                    HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
-                self.sender_handle.broadcast(proposal_msg.clone());
+                let proposal = Proposal {
+                    chain_id: self.config.chain_id,
+                    view: self.view_info.view,
+                    block,
+                };
+                self.sender_handle
+                    .broadcast::<HotStuffMessage>(proposal.clone().into());
 
-                if let HotStuffMessage::Proposal(proposal) = proposal_msg {
-                    Event::Propose(ProposeEvent {
-                        timestamp: SystemTime::now(),
-                        proposal,
-                    })
-                    .publish(&self.event_publisher)
-                }
+                Event::Propose(ProposeEvent {
+                    timestamp: SystemTime::now(),
+                    proposal,
+                })
+                .publish(&self.event_publisher);
 
                 return Ok(());
             }
@@ -236,36 +236,36 @@ impl<N: Network> HotStuff<N> {
 
                     let block = Block::new(child_height, highest_qc, data_hash, data);
 
-                    let proposal_msg =
-                        HotStuffMessage::proposal(self.config.chain_id, self.view_info.view, block);
+                    let proposal = Proposal {
+                        chain_id: self.config.chain_id,
+                        view: self.view_info.view,
+                        block,
+                    };
+                    self.sender_handle
+                        .broadcast::<HotStuffMessage>(proposal.clone().into());
 
-                    self.sender_handle.broadcast(proposal_msg.clone());
-
-                    if let HotStuffMessage::Proposal(proposal) = proposal_msg {
-                        Event::Propose(ProposeEvent {
-                            timestamp: SystemTime::now(),
-                            proposal,
-                        })
-                        .publish(&self.event_publisher)
-                    }
+                    Event::Propose(ProposeEvent {
+                        timestamp: SystemTime::now(),
+                        proposal,
+                    })
+                    .publish(&self.event_publisher);
                 }
                 // Produce and broadcast a Nudge.
                 Phase::Prepare | Phase::Precommit | Phase::Commit => {
-                    let nudge_msg = HotStuffMessage::nudge(
-                        self.config.chain_id,
-                        self.view_info.view,
-                        highest_qc,
-                    );
+                    let nudge = Nudge {
+                        chain_id: self.config.chain_id,
+                        view: self.view_info.view,
+                        justify: highest_qc,
+                    };
 
-                    self.sender_handle.broadcast(nudge_msg.clone());
+                    self.sender_handle
+                        .broadcast::<HotStuffMessage>(nudge.clone().into());
 
-                    if let HotStuffMessage::Nudge(nudge) = nudge_msg {
-                        Event::Nudge(NudgeEvent {
-                            timestamp: SystemTime::now(),
-                            nudge,
-                        })
-                        .publish(&self.event_publisher)
-                    }
+                    Event::Nudge(NudgeEvent {
+                        timestamp: SystemTime::now(),
+                        nudge,
+                    })
+                    .publish(&self.event_publisher)
                 }
             }
         }
@@ -398,24 +398,23 @@ impl<N: Network> HotStuff<N> {
                     Phase::Generic
                 };
 
-                let vote_msg = HotStuffMessage::vote(
+                let vote = Vote::new(
                     &self.config.keypair,
                     self.config.chain_id,
                     self.view_info.view,
                     proposal.block.hash,
                     vote_phase,
                 );
+                let vote_recipient = vote_recipient(&vote, &validator_set_state);
+                self.sender_handle
+                    .send::<HotStuffMessage>(vote_recipient, vote.clone().into());
 
-                if let HotStuffMessage::Vote(ref vote) = vote_msg {
-                    let vote_recipient = vote_recipient(&vote, &validator_set_state);
-                    self.sender_handle.send(vote_recipient, vote_msg.clone());
-                    block_tree.set_highest_view_voted(self.view_info.view)?;
-                    Event::Vote(VoteEvent {
-                        timestamp: SystemTime::now(),
-                        vote: vote.clone(),
-                    })
-                    .publish(&self.event_publisher)
-                }
+                block_tree.set_highest_view_voted(self.view_info.view)?;
+                Event::Vote(VoteEvent {
+                    timestamp: SystemTime::now(),
+                    vote: vote.clone(),
+                })
+                .publish(&self.event_publisher)
             }
         }
 
@@ -500,24 +499,23 @@ impl<N: Network> HotStuff<N> {
                 _ => unreachable!(), // Safety: if safe_nudge check passed this cannot be the case.
             };
 
-            let vote_msg = HotStuffMessage::vote(
+            let vote = Vote::new(
                 &self.config.keypair,
                 self.config.chain_id,
                 self.view_info.view,
                 nudge.justify.block,
                 vote_phase,
             );
+            let vote_recipient = vote_recipient(&vote, &validator_set_state);
+            self.sender_handle
+                .send::<HotStuffMessage>(vote_recipient, vote.clone().into());
 
-            if let HotStuffMessage::Vote(ref vote) = &vote_msg {
-                let vote_recipient = vote_recipient(&vote, &validator_set_state);
-                self.sender_handle.send(vote_recipient, vote_msg.clone());
-                block_tree.set_highest_view_voted(self.view_info.view)?;
-                Event::Vote(VoteEvent {
-                    timestamp: SystemTime::now(),
-                    vote: vote.clone(),
-                })
-                .publish(&self.event_publisher);
-            }
+            block_tree.set_highest_view_voted(self.view_info.view)?;
+            Event::Vote(VoteEvent {
+                timestamp: SystemTime::now(),
+                vote: vote.clone(),
+            })
+            .publish(&self.event_publisher);
         }
 
         // 5. Stop accepting proposals or nudges from this leader in this view.

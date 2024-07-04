@@ -47,69 +47,6 @@ pub enum HotStuffMessage {
 }
 
 impl HotStuffMessage {
-    /// Create a [`Proposal`] message for a given chain id, view, and block.
-    pub fn proposal(chain_id: ChainID, view: ViewNumber, block: Block) -> HotStuffMessage {
-        HotStuffMessage::Proposal(Proposal {
-            chain_id,
-            view,
-            block,
-        })
-    }
-
-    /// Create a [`Nudge`] message for a given chain id, view, and justifying QC.
-    ///
-    /// # Panics
-    ///
-    /// justify.phase must be Prepare or Precommit. This function panics otherwise.
-    pub fn nudge(
-        chain_id: ChainID,
-        view: ViewNumber,
-        justify: QuorumCertificate,
-    ) -> HotStuffMessage {
-        match justify.phase {
-            Phase::Generic | Phase::Decide => panic!(),
-            Phase::Prepare | Phase::Precommit | Phase::Commit => HotStuffMessage::Nudge(Nudge {
-                chain_id,
-                view,
-                justify,
-            }),
-        }
-    }
-
-    /// Create a [`NewView`] message for a given chain id, view, and highestQC.
-    pub fn new_view(
-        chain_id: ChainID,
-        view: ViewNumber,
-        highest_qc: QuorumCertificate,
-    ) -> HotStuffMessage {
-        HotStuffMessage::NewView(NewView {
-            chain_id,
-            view,
-            highest_qc,
-        })
-    }
-
-    /// Create a [`Vote`] for a given chain id, view, block, and phase, by signing over the values with the
-    /// replica's private key.
-    pub(crate) fn vote(
-        me: &Keypair,
-        chain_id: ChainID,
-        view: ViewNumber,
-        block: CryptoHash,
-        phase: Phase,
-    ) -> HotStuffMessage {
-        let message_bytes = &(chain_id, view, block, phase).try_to_vec().unwrap();
-        let signature = me.sign(message_bytes);
-
-        HotStuffMessage::Vote(Vote {
-            chain_id,
-            view,
-            block,
-            phase,
-            signature,
-        })
-    }
-
     /// Returns the chain ID associated with a given [`HotStuffMessage`].
     pub fn chain_id(&self) -> ChainID {
         match self {
@@ -159,6 +96,30 @@ impl Cacheable for HotStuffMessage {
     }
 }
 
+impl From<Proposal> for HotStuffMessage {
+    fn from(proposal: Proposal) -> Self {
+        HotStuffMessage::Proposal(proposal)
+    }
+}
+
+impl From<Nudge> for HotStuffMessage {
+    fn from(nudge: Nudge) -> Self {
+        HotStuffMessage::Nudge(nudge)
+    }
+}
+
+impl From<Vote> for HotStuffMessage {
+    fn from(vote: Vote) -> Self {
+        HotStuffMessage::Vote(vote)
+    }
+}
+
+impl From<NewView> for HotStuffMessage {
+    fn from(new_view: NewView) -> Self {
+        HotStuffMessage::NewView(new_view)
+    }
+}
+
 impl Into<ProgressMessage> for HotStuffMessage {
     fn into(self) -> ProgressMessage {
         ProgressMessage::HotStuffMessage(self)
@@ -183,6 +144,26 @@ pub struct Nudge {
     pub justify: QuorumCertificate,
 }
 
+impl Nudge {
+    /// Create a new `Nudge` message containing the given `chain_id`, `view`, and `justify`-ing QC.
+    ///
+    /// # Panics
+    ///
+    /// `justify.phase` must be `Prepare` or `Precommit`. This function panics otherwise.
+    pub fn new(chain_id: ChainID, view: ViewNumber, justify: QuorumCertificate) -> Self {
+        match justify.phase {
+            Phase::Generic | Phase::Decide => {
+                panic!("`justify.phase` should be either Prepare or Precommit")
+            }
+            Phase::Prepare | Phase::Precommit | Phase::Commit => Self {
+                chain_id,
+                view,
+                justify,
+            },
+        }
+    }
+}
+
 /// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a
 /// cryptographic signature over the information passed through a vote.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -192,6 +173,29 @@ pub struct Vote {
     pub block: CryptoHash,
     pub phase: Phase,
     pub signature: SignatureBytes,
+}
+
+impl Vote {
+    /// Create a `Vote` for the given `chain_id`, `view`, `block`, and `phase` by signing over the values
+    /// with the provided `keypair`.
+    pub fn new(
+        keypair: &Keypair,
+        chain_id: ChainID,
+        view: ViewNumber,
+        block: CryptoHash,
+        phase: Phase,
+    ) -> Self {
+        let message_bytes = &(chain_id, view, block, phase).try_to_vec().unwrap();
+        let signature = keypair.sign(message_bytes);
+
+        Self {
+            chain_id,
+            view,
+            block,
+            phase,
+            signature,
+        }
+    }
 }
 
 impl SignedMessage for Vote {
