@@ -3,8 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions that implement rules and predicates that collectively guarantee the safety of HotStuff-rs
-//! SMR.
+//! Functions that implement the rules and predicates that collectively guarantee the safety of
+//! HotStuff-rs SMR.
+//!
+//! ## Safety and state updates
 //!
 //! In HotStuff-rs, the key events that can trigger state updates are:
 //! 1. Receiving a block proposal,
@@ -38,7 +40,7 @@
 //! there exists evidence for it. The evidence would be a newly received QC with a view higher than the
 //! view of the replica's locked QC.
 //!
-//! ## Commit rules
+//! ## Commit Rules
 //!
 //! To avoid inconsistent state due to Byzantine leaders causing safety-threatening branch switches, the
 //! pipelined HotStuff protocol requires that in order to be committed a block must be followed by a
@@ -56,7 +58,7 @@
 //! [`repropose_block`]. This rule is enforced through [`safe_nudge`]. Unlike block insertions, nudges
 //! cannot cause state updates unless they satisfy the rule.
 //!
-//! ## Locking rules
+//! ## Locking Rules
 //!
 //! Locking serves to guarantee the safety of commit. In SMR protocols that follow the lock-commit
 //! paradigm, a value has to be locked before it is committed. The idea is that even if only some
@@ -179,27 +181,28 @@ pub fn safe_nudge<K: KVStore>(
     )
 }
 
-/// Returns the QC (if any) that should be set as the Locked QC after the replica sees a given
+/// Returns the QC (if any) that should be set as the Locked QC after the replica sees the given
 /// `justify`.
 ///
-/// This function should be called whenever a new, correct, and [safe](`safe_qc`) `justify` QC is seen,
-/// whether contained in a `Proposal`, or `Nudge`.
+/// Like [`block_to_commit`], this function should be called whenever a new, correct, and
+/// [safe](`safe_qc`) `justify` QC is seen, whether received in a `Proposal`, or a `Nudge`.
 ///
 /// ## Precondition
 ///
-/// The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+/// The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`]
+/// respectively.
 ///
-/// ## Locking rules
+/// ## Lower-level Locking Rules
 ///
-/// This function implements the "high-level" [locking rules](#locking-rules) by evaluating the following
-/// "lower-level" rules:
+/// This function implements the "high-level" [Locking Rules](super::safety#locking-rules) by evaluating
+/// the following "lower-level" Locking Rules:
 ///
 /// |`justify` is a|QC to lock|Reasoning|
 /// |---|---|---|
 /// |`Generic` QC|`Some(justify.block.justify)`|In the pipelined mode of the HotStuff subprotocol, Generic `justify`s serve as the Precommit QC for the parent of `justify.block`.|
 /// |`Prepare` QC|`None`|This is for the sake of consistency with the decision not to commit ancestor blocks on seeing a Prepare QC or a Precommit QC in [`block_to_commit`] ([discussion on GitHub](https://github.com/parallelchain-io/hotstuff_rs/pull/36#discussion_r1598193117)).|
-/// |`Precommit` QC|`Some(justify)`|This is equivalent to locking the Prepare QC for the same block for the same block on seeing the Precommit QC, as is done in the original HotStuff algorithm, since by the `safe_nudge` precondition, Prepare QC and Precommit QC must have consecutive views.|
-/// |`Commit` QC or `Decide` QC|`Some(justify)`|If `justify` is a Commit or Decide QC, then under ideal conditions `justify.block` should have been locked on seeing a Precommit QC for the block, and hence there is no need to lock. However, in case the current locked QC is not for `justify.block` (this can happen if the replica didn't receive the Precommit QC for the block, for example if the replica is receiving the Decide QC `justify` via block sync), we still lock the `justify`. This is equivalent to locking the Precommit QC, as we do under normal operation, since the Precommit QC and the Commit QC/Decide QC have consecutive views and are for the same block.|
+/// |`Precommit` QC|`Some(justify)`|This is equivalent to locking the Prepare QC for the same block on seeing the Precommit QC, as is done in the original HotStuff algorithm, since by the `safe_nudge` precondition, Prepare QC and Precommit QC must have consecutive views.|
+/// |`Commit` QC or `Decide` QC|`Some(justify)`|If `justify` is a Commit or Decide QC, then under "normal" conditions `justify.block` should have been locked on seeing a Precommit QC for the block, and hence there is no need to lock. However, in case the current locked QC is not for `justify.block` (this can happen if the replica didn't receive the Precommit QC for the block, for example if the replica is receiving the Decide QC `justify` via block sync), we still lock the `justify`. This is equivalent to locking the Precommit QC, as we do under normal operation, since the Precommit QC and the Commit QC/Decide QC have consecutive views and are for the same block.|
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,
@@ -231,30 +234,35 @@ pub(crate) fn qc_to_lock<K: KVStore>(
     }
 }
 
-/// Returns an optional block that should be committed (along with its uncommitted predecessors) after seeing
-/// a given justify. The method should be called whenever a new, correct and safe justify qc is seen, whether
-/// through a block proposal or through a nudge. It enforces the commit rule for non-validator-set-updating
-/// blocks by requiring that the three quorum certificates following a block to be committed have
-/// consecutive views.
+/// Returns the Block (if any) that, along with its uncommitted predecessors, should be committed after
+/// the replica sees the given `justify`.
 ///
-/// This method implements the following rule:
-/// 1. If a commitQC or decideQC is seen, then the QC's block should be committed - if not committed yet.
-/// 2. If a genericQC is seen, then the great-grandparent block, i.e., the block referenced by the generic
-///    qc's grandparent QC, should be committed - if not committed yet and if the commit rule holds.
-/// 3. If a prepareQC or precommitQC is seen, nothing is committed. Instead those ancestor blocks that
-///    would have been committed otherwise, will be committed once the validator-set-updating block
-///    gets committed.
+/// Like [`qc_to_lock`], this function should be called whenever a new, correct, and safe `justify` QC
+/// is seen, whether received in a `Proposal`, or a `Nudge`.
 ///
-/// Note:
+/// ## Precondition
+///
+/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+///
+/// ## Lower-level Commit Rules
+///
+/// This function implements the "high-level" [Commit Rules](super::safety#commit-rules) by evaluating
+/// the following "lower-level" Commit Rules:
+///
+/// |`justify` is a|Block to commit|
+/// |---|---|
+/// |`Generic` QC|Great-grandparent block|
+/// |`Prepare` QC or `Precommit` QC|`None`|
+/// |`Commit` QC or `Decide` QC|`justify.block`|
+///
+/// ### Notes
+///
 /// - We do not need to consider the blocks referenced by the parent and grandparent QC and check if they
 ///   are decideQC, since if so, they would have been committed on inserting the parent or grandparent
 ///   blocks respectively.
 /// - Even though validator-set-updating blocks are usually committed on seeing a commitQC,
 ///   when the missing blocks are received via sync the commit qc is not sent, but rather the block has to
 ///   be committed on seeing a decideQC.
-///
-/// # Precondition
-/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
 pub(crate) fn block_to_commit<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,

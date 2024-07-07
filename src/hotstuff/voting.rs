@@ -78,9 +78,10 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
 /// replicas enter the validator set update period.
 ///
 /// # Precondition
-/// justify satisfies [safe_qc](crate::state::safety::safe_qc) and
-/// [is_correct](crate::hotstuff::types::QuorumCertificate::is_correct), and the block tree updates
-/// associated with this justify have already been applied.
+///
+/// `justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
+/// [`is_correct`](crate::types::collectors::Certificate::is_correct), and the block tree updates
+/// associated with this `justify` have already been applied.
 pub(crate) fn is_voter(
     validator: &VerifyingKey,
     validator_set_state: &ValidatorSetState,

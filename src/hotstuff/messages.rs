@@ -76,14 +76,6 @@ impl HotStuffMessage {
             HotStuffMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
     }
-
-    pub fn is_proposal(&self) -> bool {
-        matches!(self, HotStuffMessage::Proposal(_))
-    }
-
-    pub fn is_nudge(&self) -> bool {
-        matches!(self, HotStuffMessage::Nudge(_))
-    }
 }
 
 impl Cacheable for HotStuffMessage {
