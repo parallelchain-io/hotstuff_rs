@@ -298,16 +298,16 @@ pub trait KVGet {
         })
     }
 
-    /* ↓↓↓ Locked View ↓↓↓ */
+    /* ↓↓↓ Locked QC ↓↓↓ */
 
     fn locked_qc(&self) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(&mut &*self.get(&paths::LOCKED_QC).ok_or(
-            KVGetError::ValueNotFound {
-                key: Key::LockedView,
-            },
-        )?)
+        QuorumCertificate::deserialize(
+            &mut &*self
+                .get(&paths::LOCKED_QC)
+                .ok_or(KVGetError::ValueNotFound { key: Key::LockedQC })?,
+        )
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::LockedView,
+            key: Key::LockedQC,
             source: err,
         })
     }
@@ -501,7 +501,7 @@ pub enum Key {
     PendingAppStateUpdates { block: CryptoHash },
     CommittedValidatorSet,
     ValidatorSetUpdatesStatus { block: CryptoHash },
-    LockedView,
+    LockedQC,
     HighestViewEntered,
     HighestQC,
     HighestCommittedBlock,
@@ -531,7 +531,7 @@ impl Display for Key {
             &Key::ValidatorSetUpdatesStatus { block } => {
                 write!(f, "Validator Set Updates Status for block {}", block)
             }
-            &Key::LockedView => write!(f, "Locked View"),
+            &Key::LockedQC => write!(f, "Locked QC"),
             &Key::HighestViewEntered => write!(f, "Highest View Entered"),
             &Key::HighestQC => write!(f, "Highest Quorum Certificate"),
             &Key::HighestCommittedBlock => write!(f, "Highest Committed Block"),

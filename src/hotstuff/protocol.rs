@@ -274,6 +274,19 @@ impl<N: Network> HotStuff<N> {
     }
 
     /// Process a newly received message for the current view according to the HotStuff subprotocol.
+    ///
+    /// ## Internal procedure
+    ///
+    /// This function executes the following steps:
+    /// 1. If `msg` is a `Proposal` or a `Nudge`, check if the sender is a proposer for the current view
+    ///    and check if the replica is still accepting nudges and proposals. If these checks fail, return
+    ///    immediately.
+    /// 2. If the checks pass, call one of the following 4 internal event handlers depending on the variant
+    ///    of the received message:
+    ///     - [`on_receive_proposal`](Self::on_receive_proposal).
+    ///     - [`on_receive_nudge`](Self::on_receive_nudge).
+    ///     - [`on_receive_vote`](Self::on_receive_vote).
+    ///     - [`on_receive_new_view`](Self::on_receive_new_view).
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self,
         msg: HotStuffMessage,
@@ -281,10 +294,10 @@ impl<N: Network> HotStuff<N> {
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
-        // If nudge or proposal received, check if the sender is a proposer for this view,
+        // 1. If Proposal or Nudge received, check if the sender is a proposer for this view,
         // and check if the replica is still accepting nudges and proposals. If the checks
         // fail, ignore the message.
-        if msg.is_nudge() || msg.is_proposal() {
+        if matches!(msg, HotStuffMessage::Proposal(_)) || matches!(msg, HotStuffMessage::Nudge(_)) {
             let validator_set_state = block_tree.validator_set_state()?;
 
             if !is_proposer(origin, self.view_info.view, &validator_set_state) {
@@ -298,7 +311,7 @@ impl<N: Network> HotStuff<N> {
             }
         }
 
-        // If the check above passes, process the message.
+        // 2. If the check above pass, process the message.
         match msg {
             HotStuffMessage::Proposal(proposal) => {
                 self.on_receive_proposal(proposal, origin, block_tree, app)
@@ -496,7 +509,7 @@ impl<N: Network> HotStuff<N> {
                 Phase::Prepare => Phase::Precommit,
                 Phase::Precommit => Phase::Commit,
                 Phase::Commit => Phase::Decide,
-                _ => unreachable!(), // Safety: if safe_nudge check passed this cannot be the case.
+                _ => unreachable!("if `safe_nudge` check passed then `vote_phase` should be either `Precommit`, `Commit`, or `Decide`"),
             };
 
             let vote = Vote::new(
@@ -632,8 +645,7 @@ pub(crate) struct HotStuffConfiguration {
     pub(crate) keypair: Keypair,
 }
 
-/// The HotStuff protocol may fail if there is an error when trying to read from or write to the
-/// [block tree][BlockTree].
+/// The different ways calls to methods of the `HotStuff` struct can fail.
 #[derive(Debug)]
 pub enum HotStuffError {
     BlockTreeError(BlockTreeError),

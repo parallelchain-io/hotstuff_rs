@@ -283,14 +283,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Locked View ↓↓↓ */
+    /* ↓↓↓ Locked QC ↓↓↓ */
 
     pub fn set_locked_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
             &paths::LOCKED_QC,
             &qc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
-                    key: Key::LockedView,
+                    key: Key::LockedQC,
                     source: err,
                 })?,
         ))

@@ -3,16 +3,20 @@
 //!
 //! ## HotStuff for dynamic validator sets
 //!
-//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements consists of two
-//! operating modes: a **Pipelined** mode, and a **Phased** mode.
+//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements dynamically
+//! switches between two operating modes:
+//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements automatically
+//! switches between two operating modes depending on whether
+//! 1. [**Pipelined mode**](#pipelined-mode): used to commit non-validator-set-updating blocks.
+//! 2. [**Phased mode**](#phased-mode): used to commit validator-set-updating blocks.
 //!
 //! ### Pipelined mode
 //!
-//! The base protocol for consensus on blocks that do not update the validator set implements the
-//! pipelined version of HotStuff, whereby when a replica votes for a block, it effectively votes for
-//! its ancestors too. This base protocol consists of exchanging [`Proposal`](messages::Proposal),
-//! [`Vote`](messages::Vote), and [`NewView`](messages::NewView) messages, where the votes are from
-//!  the [`Generic`](types::Phase::Generic) phase.
+//! To commit blocks that do not update the validator set, HotStuff-rs uses the pipelined version of
+//! HotStuff, whereby when a replica votes for a block, it effectively votes for its ancestors too. The
+//! pipelined version of HotStuff consists of exchanging [`Proposal`](messages::Proposal),
+//! [`Vote`](messages::Vote), and [`NewView`](messages::NewView) messages, where the votes are from the
+//! [`Generic`](types::Phase::Generic) phase.
 //!
 //! A view in this protocol generally proceeds as follows:
 //! 1. The leader of the view proposes a block with its highestQC as the justify of the block.

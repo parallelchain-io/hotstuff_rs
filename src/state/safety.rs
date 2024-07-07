@@ -94,19 +94,17 @@ use super::{
     kv_store::KVStore,
 };
 
-/// Returns whether a block can be considered safe, and thus cause updates to the block tree.
-/// For this, it is necessary that:
-/// 1. safe_qc(&block.justify, block_tree, chain_id).
-/// 2. Its qc's must be either a generic qc or a decide qc.
+/// Returns whether `block` can safely cause updates to the block tree.
 ///
-/// Note that before inserting to the block tree, the caller should also check if
-/// no block with the same block hash is already in the block tree.
+/// ## Conditional checks
 ///
-/// This function evaluates [`safe_qc`], then checks 2.
+/// `safe_block` returns `true` in case all of the following predicates are `true`:
+/// 1. `safe_qc(&block.justify, block_tree, chain_id)`.
+/// 2. `block.qc` is either a generic qc or a decide qc.
 ///
-/// # Precondition
+/// ## Precondition
 ///
-/// [Block::is_correct]
+/// [`is_correct`](Block::is_correct) is `true` for `block`.
 pub(crate) fn safe_block<K: KVStore>(
     block: &Block,
     block_tree: &BlockTree<K>,
@@ -119,21 +117,23 @@ pub(crate) fn safe_block<K: KVStore>(
     )
 }
 
-/// Returns whether a qc can cause updates of the block tree, whether as part of a block using
-/// [`BlockTree::insert_block`], or to be set as the highest qc, or, if it is a precommit or commit qc,
-/// to have the view of its prepare qc set as the locked view.
+/// Returns whether a QC can safely cause updates to the block tree, whether as part of a block through
+/// [`insert_block`](BlockTree::insert_block), or through being set as the Highest QC, or, if it is a
+/// Precommit or Commit QC, through being set as the Locked QC.
 ///
-/// For this, it is necessary that:
-/// 1. Its chain ID matches the chain ID of the replica, or is the genesis qc.
-/// 2. It justifies a known block, or is the genesis qc.
-/// 3. Its view number is greater than the locked qc view or its block extends from the locked block.
-/// 4. If it is a prepare, precommit, or commit qc, the block it justifies has pending validator state
+/// ## Conditional checks
+///
+/// `safe_qc` returns `true` in case all of the following predicates are `true`:
+/// 1. `qc.chain_id` either matches the chain ID of the replica, or `qc` is the genesis qc.
+/// 2. `qc` justifies a known block, or is the genesis qc.
+/// 3. `qc`'s view number is greater than the locked qc view or its block extends from the locked block.
+/// 4. If `qc` is a prepare, precommit, or commit qc, the block it justifies has pending validator state
 ///    updates.
-/// 5. If its qc is a generic qc, the block it justifies *does not* have pending validator set updates.
+/// 5. If `qc` is a generic qc, the block it justifies *does not* have pending validator set updates.
 ///
-/// # Precondition
+/// ## Precondition
 ///
-/// [QuorumCertificate::is_correct] holds for block.justify.
+/// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `block.justify`.
 pub(crate) fn safe_qc<K: KVStore>(
     qc: &QuorumCertificate,
     block_tree: &BlockTree<K>,
@@ -150,18 +150,18 @@ pub(crate) fn safe_qc<K: KVStore>(
     )
 }
 
-/// Returns whether a [`Nudge`] can be considered safe, and hence cause updates to the Block Tree.
+/// Returns whether a `Nudge` can safely cause updates to the Block Tree. This method enforces the
+/// commit rule for validator-set-updating blocks.
 ///
-/// For a Nudge to be safe and for this function to return `true`, **all** of the following must be
-/// true:
+/// ## Conditional checks
+///
+/// `safe_nudge` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
 /// 2. `nudge.justify` is a Prepare, Precommit, or Commit qc.
 /// 3. `nudge.chain_id` matches the Chain ID configured for the replica.
 /// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = cur_view - 1`.
 ///
-/// This method enforces the commit rule for validator-set-updating blocks.
-///
-/// # Precondition
+/// ## Precondition
 ///
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `nudge.justify`.
 pub fn safe_nudge<K: KVStore>(
@@ -179,27 +179,27 @@ pub fn safe_nudge<K: KVStore>(
     )
 }
 
-/// Returns an optional qc that should be set as the new locked qc after seeing a given justify. This
-/// should be called whenever a new, correct and safe justify qc is seen, whether through a block
-/// proposal or through a nudge. This method implements the following rule:
-/// 1. If the justify is a precommitQC, then we lock the justify. Note that this is equivalent to locking
-///    the prepareQC for the same block on seeing the precommitQC (as in HotStuff), since the prepareQC
-///    and precommitQC must have consecutive views.
-/// 2. If the justify is a genericQC, then it serves as as a precommitQC for the parent of
-///    justify.block, hence we lock the justify of justify.block.
-/// 3. If the justify is a commitQC or decideQC, then a QC for justify.block should have been locked on
-///    seeing a precommitQC for the block. Hence, under normal operation there is no need to lock. However,
-///    in case the current lockedQC is not for justify.block (this can happen if the replica didn't receive
-///    the precommitQC for the block, for example if the replica is receiving the decideQC justify via block
-///    sync), we still lock the justify. This is equivalent to locking the precommitQC, as we do under normal
-///    operation, since the precommitQC and the commitQC/decideQC have consecutive views and are for the
-///    same block.
-/// 4. If the justify is a prepareQC, then we do not lock anything. This is for the sake of consistency
-///    with the decision not to commit ancestor blocks on seeing a prepareQC or a precommitQC in
-///    [`block_to_commit`].
+/// Returns the QC (if any) that should be set as the Locked QC after the replica sees a given
+/// `justify`.
+///
+/// This function should be called whenever a new, correct, and [safe](`safe_qc`) `justify` QC is seen,
+/// whether contained in a `Proposal`, or `Nudge`.
 ///
 /// ## Precondition
-/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+///
+/// The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+///
+/// ## Locking rules
+///
+/// This function implements the "high-level" [locking rules](#locking-rules) by evaluating the following
+/// "lower-level" rules:
+///
+/// |`justify` is a|QC to lock|Reasoning|
+/// |---|---|---|
+/// |`Generic` QC|`Some(justify.block.justify)`|In the pipelined mode of the HotStuff subprotocol, Generic `justify`s serve as the Precommit QC for the parent of `justify.block`.|
+/// |`Prepare` QC|`None`|This is for the sake of consistency with the decision not to commit ancestor blocks on seeing a Prepare QC or a Precommit QC in [`block_to_commit`] ([discussion on GitHub](https://github.com/parallelchain-io/hotstuff_rs/pull/36#discussion_r1598193117)).|
+/// |`Precommit` QC|`Some(justify)`|This is equivalent to locking the Prepare QC for the same block for the same block on seeing the Precommit QC, as is done in the original HotStuff algorithm, since by the `safe_nudge` precondition, Prepare QC and Precommit QC must have consecutive views.|
+/// |`Commit` QC or `Decide` QC|`Some(justify)`|If `justify` is a Commit or Decide QC, then under ideal conditions `justify.block` should have been locked on seeing a Precommit QC for the block, and hence there is no need to lock. However, in case the current locked QC is not for `justify.block` (this can happen if the replica didn't receive the Precommit QC for the block, for example if the replica is receiving the Decide QC `justify` via block sync), we still lock the `justify`. This is equivalent to locking the Precommit QC, as we do under normal operation, since the Precommit QC and the Commit QC/Decide QC have consecutive views and are for the same block.|
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,

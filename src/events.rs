@@ -131,7 +131,7 @@ pub struct UpdateLockedQCEvent {
 }
 
 /// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree),
-/// was updated. Includes the new Highest [`TimeoutCertificate`](crate::pacemaker::types::TimeoutCertificate).
+/// was updated. Includes the new Highest [`TimeoutCertificate`].
 pub struct UpdateHighestTCEvent {
     pub timestamp: SystemTime,
     pub highest_tc: TimeoutCertificate,

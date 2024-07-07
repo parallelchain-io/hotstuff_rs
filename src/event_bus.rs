@@ -49,7 +49,7 @@ impl<T: Logger> HandlerPair<T> {
         self.user_defined_handler.is_none() && self.logging_handler.is_none()
     }
 
-    /// Creates a new [HandlerPair](HandlerPair) with the user-defined handler, and the default logging
+    /// Creates a new `HandlerPair` with the user-defined handler, and the default logging
     /// handler if logging is enabled.
     pub(crate) fn new(log: bool, user_defined_handler: Option<HandlerPtr<T>>) -> HandlerPair<T> {
         HandlerPair {
@@ -59,8 +59,8 @@ impl<T: Logger> HandlerPair<T> {
     }
 }
 
-/// Stores the [handler pair](HandlerPair) of user-defined and optional logging handlers for each
-/// pre-defined event type from [events](crate::events).
+/// Stores the `HandlerPair` of user-defined and optional logging handlers for each pre-defined event
+/// type from [events](crate::events).
 pub(crate) struct EventHandlers {
     pub(crate) insert_block_handlers: HandlerPair<InsertBlockEvent>,
     pub(crate) commit_block_handlers: HandlerPair<CommitBlockEvent>,
