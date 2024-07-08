@@ -2,8 +2,10 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-//! This module defines the location of each of the variables stored in the key-value store,
-//! as described [here](crate::state::block_tree).
+//! Byte-prefixes that define the location of each of the variables stored in the Block Tree.
+//!
+//! Each variable is described in [this](super::block_tree#state-variable) section of the top-level
+//! documentation of the `block_tree` module.
 
 // State variables
 pub(super) const BLOCKS: [u8; 1] = [0];

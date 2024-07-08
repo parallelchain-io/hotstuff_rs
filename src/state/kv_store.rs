@@ -51,7 +51,7 @@ pub trait KVGet {
         let data = self.block_data(block)?;
 
         if data_hash.is_none() {
-            return Err(KVGetError::ValueNotFound {
+            return Err(KVGetError::ValueExpectedButNotFound {
                 key: Key::BlockDataHash {
                     block: block.clone(),
                 },
@@ -59,7 +59,7 @@ pub trait KVGet {
         }
 
         if data.is_none() {
-            return Err(KVGetError::ValueNotFound {
+            return Err(KVGetError::ValueExpectedButNotFound {
                 key: Key::BlockData {
                     block: block.clone(),
                 },
@@ -101,7 +101,7 @@ pub trait KVGet {
                     &paths::BLOCKS,
                     &combine(&block.bytes(), &paths::BLOCK_JUSTIFY),
                 ))
-                .ok_or(KVGetError::ValueNotFound {
+                .ok_or(KVGetError::ValueExpectedButNotFound {
                     key: Key::BlockJustify {
                         block: block.clone(),
                     },
@@ -160,7 +160,7 @@ pub trait KVGet {
                 if let None = data.find(|datum| datum.is_none()) {
                     Ok(Some(Data::new(data.map(|datum| datum.unwrap()).collect())))
                 } else {
-                    Err(KVGetError::ValueNotFound {
+                    Err(KVGetError::ValueExpectedButNotFound {
                         key: Key::BlockData {
                             block: block.clone(),
                         },
@@ -204,7 +204,7 @@ pub trait KVGet {
         ChildrenList::deserialize(
             &mut &*self
                 .get(&combine(&paths::BLOCK_TO_CHILDREN, &block.bytes()))
-                .ok_or(KVGetError::ValueNotFound {
+                .ok_or(KVGetError::ValueExpectedButNotFound {
                     key: Key::BlockChildren {
                         block: block.clone(),
                     },
@@ -248,11 +248,11 @@ pub trait KVGet {
 
     fn committed_validator_set(&self) -> Result<ValidatorSet, KVGetError> {
         let committed_validator_set_bytes = ValidatorSetBytes::deserialize(
-            &mut &*self
-                .get(&paths::COMMITTED_VALIDATOR_SET)
-                .ok_or(KVGetError::ValueNotFound {
+            &mut &*self.get(&paths::COMMITTED_VALIDATOR_SET).ok_or(
+                KVGetError::ValueExpectedButNotFound {
                     key: Key::CommittedValidatorSet,
-                })?,
+                },
+            )?,
         )
         .map_err(|err| KVGetError::DeserializeValueError {
             key: Key::CommittedValidatorSet,
@@ -304,7 +304,7 @@ pub trait KVGet {
         QuorumCertificate::deserialize(
             &mut &*self
                 .get(&paths::LOCKED_QC)
-                .ok_or(KVGetError::ValueNotFound { key: Key::LockedQC })?,
+                .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedQC })?,
         )
         .map_err(|err| KVGetError::DeserializeValueError {
             key: Key::LockedQC,
@@ -316,7 +316,7 @@ pub trait KVGet {
 
     fn highest_view_entered(&self) -> Result<ViewNumber, KVGetError> {
         ViewNumber::deserialize(&mut &*self.get(&paths::HIGHEST_VIEW_ENTERED).ok_or(
-            KVGetError::ValueNotFound {
+            KVGetError::ValueExpectedButNotFound {
                 key: Key::HighestViewEntered,
             },
         )?)
@@ -330,7 +330,7 @@ pub trait KVGet {
 
     fn highest_qc(&self) -> Result<QuorumCertificate, KVGetError> {
         QuorumCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_QC).ok_or(
-            KVGetError::ValueNotFound {
+            KVGetError::ValueExpectedButNotFound {
                 key: Key::HighestQC,
             },
         )?)
@@ -393,7 +393,7 @@ pub trait KVGet {
     fn previous_validator_set(&self) -> Result<ValidatorSet, KVGetError> {
         let previous_validator_set_bytes =
             ValidatorSetBytes::deserialize(&mut &*self.get(&paths::PREVIOUS_VALIDATOR_SET).ok_or(
-                KVGetError::ValueNotFound {
+                KVGetError::ValueExpectedButNotFound {
                     key: Key::CommittedValidatorSet,
                 },
             )?)
@@ -429,7 +429,7 @@ pub trait KVGet {
     fn validator_set_update_complete(&self) -> Result<bool, KVGetError> {
         bool::deserialize(
             &mut &*self.get(&paths::VALIDATOR_SET_UPDATE_COMPLETED).ok_or(
-                KVGetError::ValueNotFound {
+                KVGetError::ValueExpectedButNotFound {
                     key: Key::ValidatorSetUpdateComplete,
                 },
             )?,
@@ -479,7 +479,7 @@ pub enum KVGetError {
         key: Key,
         source: std::io::Error,
     },
-    ValueNotFound {
+    ValueExpectedButNotFound {
         key: Key,
     },
     Ed25519DalekError {
