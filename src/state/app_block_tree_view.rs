@@ -3,8 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines [`AppBlockTreeView`], an app-specific read-only interface for the
-//! [block tree](crate::state::block_tree::BlockTree).
+//! Special, read-only interface for querying the Block Tree used only by `App`s.
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::types::{
@@ -17,7 +16,9 @@ use super::block_tree::BlockTreeError;
 use super::{block_tree::BlockTree, kv_store::KVStore};
 
 /// View of the block tree, which may be used by the [`App`](crate::app::App) to produce or validate a
-/// block. It provides:
+/// block.
+///
+/// Internally, it contains:
 /// 1. A reference to the block tree,
 /// 2. A vector of optional app state updates associated with the ancestors of a given block, starting
 ///    from the block's parent (if any) and ending at the oldest uncommitted ancestor.

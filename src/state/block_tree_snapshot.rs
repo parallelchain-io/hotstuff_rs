@@ -2,8 +2,7 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-//! Defines the [`BlockTreeCamera`] which can be used to obtain [`BlockTreeSnapshot`]: an immutable, read-only
-//! interface for the [block tree](crate::state::block_tree::BlockTree).
+//! General purpose, read-only interface for querying the Block Tree.
 
 use crate::hotstuff::types::QuorumCertificate;
 use crate::pacemaker::types::TimeoutCertificate;
@@ -16,6 +15,7 @@ use crate::types::{basic::BlockHeight, block::Block};
 use super::block_tree::BlockTreeError;
 use super::kv_store::{KVGet, KVStore};
 
+/// A factory for [`BlockTreeSnapshot`]s.
 #[derive(Clone)]
 pub struct BlockTreeCamera<K: KVStore>(K);
 
@@ -29,7 +29,7 @@ impl<K: KVStore> BlockTreeCamera<K> {
     }
 }
 
-/// A read view into the block tree that is guaranteed to stay unchanged.
+/// A read-only view into the block tree that is guaranteed to stay unchanged.
 pub struct BlockTreeSnapshot<S: KVGet>(pub(super) S);
 
 impl<S: KVGet> BlockTreeSnapshot<S> {

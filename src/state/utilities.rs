@@ -2,7 +2,7 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-//! Defines the useful utilities.
+//! Utility functions used throughout the `state` module.
 
 /// Takes references to two byteslices and returns a vector containing the bytes of the first one, and
 /// then the bytes of the second one.

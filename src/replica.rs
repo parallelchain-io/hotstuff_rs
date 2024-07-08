@@ -117,7 +117,7 @@ use crate::hotstuff::protocol::HotStuffConfiguration;
 use crate::networking::{start_polling, Network};
 use crate::pacemaker::protocol::PacemakerConfiguration;
 use crate::state::block_tree::BlockTree;
-use crate::state::block_tree_camera::BlockTreeCamera;
+use crate::state::block_tree_snapshot::BlockTreeCamera;
 use crate::state::kv_store::KVStore;
 use crate::types::basic::AppStateUpdates;
 use crate::types::basic::BufferSize;

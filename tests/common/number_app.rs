@@ -11,7 +11,7 @@ use hotstuff_rs::{
     app::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
-    state::{block_tree_camera::BlockTreeSnapshot, kv_store::KVGet},
+    state::{block_tree_snapshot::BlockTreeSnapshot, kv_store::KVGet},
     types::{
         basic::{AppStateUpdates, CryptoHash, Data, Datum, Power},
         collectors::VerifyingKey,
