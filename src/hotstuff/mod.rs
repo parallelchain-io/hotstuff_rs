@@ -5,8 +5,6 @@
 //!
 //! The modified version of the HotStuff consensus protocol that HotStuff-rs implements dynamically
 //! switches between two operating modes:
-//! The modified version of the HotStuff consensus protocol that HotStuff-rs implements automatically
-//! switches between two operating modes depending on whether
 //! 1. [**Pipelined mode**](#pipelined-mode): used to commit non-validator-set-updating blocks.
 //! 2. [**Phased mode**](#phased-mode): used to commit validator-set-updating blocks.
 //!
@@ -18,7 +16,7 @@
 //! [`Vote`](messages::Vote), and [`NewView`](messages::NewView) messages, where the votes are from the
 //! [`Generic`](types::Phase::Generic) phase.
 //!
-//! A view in this protocol generally proceeds as follows:
+//! A view in the pipelined mode generally proceeds as follows:
 //! 1. The leader of the view proposes a block with its highestQC as the justify of the block.
 //! 2. Replicas process the proposal: check if it is well-formed and cryptographically correct, query
 //!    the [`App`](crate::app::App) to validate the block, if so then they insert the block and apply
@@ -30,7 +28,7 @@
 //!
 //! The pipelined version of HotStuff, although efficient, wouldn't be appropriate for blocks that have
 //! associated validator set updates. This is because in a dynamic validator sets setting a desirable  
-//! property is **immediacy** - if B is a block that updates the validator set from vs to vs', then its
+//! property is **immediacy** -- if B is a block that updates the validator set from vs to vs', then its
 //! child shall be proposed and voted for by replicas from vs'.
 //!
 //! To support dynamic validator sets with immediacy, the pipelined HotStuff consensus protocol is
