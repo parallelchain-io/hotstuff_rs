@@ -3,56 +3,75 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Internal read-and-write handle used to mutate the Block Tree.
+//! Internal read-and-write handle used by the algorithm thread to mutate the Block Tree.
 //!
 //! The Block Tree may be stored in any key-value store of the library user's own choosing, as long as that
 //! KV store can provide a type that implements [`KVStore`]. This state can be mutated through an instance
 //! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
-//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera).
+//! [`BlockTreeCamera`](crate::state::block_tree_snapshot::BlockTreeCamera).
 //!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the
-//! [`Block Tree`](crate::state::block_tree::BlockTree), and users can get a
-//! [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) using replica's
-//! [block_tree_camera](crate::replica::Replica::block_tree_camera) method.
+//! # Mutating the Block Tree directly from user code
+//!
+//! In normal operation, HotStuff-rs code will internally be making all writes to the `BlockTree`, while
+//! users can get a `BlockTreeCamera` through which they can read from the block tree by calling replica's
+//! [`block_tree_camera`](crate::replica::Replica::block_tree_camera) method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
-//! an error that has corrupted its invariants. For this purpose, one can unsafe-ly get an instance of
-//! BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding [`BlockTreeWriteBatch`]
-//! using [`BlockTreeWriteBatch::new_unsafe`].
+//! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
+//! instance of BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding
+//! [`BlockTreeWriteBatch`] using [`BlockTreeWriteBatch::new_unsafe`].
 //!
-//! ## State variables
+//! # State variables
 //!
-//! HotStuff-rs structures its state into separate conceptual 'variables' which are stored in tuples
-//! that sit at a particular key path or prefix in the library user's chosen KV store. These variables are:
+//! HotStuff-rs structures its state into 17 separate conceptual "variables" that are stored in tuples
+//! that sit at [specific key paths](super::paths) in the library user's chosen
+//! KV store. These 17 variables are listed below, grouped into 4 categories for ease of understanding:
 //!
-//! |Variable|"Type"|Description|
+//! ## Blocks
+//!
+//! |Variable|Type|Description|
 //! |---|---|---|
-//! |Blocks|[CryptoHash] -> [Block]||
-//! |Block at Height|[BlockHeight] -> [CryptoHash]|A mapping between a block's number and a block's hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
-//! |Block to Children|[CryptoHash] -> [ChildrenList]|A mapping between a block's hash and the children it has in the block tree. A block may have multiple children if they have not been committed.|
-//! |Committed App State|[Vec<u8>] -> [Vec<u8>]| Current app state as per last committed block.|
-//! |Pending App State Updates|[CryptoHash] -> [AppStateUpdates]||
-//! |Committed Validator Set|[ValidatorSet]|The acting validator set.|
-//! |Previous Validator Set|[ValidatorSet]|The previous acting validator set, possibly still active if the update has not been completed yet.|
-//! |Validator Set Update Completed|[bool]|Whether the most recently initiated validator set update has been completed. A validator set update is initiated when a commit QC for the corresponding validator-set-updating block is seen.|
-//! |Validator Set Update Block Height|The height of the block associated with the most recently initiated validator set update.|
-//! |Validator Set Updates Status|[CryptoHash] -> [ValidatorSetUpdatesStatus]||
-//! |Locked QC|[QuorumCertificate]|QC of a block that is about to be committed, unless there is evidence for a quorum switching to a conflicting branch. Refer to the HotStuff paper for details.|
-//! |Highest Voted View|[ViewNumber]|The highest view that this validator has voted in.|
-//! |Highest View Entered|[ViewNumber]|The highest view that this validator has entered.|
-//! |Highest Quorum Certificate|[QuorumCertificate]|Among the quorum certificates this validator has seen and verified the signatures of, the one with the highest view number.|
-//! |Highest Timeout Certificate|[TimeoutCertificate]|Among the timeout certificates this validator has seen and verified the signatures of, the one with the highest view number.|
-//! |Highest Committed Block|[CryptoHash]|The hash of the committed block that has the highest height.|
-//! |Newest BlocK|[CryptoHash]The hash of the most recent block to be inserted into the block tree.|
+//! |Blocks|[`CryptoHash`] -> [`Block`]|Mapping between a block's hash and the block itself. This mapping contains all blocks that have been inserted into the block tree, excluding blocks that have been pruned.|
+//! |Block at Height|[`BlockHeight`] -> [`CryptoHash`]|Mapping between a block's height and its block hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
+//! |Block to Children|[`CryptoHash`] -> [`ChildrenList`]|Mapping between a block's hash and the list of children it has in the block tree. A block may have multiple children if they have not been committed.|
 //!
-//! ### Persistence in KV Store
+//! ## App State
+//!
+//! |Variable|Type|Description|
+//! |---|---|---|
+//! |Committed App State|[`Vec<u8>`] -> [`Vec<u8>`]|All key value pairs in the current committed app state. Produced by applying all app state updates in sequence from the genesis block up to the highest committed block.|
+//! |Pending App State Updates|[`CryptoHash`] -> [`AppStateUpdates`]|Mapping between a block's hash and its app state updates. This is empty for an existing block if at least one of the following two cases is true: <ol><li>The block does not update the app state.</li> <li>The block has been committed.</li></ol>|
+//!
+//! ## Validator Set
+//!
+//! |Variable|Type|Description|
+//! |---|---|---|
+//! |Committed Validator Set|[`ValidatorSet`]|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
+//! |Previous Validator Set|[`ValidatorSet`]|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "complete" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
+//! |Validator Set Update Completed|[`bool`]|A flag that indicates the most recently initiated validator set update has been completed. A validator set update is initiated when a commit QC for the corresponding validator-set-updating block is seen.|
+//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recently initiated validator set update.|
+//! |Validator Set Updates Status|[`CryptoHash`] -> [`ValidatorSetUpdatesStatus`]|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
+//!
+//! ## Safety
+//!
+//! |Variable|Type|Description|
+//! |---|---|---|
+//! |Locked QC|[`QuorumCertificate`]|The currently locked QC.|
+//! |Highest Voted View|[`ViewNumber`]|The highest view that this validator has voted in.|
+//! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
+//! |Highest Quorum Certificate|[`QuorumCertificate`]|Among the quorum certificates this validator has seen and verified, the one with the highest view number.|
+//! |Highest Timeout Certificate|[`TimeoutCertificate`]|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
+//! |Highest Committed Block|[`CryptoHash`]|The hash of the committed block that has the highest height.|
+//! |Newest Block|[`CryptoHash`]|The hash of the most recent block to be inserted into the block tree.|
+//!
+//! ## Persistence in KV Store
 //!
 //! The location of each of these variables in a KV store is defined in [paths](crate::state::paths).
 //! Note that the fields of a block are itself stored in different tuples. This is so that user code
 //! can get a subset of a block's data without loading the entire block from storage (which can be
 //! expensive). The key suffixes on which each of block's fields are stored are also defined in paths.
 //!
-//! ## Initial state
+//! # Initial state
 //!
 //! All variables in the Block Tree start out empty except eight. These eight variables, which must be
 //! initialized using the [`initialize`](BlockTree::initialize) function before doing anything else with
@@ -60,11 +79,11 @@
 //!
 //! |Variable|Initial value|
 //! |---|---|
-//! |Committed App State|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Committed Validator Set|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Previous Validator Set| Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Validator Set Update Block Height|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
-//! |Validator Set Update Complete|Provided to [`Replica::initialize`](crate::replica::Replica::initialize).|
+//! |Committed App State|Provided to [`initialize`](crate::replica::Replica::initialize).|
+//! |Committed Validator Set|Provided to [`initialize`](crate::replica::Replica::initialize).|
+//! |Previous Validator Set| Provided to [`initialize`](crate::replica::Replica::initialize).|
+//! |Validator Set Update Block Height|Provided to [`initialize`](crate::replica::Replica::initialize).|
+//! |Validator Set Update Complete|Provided to [`initialize`](crate::replica::Replica::initialize).|
 //! |Locked QC|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
@@ -235,7 +254,7 @@ impl<K: KVStore> BlockTree<K> {
 
             if let Ok(Some(data_len)) = self.block_data_len(&block) {
                 wb.delete_block(&block, data_len)
-            }
+            } 
         }
     }
 

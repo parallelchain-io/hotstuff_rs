@@ -23,8 +23,7 @@ use crate::types::{
     validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState},
 };
 
-use super::paths;
-use super::utilities::combine;
+use super::paths::{self, combine};
 use super::write_batch::WriteBatch;
 
 pub trait KVStore: KVGet + Clone + Send + 'static {

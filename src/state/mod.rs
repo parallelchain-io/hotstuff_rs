@@ -6,5 +6,4 @@ pub mod block_tree_snapshot;
 pub mod kv_store;
 pub mod paths;
 pub mod safety;
-pub mod utilities;
 pub mod write_batch;

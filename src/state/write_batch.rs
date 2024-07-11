@@ -21,8 +21,7 @@ use crate::types::validators::{
 
 use super::block_tree::BlockTreeError;
 use super::kv_store::Key;
-use super::paths;
-use super::utilities::combine;
+use super::paths::{self, combine};
 
 pub trait WriteBatch {
     fn new() -> Self;

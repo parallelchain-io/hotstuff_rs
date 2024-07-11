@@ -324,7 +324,7 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
-    /// Process the received proposal.
+    /// Process a newly received `proposal`.
     fn on_receive_proposal<K: KVStore>(
         &mut self,
         proposal: Proposal,
@@ -663,16 +663,6 @@ impl From<BlockTreeError> for HotStuffError {
 /// Keeping track of `ProposalStatus` ensures that a leader can only propose once in a view -- any
 /// subsequent proposals will be ignored.
 ///
-/// ## Variants
-///
-/// The `ProposalStatus` can either be:
-/// 1. [`WaitingForProposal`](ProposalStatus::WaitingForProposal): No proposal or nudge was seen in this
-///    view so far. Proposals and nudges from a valid leader (proposer) can be accepted.
-/// 2. [`OneLeaderProposed`](ProposalStatus::OneLeaderProposed): The leader with a given public key has already
-///    proposed or nudged. no more proposals or nudges from this leader can be accepted.
-/// 3. [`AllLeadersProposed`](ProposalStatus::AllLeadersProposed): All leaders for the view have proposed or
-///    nudged, hence no more proposals or nudges can be accepted in this view.
-///
 /// ## Persistence
 ///
 /// Note that a variable of this type is stored in memory allocated to the program at runtime, rather
@@ -680,8 +670,16 @@ impl From<BlockTreeError> for HotStuffError {
 /// losing the information about the highest view the replica has voted in, does lead to safety
 /// violations. In the worst case, it can only enable temporary liveness violations.
 pub enum ProposalStatus {
+    /// No proposal or nudge was seen in this view so far. Proposals and nudges from a valid leader
+    /// (proposer) can be accepted.
     WaitingForProposal,
+
+    /// The leader with a given public key has already proposed or nudged. No more proposals or nudges
+    /// from this leader can be accepted.
     OneLeaderProposed { leader: VerifyingKey },
+
+    /// All leaders for the view have proposed or nudged, hence no more proposals or nudges can be accepted
+    /// in this view.
     AllLeadersProposed,
 }
 

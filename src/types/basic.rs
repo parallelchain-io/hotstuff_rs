@@ -157,6 +157,10 @@ impl Data {
 pub struct DataLen(u32);
 
 impl DataLen {
+    pub fn new(len: u32) -> DataLen {
+        Self(len)
+    }
+
     pub const fn int(&self) -> u32 {
         self.0
     }
