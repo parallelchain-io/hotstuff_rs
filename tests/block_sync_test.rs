@@ -72,12 +72,9 @@ fn block_sync_test() {
     // 2.2. Poll the app state of the live replicas until each sees the number as 2.
     log_with_context(
         None,
-        "Polling the app state of the live replicas until each sees the number as 1.",
+        "Polling the app state of the live replicas until each sees the number as 2.",
     );
-    while !live_nodes
-        .iter()
-        .all(|node| node.committed_validator_set().len() == 3)
-    {
+    while !live_nodes.iter().all(|node| node.number() == 2) {
         thread::sleep(Duration::from_millis(500));
     }
 

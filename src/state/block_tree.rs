@@ -254,7 +254,7 @@ impl<K: KVStore> BlockTree<K> {
 
             if let Ok(Some(data_len)) = self.block_data_len(&block) {
                 wb.delete_block(&block, data_len)
-            } 
+            }
         }
     }
 
