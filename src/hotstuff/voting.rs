@@ -115,7 +115,7 @@ pub(crate) fn is_voter(
     }
 }
 
-/// Checks whether the `replica` with the specified `VerifyingKey` is an active validator, given the
+/// Check whether the `replica` with the specified `VerifyingKey` is an active validator, given the
 /// current `validator_set_state`.
 ///
 /// An active validator can:
@@ -138,7 +138,7 @@ pub(crate) fn is_validator(
                 .contains(replica))
 }
 
-/// Computes the leader(s) of a given `view` given the current `validator_set_state`.
+/// Compute the leader(s) of a given `view` given the current `validator_set_state`.
 ///
 /// If the latest validator set update has been decided, then the view only has one leader (taken from
 /// the committed validator set), but if it hasn't, then the view will have two leaders (the one
