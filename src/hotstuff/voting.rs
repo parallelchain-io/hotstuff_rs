@@ -43,7 +43,7 @@ pub(crate) fn is_proposer(
     validator_set_state: &ValidatorSetState,
 ) -> bool {
     validator == &select_leader(view, validator_set_state.committed_validator_set())
-        || (!validator_set_state.update_completed()
+        || (!validator_set_state.update_decided()
             && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
@@ -54,7 +54,7 @@ pub(crate) fn is_proposer(
 /// for the next view is tasked with collecting all kinds of votes other than decide-phase votes, which
 /// are addressed to the next leader of the committed validator set.
 pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
-    if validator_set_state.update_completed() {
+    if validator_set_state.update_decided() {
         select_leader(vote.view + 1, validator_set_state.committed_validator_set())
     } else {
         match vote.phase {
@@ -87,7 +87,7 @@ pub(crate) fn is_voter(
     validator_set_state: &ValidatorSetState,
     justify: &QuorumCertificate,
 ) -> bool {
-    if validator_set_state.update_completed() {
+    if validator_set_state.update_decided() {
         validator_set_state
             .committed_validator_set()
             .contains(&validator)
@@ -122,7 +122,7 @@ pub(crate) fn is_validator(
     validator_set_state
         .committed_validator_set()
         .contains(verifying_key)
-        || (!validator_set_state.update_completed()
+        || (!validator_set_state.update_decided()
             && validator_set_state
                 .previous_validator_set()
                 .contains(verifying_key))
@@ -136,14 +136,14 @@ pub(crate) fn is_validator(
 /// Returns a pair containing the following items:
 /// 1. `VerifyingKey`: the leader in the committed validator set in the specified view.
 /// 2. `Option<VerifyingKey>`: the leader in the resigning validator set in the specified view (`None`
-///     if the most recently initiated validator set update has been completed).
+///     if the most recently initiated validator set update has been decided).
 pub(crate) fn leaders(
     view: ViewNumber,
     validator_set_state: &ValidatorSetState,
 ) -> (VerifyingKey, Option<VerifyingKey>) {
     (
         select_leader(view, validator_set_state.committed_validator_set()),
-        if validator_set_state.update_completed() {
+        if validator_set_state.update_decided() {
             None
         } else {
             Some(select_leader(

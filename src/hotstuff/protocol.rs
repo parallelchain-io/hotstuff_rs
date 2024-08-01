@@ -778,7 +778,7 @@ pub(crate) fn commit_block<K: KVStore>(
             wb.set_committed_validator_set(&committed_validator_set)?;
             wb.set_previous_validator_set(&previous_validator_set)?;
             wb.set_validator_set_update_block_height(block_height)?;
-            wb.set_validator_set_update_completed(false)?;
+            wb.set_validator_set_update_decided(false)?;
             wb.set_committed_validator_set_updates(block)?;
 
             committed_blocks.push((*b, Some(validator_set_updates.clone())));
@@ -806,7 +806,7 @@ pub(crate) fn commit_block<K: KVStore>(
 /// 1. Updating the highestQC,
 /// 2. Updating the lockedQC,
 /// 3. Commiting block(s).
-/// 4. Setting the validator set updates associated with a block as completed.
+/// 4. Setting the validator set updates associated with a block as decided.
 ///
 /// Returns optional [validator set updates](crate::types::validators::ValidatorSetUpdates) caused by
 /// committing a block. Note that even if multiple blocks are committed on calling this method, only max. 1
@@ -843,9 +843,9 @@ pub(crate) fn update_block_tree<K: KVStore>(
         committed_blocks = commit_block(block_tree, &mut wb, &block)?;
     }
 
-    // 4. Set validator set updates as completed if needed.
+    // 4. Set validator set updates as decided if needed.
     if justify.phase.is_decide() {
-        wb.set_validator_set_update_completed(true)?
+        wb.set_validator_set_update_decided(true)?
     }
 
     block_tree.write(wb);

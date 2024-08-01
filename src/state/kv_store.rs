@@ -426,15 +426,13 @@ pub trait KVGet {
 
     /* ↓↓↓ Validator Set Update Complete ↓↓↓ */
     fn validator_set_update_complete(&self) -> Result<bool, KVGetError> {
-        bool::deserialize(
-            &mut &*self.get(&paths::VALIDATOR_SET_UPDATE_COMPLETED).ok_or(
-                KVGetError::ValueExpectedButNotFound {
-                    key: Key::ValidatorSetUpdateComplete,
-                },
-            )?,
-        )
+        bool::deserialize(&mut &*self.get(&paths::VALIDATOR_SET_UPDATE_DECIDED).ok_or(
+            KVGetError::ValueExpectedButNotFound {
+                key: Key::ValidatorSetUpdateDecided,
+            },
+        )?)
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::ValidatorSetUpdateComplete,
+            key: Key::ValidatorSetUpdateDecided,
             source: err,
         })
     }
@@ -508,7 +506,7 @@ pub enum Key {
     HighestTC,
     PreviousValidatorSet,
     ValidatorSetUpdateHeight,
-    ValidatorSetUpdateComplete,
+    ValidatorSetUpdateDecided,
     HighestViewVoted,
 }
 
@@ -538,7 +536,7 @@ impl Display for Key {
             &Key::HighestTC => write!(f, "Highest Timeout Certificate"),
             &Key::PreviousValidatorSet => write!(f, "Previous Validator Set"),
             &Key::ValidatorSetUpdateHeight => write!(f, "Validator Set Update Block Height"),
-            &Key::ValidatorSetUpdateComplete => write!(f, "Validator Set Update Complete"),
+            &Key::ValidatorSetUpdateDecided => write!(f, "Validator Set Update Decided"),
             &Key::HighestViewVoted => write!(f, "Highest View Voted"),
         }
     }

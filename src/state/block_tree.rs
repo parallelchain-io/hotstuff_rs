@@ -48,8 +48,8 @@
 //! |---|---|---|
 //! |Committed Validator Set|[`ValidatorSet`]|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
 //! |Previous Validator Set|[`ValidatorSet`]|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "complete" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
-//! |Validator Set Update Completed|[`bool`]|A flag that indicates the most recently initiated validator set update has been completed. A validator set update is initiated when a commit QC for the corresponding validator-set-updating block is seen.|
-//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recently initiated validator set update.|
+//! |Validator Set Update Decided|[`bool`]|A flag that indicates the most recently committed validator set update has been decided.|
+//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recent committed (but perhaps not decided) validator set update.|
 //! |Validator Set Updates Status|[`CryptoHash`] -> [`ValidatorSetUpdatesStatus`]|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
 //!
 //! ## Safety
@@ -132,14 +132,14 @@ impl<K: KVStore> BlockTree<K> {
         let committed_validator_set = initial_validator_set_state.committed_validator_set();
         let previous_validator_set = initial_validator_set_state.previous_validator_set();
         let update_height = initial_validator_set_state.update_height();
-        let update_completed = initial_validator_set_state.update_completed();
+        let update_decided = initial_validator_set_state.update_decided();
 
         wb.set_committed_validator_set(&committed_validator_set)?;
         wb.set_previous_validator_set(&previous_validator_set)?;
         if let Some(height) = *update_height {
             wb.set_validator_set_update_block_height(height)?
         }
-        wb.set_validator_set_update_completed(update_completed)?;
+        wb.set_validator_set_update_decided(update_decided)?;
 
         wb.set_locked_qc(&QuorumCertificate::genesis_qc())?;
 

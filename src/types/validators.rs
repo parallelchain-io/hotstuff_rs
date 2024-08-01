@@ -3,12 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the types that store information about validator sets and potential updates to validator sets:
-//! [`ValidatorSet`], [`ValidatorSetUpdates`], [`ValidatorSetUpdatesStatus`], [`ValidatorSetState`].
+//! Types that store information about validator sets or updates to validator sets.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
-pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use std::{
     collections::{HashMap, HashSet},
     slice,
@@ -16,17 +14,23 @@ use std::{
 
 use super::basic::{BlockHeight, Power, TotalPower, UpdateSet};
 
-/// Internal type used for serializing and deserializing values of type [VerifyingKey].
+pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+
+/// Internal type used for serializing and deserializing values of type [`VerifyingKey`].
 type VerifyingKeyBytes = [u8; 32];
 
-/// Identities of validators and their voting powers.
+/// Stores the identities of validators and their voting powers.
 ///
-/// The validator set maintains the list of validators in ascending order of their [public keys](VerifyingKey), and avails methods:
-/// [`ValidatorSet::validators`] and [`ValidatorSet::validators_and_powers`] to get them in this order.
+/// ## Ordering of validators
 ///
-/// # Limits to total power
+/// `ValidatorSet` internally maintains the list of validators in ascending order of their
+/// `VerifyingKey`s, and avails the methods [`validators`](ValidatorSet::validators),
+/// [`validators_and_powers`](ValidatorSet::validators_and_powers), and
+/// [`position`](ValidatorSet::position) that users can use to get them in this order.
 ///
-/// The total power of a validator set must not exceed `u128::MAX/2`.
+/// ## Limits to total power
+///
+/// Users must make sure that the total power of the validator set does not exceed `u128::MAX/2`.
 #[derive(Clone, PartialEq)]
 pub struct ValidatorSet {
     // The verifying keys of validators are included here in ascending order.
@@ -35,12 +39,14 @@ pub struct ValidatorSet {
 }
 
 impl Default for ValidatorSet {
+    // Create an empty validator set.
     fn default() -> Self {
         ValidatorSet::new()
     }
 }
 
 impl ValidatorSet {
+    /// Create an empty validator set.
     pub fn new() -> ValidatorSet {
         Self {
             validators: Vec::new(),
@@ -48,8 +54,12 @@ impl ValidatorSet {
         }
     }
 
+    /// Put a `validator` with the specified `power` into the validator set, placing them in a position that
+    /// preserves the [ordering of validators](Self#order-of-validators).
+    ///
+    /// If `validator` already exists in the validator set, this function updates its power instead.
     pub fn put(&mut self, validator: &VerifyingKey, power: Power) {
-        if !self.powers.contains_key(validator) {
+        if !self.contains(validator) {
             let validator_bytes = validator.to_bytes();
             let insert_pos = self
                 .validators
@@ -61,32 +71,11 @@ impl ValidatorSet {
         self.powers.insert(*validator, power);
     }
 
-    pub fn apply_updates(&mut self, updates: &ValidatorSetUpdates) {
-        for (peer, new_power) in updates.inserts() {
-            self.put(peer, *new_power);
-        }
-
-        for peer in updates.deletions() {
-            self.remove(peer);
-        }
-    }
-
-    pub fn power(&self, validator: &VerifyingKey) -> Option<&Power> {
-        self.powers.get(validator)
-    }
-
-    pub fn total_power(&self) -> TotalPower {
-        let mut total_power = TotalPower::new(0);
-        for power in self.powers.values() {
-            total_power += *power
-        }
-        total_power
-    }
-
-    pub fn contains(&self, validator: &VerifyingKey) -> bool {
-        self.powers.contains_key(validator)
-    }
-
+    /// Remove `validator` from the validator set, if it actually is in the validator set.
+    ///
+    /// If a validator is removed, then its `VerifyingKey` is returned with its power in the validator set
+    /// before the removal. This `VerifyingKey` will be exactly equal to `validator`. If a validator is not
+    /// removed, then this function will return `None`.
     pub fn remove(&mut self, validator: &VerifyingKey) -> Option<(VerifyingKey, Power)> {
         let validator_bytes = validator.to_bytes();
         if let Ok(pos) = self
@@ -98,6 +87,37 @@ impl ValidatorSet {
         } else {
             None
         }
+    }
+
+    /// Apply validator set `updates` to the validator set. This entails calling `put` for all of the
+    /// validators inserted, and calling `remove` for all of the validators deleted.
+    pub fn apply_updates(&mut self, updates: &ValidatorSetUpdates) {
+        for (peer, new_power) in updates.inserts() {
+            self.put(peer, *new_power);
+        }
+
+        for peer in updates.deletions() {
+            self.remove(peer);
+        }
+    }
+
+    /// Get the power of the specified `validator` inside the validator set.
+    pub fn power(&self, validator: &VerifyingKey) -> Option<&Power> {
+        self.powers.get(validator)
+    }
+
+    /// Get the sum of the powers of all of the validators inside the validator set.
+    pub fn total_power(&self) -> TotalPower {
+        let mut total_power = TotalPower::new(0);
+        for power in self.powers.values() {
+            total_power += *power
+        }
+        total_power
+    }
+
+    /// Check whether the validator set contains `validator`.
+    pub fn contains(&self, validator: &VerifyingKey) -> bool {
+        self.powers.contains_key(validator)
     }
 
     /// Get an iterator through validators' verifying keys which walks through them in ascending order.
@@ -112,14 +132,18 @@ impl ValidatorSet {
             .collect()
     }
 
+    /// Get the number of validators currently in the validator set.
     pub fn len(&self) -> usize {
         self.validators.len()
     }
 
+    /// Check whether the validator set is empty (i.e., `self.len() == 0`).
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Get the index of the given `validator` in the [sorted order](Self#order-of-validators) of
+    /// `VerifyingKey`s in the validator set, if it is actually in the validator set.
     pub fn position(&self, validator: &VerifyingKey) -> Option<usize> {
         let validator_bytes = validator.to_bytes();
         match self
@@ -131,6 +155,8 @@ impl ValidatorSet {
         }
     }
 
+    /// Compute the total power that a certificate must match or exceed (`>=`) in order to count as a quorum
+    /// under the validator set.
     pub(crate) fn quorum(&self) -> TotalPower {
         const TOTAL_POWER_OVERFLOW: &str =
             "Validator set power exceeds u128::MAX/2. Read the itemdoc for `ValidatorSet`.";
@@ -149,8 +175,20 @@ impl ValidatorSet {
 
 /// Intermediate representation of [`ValidatorSet`] for safe serialization and deserialization.
 ///
-/// To serialize an instance of `ValidatorSet`, convert it a `ValidatorSetBytes` using this type's implementation of
-/// `Into`, then, serialize the `ValidatorSetBytes` using Borsh. Reverse the steps to deserialize a `ValidatorSet`.
+/// To serialize an instance of `ValidatorSet`, convert it a `ValidatorSetBytes` using the former type's
+/// implementation of `Into<ValidatorSetBytes>`, then, serialize the `ValidatorSetBytes` using Borsh.
+/// Reverse the steps to deserialize a `ValidatorSet`.
+///
+/// ## Rationale
+///
+/// This type exists because it is not straightforward to implement `BorshSerialize` and
+/// `BorshDeserialize` on `ValidatorSet`, since the latter type internally contains
+/// [`ed25519_dalek::VerifyingKey`], which does not implement the Borsh traits.
+///
+/// This type is internally exactly like `ValidatorSet`, but replaces `VerifyingKey` with
+/// `VerifyingKeyBytes`, and so is straightforward to serialize and deserialize. However, this also means
+/// that instances of this type are not guaranteed to contain "valid" Ed25519 verifying keys, and
+/// therefore conversion from this type into `ValidatorSet` using `TryFrom` is fallible.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub(crate) struct ValidatorSetBytes {
     // The verifying keys of validators are included here in ascending order.
@@ -207,9 +245,14 @@ impl Into<ValidatorSetBytes> for &ValidatorSet {
     }
 }
 
+/// Set of changes (insertions and deletions) that can be applied on a validator set.
 pub type ValidatorSetUpdates = UpdateSet<VerifyingKey, Power>;
 
 /// Intermediate representation of [ValidatorSetUpdates] for safe serialization and deserialization.
+///
+/// ## Rationale
+///
+/// See the [related section](ValidatorSetBytes#rationale) about `ValidatorSetBytes`.
 pub(crate) type ValidatorSetUpdatesBytes = UpdateSet<VerifyingKeyBytes, Power>;
 
 impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
@@ -255,14 +298,14 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
             .zip(self.inserts.values())
             .for_each(|(k, v)| match new_inserts.insert(k.to_bytes(), *v) {
                 _ => (),
-            }); //Safety: Insert should always return None.
+            }); // Safety: Insert should always return None.
 
         let mut new_deletes: HashSet<VerifyingKeyBytes> = HashSet::new();
         self.deletes
             .iter()
             .for_each(|k| match new_deletes.insert(k.to_bytes()) {
                 _ => (),
-            }); //Safety: Insert should never return false.
+            }); // Safety: Insert should never return false.
 
         ValidatorSetUpdatesBytes {
             inserts: new_inserts,
@@ -271,60 +314,77 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
     }
 }
 
-/// Read-only interface for obtaining information about the current (i.e., committed) validator set, and
-/// the validator set history. It is a protocol invariant that a hotstuff-rs replica only needs to know
-/// the previous validator set to validate QCs and TCs, hence we only store the previous validator set
-/// in the history.
+/// Collection of basic information about the current (i.e., committed) validator set, and the validator
+/// set history.
+///
+/// It is a protocol invariant that a Hotstuff-rs replica only needs to know the previous validator set
+/// to validate QCs and TCs, hence we only store the previous validator set in the history.
 #[derive(Clone)]
 pub struct ValidatorSetState {
     committed_validator_set: ValidatorSet,
     previous_validator_set: ValidatorSet,
     update_height: Option<BlockHeight>,
-    update_completed: bool,
+    update_decided: bool,
 }
 
 impl ValidatorSetState {
+    /// Create a new `ValidatorSetState`.
     pub fn new(
         committed_validator_set: ValidatorSet,
         previous_validator_set: ValidatorSet,
         update_height: Option<BlockHeight>,
-        update_completed: bool,
+        update_decided: bool,
     ) -> Self {
         Self {
             committed_validator_set,
             previous_validator_set,
             update_height,
-            update_completed,
+            update_decided,
         }
     }
 
+    /// Get the committed validator set.
     pub fn committed_validator_set(&self) -> &ValidatorSet {
         &self.committed_validator_set
     }
 
+    /// Get the previous validator set.
     pub fn previous_validator_set(&self) -> &ValidatorSet {
         &self.previous_validator_set
     }
 
+    /// Get the height of the block that caused the most recently committed (but perhaps not decided)
+    /// validator set update.
     pub fn update_height(&self) -> &Option<BlockHeight> {
         &self.update_height
     }
 
-    pub fn update_completed(&self) -> bool {
-        self.update_completed
+    /// Get whether or not the latest validator set update (the one from
+    /// [`previous_validator_set`](Self::previous_validator_set) to
+    /// [`committed_validator_set`](Self::committed_validator_set)) has been decided.
+    pub fn update_decided(&self) -> bool {
+        self.update_decided
     }
 }
 
 /// Wraps around [`ValidatorSetUpdates`], providing additional information on whether the updates have
-/// already been applied or not. The [`BlockTree`][crate::state::block_tree::BlockTree] should store a
-/// mapping from blocks to their associated [`ValidatorSetUpdatesStatus`].
+/// already been applied or not.
+///
+/// The ["Validator Set Updates Status" state variable](crate::state::block_tree#validator-set) in the
+/// `BlockTree` stores a mapping from blocks to their associated `ValidatorSetUpdatesStatus`.
 pub enum ValidatorSetUpdatesStatus {
+    /// The block does not update the validator set.
     None,
+
+    /// The block's validator set updates have not been applied to the committed validator set yet.
     Pending(ValidatorSetUpdates),
+
+    /// The block's validator set updates have been applied to the committed validator set.
     Committed,
 }
 
 impl ValidatorSetUpdatesStatus {
+    /// Check whether the updates status is `Pending` or `Committed`.
     pub fn contains_updates(&self) -> bool {
         match self {
             Self::None => false,
@@ -332,6 +392,7 @@ impl ValidatorSetUpdatesStatus {
         }
     }
 
+    /// Check whether the updates status is `Pending`.
     pub fn is_pending(&self) -> bool {
         match self {
             Self::Pending(_) => true,
@@ -340,7 +401,13 @@ impl ValidatorSetUpdatesStatus {
     }
 }
 
-/// [`ValidatorSetUpdatesStatus`] where public keys of validators are stored as bytes.
+/// Intermediate representation of [`ValidatorSetUpdatesStatus`] for safe serialization and
+/// deserialization.
+///
+/// ## Rationale
+///
+/// See the [related section](ValidatorSetBytes#rationale) about `ValidatorSetBytes`.
+
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ValidatorSetUpdatesStatusBytes {
     None,

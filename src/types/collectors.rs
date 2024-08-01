@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines the generic [`SignedMessage`] and [`Collector`] traits.
+//! Generic `SignedMessage` and `Collector` traits.
 //!
 //! Implementations used by the [`Pacemaker`][crate::pacemaker::types] and
 //! [`HotStuff`][crate::hotstuff::types] protocols can be found in the respective modules. [`Collectors`]
@@ -90,7 +90,7 @@ impl<CL: Collector> Collectors<CL> {
                 view,
                 validator_set_state.committed_validator_set().clone(),
             ),
-            prev_validator_set_collector: if validator_set_state.update_completed() {
+            prev_validator_set_collector: if validator_set_state.update_decided() {
                 None
             } else {
                 Some(CL::new(
@@ -113,14 +113,14 @@ impl<CL: Collector> Collectors<CL> {
         let view = self.committed_validator_set_collector.view();
 
         let validator_set_update_period_started =
-            self.prev_validator_set_collector.is_none() & !validator_set_state.update_completed();
+            self.prev_validator_set_collector.is_none() & !validator_set_state.update_decided();
 
         let committed_validator_set_was_updated =
             self.committed_validator_set_collector.validator_set()
                 != validator_set_state.committed_validator_set();
 
         let validator_set_update_period_ended =
-            self.prev_validator_set_collector.is_some() && validator_set_state.update_completed();
+            self.prev_validator_set_collector.is_some() && validator_set_state.update_decided();
 
         // If a validator set update has been initiated but no vote collector has been assigned for
         // the previous validator set. In this case, the previous validator set must be equal to the
@@ -145,7 +145,7 @@ impl<CL: Collector> Collectors<CL> {
             )
         }
 
-        // If the validator set update has been marked as completed. In this case, a collector
+        // If the validator set update has been marked as decided. In this case, a collector
         // for the previous validator set is not required anymore.
         if validator_set_update_period_ended {
             self.prev_validator_set_collector = None
