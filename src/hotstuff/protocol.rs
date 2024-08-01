@@ -71,7 +71,7 @@ pub(crate) struct HotStuff<N: Network> {
 }
 
 impl<N: Network> HotStuff<N> {
-    /// Create a new HotStuff instance.
+    /// Create a new `HotStuff` participant.
     pub(crate) fn new(
         config: HotStuffConfiguration,
         view_info: ViewInfo,
@@ -97,7 +97,7 @@ impl<N: Network> HotStuff<N> {
         }
     }
 
-    /// Returns if the HotStuff internal view is outdated with respect to the view from [`ViewInfo`] provided
+    /// Checks whether the HotStuff internal view is outdated with respect to the view from [`ViewInfo`] provided
     /// by the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker).
     ///
     /// ## Next step
@@ -108,8 +108,9 @@ impl<N: Network> HotStuff<N> {
         new_view_info.view != self.view_info.view
     }
 
-    /// On receiving new [`ViewInfo`] from the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker), send messages
-    /// and perform state updates associated with exiting the current view, update the local view info.
+    /// On receiving a new [`ViewInfo`] from the [`Pacemaker`](crate::pacemaker::protocol::Pacemaker), send
+    /// messages and perform state updates associated with exiting the current view, and update the local
+    /// view info.
     ///
     /// ## Internal procedure
     ///
@@ -181,8 +182,8 @@ impl<N: Network> HotStuff<N> {
             self.view_info.view,
             &validator_set_state,
         ) {
-            // Check if I need to re-propose an existing block. This may be required in case a chain of consecutive
-            // views of voting for a validator-set-updating block proposed earlier has been interrupted.
+            // If a chain of consecutive views of voting for a validator-set-updating block has been interrupted, then
+            // re-propose an existing block.
             if let Some(block_hash) = repropose_block(self.view_info.view, block_tree)? {
                 let block = block_tree
                     .block(&block_hash)?
@@ -356,7 +357,7 @@ impl<N: Network> HotStuff<N> {
             return Ok(());
         }
 
-        // 2. Validate the block, and insert if valid.
+        // 2. Validate the block using the app, and insert it into the block tree if it is valid.
         let parent_block = if proposal.block.justify.is_genesis_qc() {
             None
         } else {

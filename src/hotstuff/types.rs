@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the HotStuff subprotocol.
+//! Types specific to the HotStuff subprotocol.
 
 use std::collections::HashMap;
 
@@ -239,14 +239,15 @@ impl Collector for VoteCollector {
         self.view
     }
 
-    /// Adds the vote to a signature set for the specified view, block, and phase. Returning a Quorum
-    /// Certificate if adding the vote allows for one to be created.
+    /// Add a `vote` to a signature set for the specified view, block, and phase. Returns a Quorum
+    /// Certificate if adding this vote allows for one to be created.
     ///
     /// If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not
-    /// part of its validator set, then this is a no-op.
+    /// part of its validator set, then this function is a no-op.
     ///
-    /// # Preconditions
-    /// vote.is_correct(signer)
+    /// ## Preconditions
+    ///
+    /// `vote.is_correct(signer)`
     fn collect(&mut self, signer: &VerifyingKey, vote: Vote) -> Option<QuorumCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
             return None;

@@ -32,8 +32,8 @@ use crate::hotstuff::types::{Phase, QuorumCertificate};
 use crate::pacemaker::protocol::select_leader;
 use crate::types::{basic::ViewNumber, validators::ValidatorSetState};
 
-/// Returns whether the replica with a given public key is allowed to act as the proposer for a
-/// given view.
+/// Check whether the `validator` with the given `VerifyingKey` is allowed to act as the proposer
+/// for a given view.
 ///
 /// Usually, the proposer is the leader of the committed validator set. However, during the validator
 /// set update period the leader of the previous validator set can also act as the proposer.
@@ -47,7 +47,7 @@ pub(crate) fn is_proposer(
             && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
-/// Returns the public key of the replica tasked with receiving and collecting a given vote.
+/// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`.
 ///
 /// Usually, the recipient of a vote is the leader of the committed validator set for the subsequent
 /// view. However, during the validator set update period the leader of the previous validator set
@@ -68,44 +68,54 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
     }
 }
 
-/// Returns whether the replica with the given `verifying_key` is allowed to vote for a nudge or
-/// proposal with the given `justify`.
+/// Check whether the `replica` with the given `VerifyingKey` is allowed to vote for a nudge or proposal
+/// with the given `justify`, given the current `validator_set_state`.
 ///
-/// Usually, a replica is allowed to vote if it belongs to the committed validator set. However,
-/// during the validator set update period replicas from the previous validator set are also
-/// allowed to vote for nudges and proposals for the validator-set-updating block, other than the
-/// "decide" phase nudge containing a commitQC. This is a fallback mechanism in case only selected
-/// replicas enter the validator set update period.
+/// ## Rules
 ///
-/// # Precondition
+/// Whether or not `replica` is allowed to vote depends on whether or not the latest validator set
+/// update has been decided:
+/// 1. If it **has** been decided, then `replica` is allowed to vote only if it is in the committed
+///   validator set.
+/// 2. If it **has not** been decided, then `replica` is allowed to vote if:
+///     1. `justify.phase` is `Commit`, and `replica` is in the committed validator set.
+///     2. `justify.phase` is `Generic`, `Prepare`, `Precommit`, or `Decide`, and `replica` is in the previous
+///       validator set.
+///
+/// `replica` must be in the committed validator set in case 2.1 since `justify.phase` is `Commit` only
+/// if a `Decide` QC is to be formed in this view, and `Decide` QCs must contain votes from the next
+/// validator set, while case 2.2 keeps validators in the previous validator set "active" until a
+/// validator set update has been decided.
+///       
+/// ## Preconditions
 ///
 /// `justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct), and the block tree updates
 /// associated with this `justify` have already been applied.
 pub(crate) fn is_voter(
-    validator: &VerifyingKey,
+    replica: &VerifyingKey,
     validator_set_state: &ValidatorSetState,
     justify: &QuorumCertificate,
 ) -> bool {
     if validator_set_state.update_decided() {
         validator_set_state
             .committed_validator_set()
-            .contains(&validator)
+            .contains(&replica)
     } else {
         match justify.phase {
             Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Decide => {
                 validator_set_state
                     .previous_validator_set()
-                    .contains(&validator)
+                    .contains(&replica)
             }
             Phase::Commit => validator_set_state
                 .committed_validator_set()
-                .contains(&validator),
+                .contains(&replica),
         }
     }
 }
 
-/// Returns whether the replica with the specified `verifying_key` is an active validator, given the
+/// Checks whether the `replica` with the specified `VerifyingKey` is an active validator, given the
 /// current `validator_set_state`.
 ///
 /// An active validator can:
@@ -116,20 +126,23 @@ pub(crate) fn is_voter(
 /// In general, members of the committed validator set are always active, but during the validator
 /// set update period members of the previous validator set are active too.
 pub(crate) fn is_validator(
-    verifying_key: &VerifyingKey,
+    replica: &VerifyingKey,
     validator_set_state: &ValidatorSetState,
 ) -> bool {
     validator_set_state
         .committed_validator_set()
-        .contains(verifying_key)
+        .contains(replica)
         || (!validator_set_state.update_decided()
             && validator_set_state
                 .previous_validator_set()
-                .contains(verifying_key))
+                .contains(replica))
 }
 
-/// Returns the leader(s) of a given view. In general, a view has only one leader, but during the
-/// validator set update period the leader of the resigning validator set can act as a leader too.
+/// Computes the leader(s) of a given `view` given the current `validator_set_state`.
+///
+/// If the latest validator set update has been decided, then the view only has one leader (taken from
+/// the committed validator set), but if it hasn't, then the view will have two leaders (the one
+/// additional leader coming from the previous validator set).
 ///
 /// ## Return value
 ///

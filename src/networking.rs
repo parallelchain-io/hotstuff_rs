@@ -127,10 +127,12 @@ pub(crate) struct ValidatorSetUpdateHandle<N: Network> {
 }
 
 impl<N: Network> ValidatorSetUpdateHandle<N> {
+    /// Create a new update handle.
     pub(crate) fn new(network: N) -> Self {
         Self { network }
     }
 
+    /// Inform the network provider of new validator set `updates` that have been committed.
     pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
         self.network.update_validator_set(updates)
     }
