@@ -27,17 +27,32 @@ use super::{
 /// Evidence that a quorum of validators from a given validator set supports a given decision. The
 /// evidence comes in the form of a set of signatures of the validators.
 pub trait Certificate {
-    /// Returns whether the certificate is correct, i.e., can serve as evidence that a given decision is
-    /// approved by a quorum of validators assigned to collectively make the decision. This usually requires
-    /// checking if it is correctly signed by a quorum of validators from an appropriate validator set
-    /// by calling [Certificate::is_correctly_signed] with the given validator set.
+    /// Check whether the certificate is "correct", i.e., whether it can serve as evidence that a particular
+    /// decision has been approved by the quorum of validators assigned to collectively make the decision.
+    ///
+    /// ## Guidelines for implementation
+    ///
+    /// Implementations of `is_correct` should generally proceed in three steps:
+    /// 1. Get [`ValidatorSetState`] from `block_tree`.
+    /// 2. Decide whether the certificate should be tested against the committed validator set, or the previous
+    ///    validator set, or against both.
+    /// 3. Call [`is_correctly_signed`](Certificate::is_correctly_signed) on the certificate, passing the
+    ///    committed validator set, the previous validator set, or both (in separate calls).
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError>;
 
-    /// Returns whether the certificate is correctly signed by a quorum of validators from the given
-    /// validator set. In general, this method should only be called from [Certificate::is_correct].
+    /// Check whether the certificate is correctly signed by a quorum of validators in the given
+    /// `validator_set`.
+    ///
+    /// In general, this method should only be called from inside [`is_correct`](Certificate::is_correct).
+    /// Other code should call `is_correct` instead of calling this method.
     fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool;
 
-    /// Returns the total power of validators from the given validator set that corresponds to a quorum.
+    /// Compute the minimum voting power that a certificate produced by a validator set with
+    /// `validator_set_power` total power must contain in order for it to correspond to a "quorum" of
+    /// validators.
+    ///
+    /// "Minimum" here is understood in the inclusive sense, a certificate corresponds to a quorum if its power
+    /// is **greater than or equal** to the return value of `quorum`.
     fn quorum(validator_set_power: TotalPower) -> TotalPower {
         const TOTAL_POWER_OVERFLOW: &str =
             "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";

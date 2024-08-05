@@ -21,9 +21,9 @@ use crate::types::{
     validators::*,
 };
 
-/// Proof that at least a quorum of validators have voted for a specific 
+/// Proof that at least a quorum of validators have voted for a specific
 /// [`Proposal`][crate::hotstuff::messages::Proposal] or [`Nudge`][crate::hotstuff::messages::Nudge].
-/// 
+///
 /// Required for extending a block in the HotStuff subprotocol, and for optimistic advance to a new
 /// view in the [pacemaker][crate::pacemaker] protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]

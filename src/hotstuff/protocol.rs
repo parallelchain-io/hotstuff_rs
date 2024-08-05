@@ -71,7 +71,7 @@ pub(crate) struct HotStuff<N: Network> {
 }
 
 impl<N: Network> HotStuff<N> {
-    /// Create a new `HotStuff` participant.
+    /// Create a new HotStuff subprotocol participant.
     pub(crate) fn new(
         config: HotStuffConfiguration,
         view_info: ViewInfo,
