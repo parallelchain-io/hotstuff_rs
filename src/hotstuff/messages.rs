@@ -3,20 +3,38 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the
-//! [HotStuff][crate::hotstuff::protocol::HotStuff] protocol.
+//! Structured messages that are sent between replicas as part of the HotStuff subprotocol.
+//!
+//! ## Messages
+//!
+//! HotStuff-rs' modified HotStuff protocol involves four types of messages:
+//! 1. [`Proposal`]: broadcasted by the leader of a given view, who proposes to extend the blockchain by
+//!    inserting a block contained in the proposal.
+//! 2. [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
+//!    a next voting phase for a block with a given quorum certificate.
+//! 3. [`Vote`]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
+//!    contains a cryptographic signature over the information passed through a vote.
+//! 4. [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
+//!    on the highestQC that replicas know of.
+//!
+//! ## `NewView` and view synchronization
+//!
+//! In the original HotStuff protocol, the leader of the next view keeps track of the number of
+//! `NewView` messages collected in the current view with the aim of advancing to the next view once a
+//! quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
+//! view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
+//! not come with a "fully-featured" BFT view synchronization mechanism.
+//!
+//! HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
+//! form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
+//! unnecessary.
 
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ed25519_dalek::{Verifier};
 
-use crate::messages::{Cacheable, Message, ProgressMessage, SignedMessage};
-use crate::types::{
-    basic::*, 
-    block::*, 
-    keypair::*,
-};
+use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
+use crate::types::{basic::*, block::*, keypair::*};
 
 use super::types::{Phase, QuorumCertificate};
 
@@ -29,65 +47,7 @@ pub enum HotStuffMessage {
 }
 
 impl HotStuffMessage {
-    pub fn proposal(chain_id: ChainID, view: ViewNumber, block: Block) -> HotStuffMessage {
-        HotStuffMessage::Proposal(Proposal {
-            chain_id,
-            view,
-            block,
-        })
-    }
-
-    /// # Panics
-    /// justify.phase must be Prepare or Precommit. This function panics otherwise.
-    pub fn nudge(
-        chain_id: ChainID,
-        view: ViewNumber,
-        justify: QuorumCertificate,
-    ) -> HotStuffMessage {
-        match justify.phase {
-            Phase::Generic | Phase::Commit(_) => panic!(),
-            Phase::Prepare | Phase::Precommit(_) => HotStuffMessage::Nudge(Nudge {
-                chain_id,
-                view,
-                justify,
-            }),
-        }
-    }
-
-    pub fn new_view(
-        chain_id: ChainID,
-        view: ViewNumber,
-        highest_qc: QuorumCertificate,
-    ) -> HotStuffMessage {
-        HotStuffMessage::NewView(NewView {
-            chain_id,
-            view,
-            highest_qc,
-        })
-    }
-
-    pub(crate) fn vote(
-        me: Keypair,
-        chain_id: ChainID,
-        view: ViewNumber,
-        block: CryptoHash,
-        phase: Phase,
-    ) -> HotStuffMessage {
-        let message_bytes = &(chain_id, view, block, phase)
-            .try_to_vec()
-            .unwrap();
-        let signature = me.sign(message_bytes);
-
-        HotStuffMessage::Vote(Vote {
-            chain_id,
-            view,
-            block,
-            phase,
-            signature
-        })
-    }
-
-    /// Returns the chain ID associated with a given [HotStuffMessage].
+    /// Returns the chain ID associated with a given [`HotStuffMessage`].
     pub fn chain_id(&self) -> ChainID {
         match self {
             HotStuffMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
@@ -97,7 +57,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Returns the view number associated with a given [HotStuffMessage].
+    /// Returns the view number associated with a given [`HotStuffMessage`].
     pub fn view(&self) -> ViewNumber {
         match self {
             HotStuffMessage::Proposal(Proposal { view, .. }) => *view,
@@ -107,7 +67,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Returns the number of bytes required to store a given instance of the [HotStuffMessage] enum.
+    /// Returns the number of bytes required to store a given instance of the [`HotStuffMessage`] enum.
     pub fn size(&self) -> u64 {
         match self {
             HotStuffMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
@@ -128,12 +88,38 @@ impl Cacheable for HotStuffMessage {
     }
 }
 
+impl From<Proposal> for HotStuffMessage {
+    fn from(proposal: Proposal) -> Self {
+        HotStuffMessage::Proposal(proposal)
+    }
+}
+
+impl From<Nudge> for HotStuffMessage {
+    fn from(nudge: Nudge) -> Self {
+        HotStuffMessage::Nudge(nudge)
+    }
+}
+
+impl From<Vote> for HotStuffMessage {
+    fn from(vote: Vote) -> Self {
+        HotStuffMessage::Vote(vote)
+    }
+}
+
+impl From<NewView> for HotStuffMessage {
+    fn from(new_view: NewView) -> Self {
+        HotStuffMessage::NewView(new_view)
+    }
+}
+
 impl Into<ProgressMessage> for HotStuffMessage {
     fn into(self) -> ProgressMessage {
         ProgressMessage::HotStuffMessage(self)
     }
 }
 
+/// Broadcasted by the leader of a given view, who proposes to extend the blockchain by inserting a
+/// block contained in the proposal.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
     pub chain_id: ChainID,
@@ -141,6 +127,8 @@ pub struct Proposal {
     pub block: Block,
 }
 
+/// Broadcasted by the leader of a given view, who nudges other validators to participate in a next
+/// voting phase for a block with a given quorum certificate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     pub chain_id: ChainID,
@@ -148,6 +136,28 @@ pub struct Nudge {
     pub justify: QuorumCertificate,
 }
 
+impl Nudge {
+    /// Create a new `Nudge` message containing the given `chain_id`, `view`, and `justify`-ing QC.
+    ///
+    /// # Panics
+    ///
+    /// `justify.phase` must be `Prepare` or `Precommit`. This function panics otherwise.
+    pub fn new(chain_id: ChainID, view: ViewNumber, justify: QuorumCertificate) -> Self {
+        match justify.phase {
+            Phase::Generic | Phase::Decide => {
+                panic!("`justify.phase` should be either Prepare or Precommit")
+            }
+            Phase::Prepare | Phase::Precommit | Phase::Commit => Self {
+                chain_id,
+                view,
+                justify,
+            },
+        }
+    }
+}
+
+/// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a
+/// cryptographic signature over the information passed through a vote.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
     pub chain_id: ChainID,
@@ -157,18 +167,43 @@ pub struct Vote {
     pub signature: SignatureBytes,
 }
 
+impl Vote {
+    /// Create a `Vote` for the given `chain_id`, `view`, `block`, and `phase` by signing over the values
+    /// with the provided `keypair`.
+    pub fn new(
+        keypair: &Keypair,
+        chain_id: ChainID,
+        view: ViewNumber,
+        block: CryptoHash,
+        phase: Phase,
+    ) -> Self {
+        let message_bytes = &(chain_id, view, block, phase).try_to_vec().unwrap();
+        let signature = keypair.sign(message_bytes);
+
+        Self {
+            chain_id,
+            view,
+            block,
+            phase,
+            signature,
+        }
+    }
+}
+
 impl SignedMessage for Vote {
     fn message_bytes(&self) -> Vec<u8> {
         (self.chain_id, self.view, self.block, self.phase)
             .try_to_vec()
             .unwrap()
     }
-    
+
     fn signature_bytes(&self) -> SignatureBytes {
         self.signature
     }
 }
 
+/// Sent by a replica to the next leader on view timeout, serves to update the next leader on the
+/// highestQC that replicas know of.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
     pub chain_id: ChainID,

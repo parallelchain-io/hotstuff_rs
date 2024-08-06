@@ -3,24 +3,21 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The types and traits defined in [crate::types] are either common across the sub-protocols used by
-//! Hotstuff-rs. 
-//! 
-//! Other types and traits, specific to the components of the hotstuff-rs protocol, can be found in 
-//! the respective directories.
-//! 
-//! The types defined in [crate::types::basic] include:
+//! Inert types and `UpdateSet`.
+//!
+//! The types defined in this module are:
 //! 1. "Inert" types, i.e., those that are sent around and inspected, but have no active behavior. These
 //!    types follow the newtype pattern and the API for using these types is defined in this module.
-//! 2. The [UpdateSet] type, which represents generic-type state updates associated with committing a 
+//! 2. The [`UpdateSet`] type, which represents generic-type state updates associated with committing a
 //!    block.
 
-use std::{
-    collections::{hash_map, hash_set, HashMap, HashSet}, 
-    fmt::{self, Display, Formatter}, 
-    hash::Hash, ops::{Add, AddAssign, SubAssign}
-};
 use borsh::{BorshDeserialize, BorshSerialize};
+use std::{
+    collections::{hash_map, hash_set, HashMap, HashSet},
+    fmt::{self, Debug, Display, Formatter},
+    hash::Hash,
+    ops::{Add, AddAssign, Sub, SubAssign},
+};
 
 /// Id of the blockchain, used to identify the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
@@ -37,7 +34,7 @@ impl ChainID {
 }
 
 /// Height of an existing block in the blockchain.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct BlockHeight(u64);
 
 impl BlockHeight {
@@ -56,13 +53,27 @@ impl BlockHeight {
 
 impl Display for BlockHeight {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 
 impl AddAssign<u64> for BlockHeight {
     fn add_assign(&mut self, rhs: u64) {
         self.0.add_assign(rhs)
+    }
+}
+
+impl Add<u64> for BlockHeight {
+    type Output = BlockHeight;
+    fn add(self, rhs: u64) -> Self::Output {
+        BlockHeight::new(self.0.add(rhs))
+    }
+}
+
+impl Sub<BlockHeight> for BlockHeight {
+    type Output = u64;
+    fn sub(self, rhs: BlockHeight) -> Self::Output {
+        self.0 - rhs.0
     }
 }
 
@@ -88,13 +99,13 @@ impl ChildrenList {
     }
 }
 
-/// The hash of a block. Given a [block][crate::types::block::Block] 
+/// The hash of a block. Given a [block][crate::types::block::Block]
 /// the hash is obtained [like this][crate::types::block::Block::hash].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct CryptoHash([u8; 32]);
 
 impl CryptoHash {
-    pub(crate) const fn new(bytes: [u8; 32]) -> Self {
+    pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
@@ -103,12 +114,24 @@ impl CryptoHash {
     }
 }
 
+impl Display for CryptoHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Debug for CryptoHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Data stored in a [block][crate::types::block::Block].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Data(Vec<Datum>);
 
 impl Data {
-    pub(crate) fn new(datum_vec: Vec<Datum>) -> Self {
+    pub fn new(datum_vec: Vec<Datum>) -> Self {
         Self(datum_vec)
     }
 
@@ -125,22 +148,26 @@ impl Data {
     }
 }
 
-/// Number of [Datum] stored in a block's [Data].
+/// Number of [`Datum`] stored in a block's [`Data`].
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct DataLen(u32);
 
 impl DataLen {
+    pub fn new(len: u32) -> DataLen {
+        Self(len)
+    }
+
     pub const fn int(&self) -> u32 {
         self.0
     }
 }
 
-/// Single datum stored in a block's [Data].
+/// Single datum stored in a block's [`Data`].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Datum(Vec<u8>);
 
 impl Datum {
-    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+    pub fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
@@ -150,16 +177,20 @@ impl Datum {
 }
 
 /// Power of a validator.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Power(u64);
 
 impl Power {
+    pub fn new(int: u64) -> Self {
+        Self(int)
+    }
+
     pub const fn int(&self) -> u64 {
         self.0
     }
 }
 
-/// Total power obtained via summing up the [Power]s of a set of validators.
+/// Total power obtained via summing up the [`Power`]s of a set of validators.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct TotalPower(u128);
 
@@ -232,14 +263,16 @@ impl SignatureSet {
 }
 
 /// HotStuff view number.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize,
+)]
 pub struct ViewNumber(u64);
 
 impl ViewNumber {
     pub fn new(int: u64) -> Self {
         Self(int)
     }
-    
+
     pub const fn init() -> Self {
         Self(0)
     }
@@ -251,7 +284,7 @@ impl ViewNumber {
 
 impl fmt::Display for ViewNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -263,7 +296,23 @@ impl Add<u64> for ViewNumber {
     }
 }
 
-/// Length of a [Pacemaker][crate::pacemaker] epoch.
+impl Sub<u64> for ViewNumber {
+    type Output = ViewNumber;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        ViewNumber(self.0.sub(rhs))
+    }
+}
+
+impl Sub<ViewNumber> for ViewNumber {
+    type Output = i64;
+
+    fn sub(self, rhs: ViewNumber) -> Self::Output {
+        (self.0 as i64).sub(rhs.0 as i64)
+    }
+}
+
+/// How many views are in a [Pacemaker][crate::pacemaker] epoch.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct EpochLength(u32);
 

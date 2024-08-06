@@ -42,10 +42,10 @@
 //! To replicate your application using HotStuff-rs, you need to represent it as a type and then
 //! have the type implement the [app] trait.
 //!
-//! Then, [initialize](replica::Replica::initialize) a [replica]'s storage, 
+//! Then, [initialize](replica::Replica::initialize) a [replica]'s storage,
 //! [build](replica::ReplicaSpec::builder) the replica's [specification](crate::replica::ReplicaSpec),
-//! and then [start](replica::ReplicaSpec::start) it. 
-//! 
+//! and then [start](replica::ReplicaSpec::start) it.
+//!
 //! An example of how to start a replica can be found [here](crate::replica).
 
 pub mod app;

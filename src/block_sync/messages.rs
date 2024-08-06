@@ -3,39 +3,62 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the [BlockSync]
+//! Definitions for structured messages that are sent between replicas as part of the Block Sync
 //! protocol.
-//! 
-//! Note: the struct definitions may be subject to change as we flesh out the details of the 
-//! [BlockSync] protocol.
+//!
+//! ## Messages
+//!
+//! The Block Sync protocol defines two categories of messages:
+//!
+//! 1. Block Sync Protocol messages ([`BlockSyncMessage`]): exchanged between a sync client and sync
+//!    server when the client is trying to sync with the server.
+//! 2. Block Sync Server Advertisements ([`BlockSyncAdvertiseMessage`]): periodically broadcasted by
+//!    sync servers to update the sync clients on:
+//!     1. Their availability and commitment to providing blocks at least up to a given height
+//!        ([`AdvertiseBlock`]).
+//!     2. Whether the quorum is making progress in a future view, as evidenced by the server's local
+//!        Highest QC ([`AdvertiseQC`]).
 
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{
-    hotstuff::types::QuorumCertificate, 
-    messages::{Message, ProgressMessage}, 
-    types::{basic::*,block::*}
-};
+use crate::hotstuff::types::QuorumCertificate;
+use crate::messages::SignedMessage;
+use crate::types::{basic::*, block::*, keypair::Keypair};
 
+/// Messages exchanged between a sync server and a sync client when syncing.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum BlockSyncMessage {
     BlockSyncRequest(BlockSyncRequest),
     BlockSyncResponse(BlockSyncResponse),
 }
 
-// Messages exchanged as part of the block sync protocol.
 impl BlockSyncMessage {
-    pub fn block_sync_request(chain_id: ChainID, start_height: BlockHeight, limit: u32) -> BlockSyncMessage {
-        BlockSyncMessage::BlockSyncRequest(BlockSyncRequest{chain_id, start_height, limit})
+    pub fn block_sync_request(
+        chain_id: ChainID,
+        start_height: BlockHeight,
+        limit: u32,
+    ) -> BlockSyncMessage {
+        BlockSyncMessage::BlockSyncRequest(BlockSyncRequest {
+            chain_id,
+            start_height,
+            limit,
+        })
     }
 
-    pub fn block_sync_response(blocks: Vec<Block>, highest_qc: QuorumCertificate) -> BlockSyncMessage {
-        BlockSyncMessage::BlockSyncResponse(BlockSyncResponse{blocks, highest_qc})
+    pub fn block_sync_response(
+        blocks: Vec<Block>,
+        highest_qc: QuorumCertificate,
+    ) -> BlockSyncMessage {
+        BlockSyncMessage::BlockSyncResponse(BlockSyncResponse { blocks, highest_qc })
     }
 }
 
+/// Sync request sent by a sync client to a sync server. The request includes:
+/// 1. Chain ID: for identifying the blockchain the client is interested in,
+/// 2. Start height: the height starting from which the client wants to obtain blocks.
+/// 3. Limit: Max. number of blocks that the client wants to obtain in a response.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockSyncRequest {
     pub chain_id: ChainID,
@@ -43,41 +66,87 @@ pub struct BlockSyncRequest {
     pub limit: u32,
 }
 
+/// Sync response sent by a sync server to a sync client requesting blocks. The response includes:
+/// 1. Blocks: entire [`Block`]s that the client can validate and insert into their blockchain,
+/// 2. HighestQC: highest-viewed [`QuorumCertificate`] known to the server, which the client can
+///    validate and use to find out what is the latest consensus decision is.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockSyncResponse {
     pub blocks: Vec<Block>,
     pub highest_qc: QuorumCertificate,
 }
 
-// Messages that may trigger sync, exchanged as part of the normal progress protocol.
+/// Messages periodically broadcasted by the sync server to update clients about their availability,
+/// commitment to providing blocks up to a given height, and knowledge of the latest consensus decision.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum BlockSyncTriggerMessage {
-    AdvertiseBlock(AdvertiseBlock)
+pub enum BlockSyncAdvertiseMessage {
+    AdvertiseBlock(AdvertiseBlock),
+    AdvertiseQC(AdvertiseQC),
 }
 
-impl BlockSyncTriggerMessage {
-    pub fn advertise_block(chain_id: ChainID, block: CryptoHash, block_qc: QuorumCertificate) -> Self {
-        BlockSyncTriggerMessage::AdvertiseBlock(AdvertiseBlock{chain_id, block, block_qc})
+impl BlockSyncAdvertiseMessage {
+    pub(crate) fn advertise_block(
+        me: &Keypair,
+        chain_id: ChainID,
+        highest_committed_block_height: BlockHeight,
+    ) -> Self {
+        let message = &(chain_id, highest_committed_block_height)
+            .try_to_vec()
+            .unwrap();
+        let signature = me.sign(message);
+        BlockSyncAdvertiseMessage::AdvertiseBlock(AdvertiseBlock {
+            chain_id,
+            highest_committed_block_height,
+            signature,
+        })
+    }
+
+    pub(crate) fn advertise_qc(highest_qc: QuorumCertificate) -> Self {
+        BlockSyncAdvertiseMessage::AdvertiseQC(AdvertiseQC { highest_qc })
     }
 
     pub fn chain_id(&self) -> ChainID {
         match self {
-            BlockSyncTriggerMessage::AdvertiseBlock(msg) => msg.chain_id
+            BlockSyncAdvertiseMessage::AdvertiseBlock(msg) => msg.chain_id,
+            BlockSyncAdvertiseMessage::AdvertiseQC(msg) => msg.highest_qc.chain_id,
         }
     }
 
     pub fn size(&self) -> u64 {
         match self {
-            BlockSyncTriggerMessage::AdvertiseBlock(msg) => mem::size_of::<AdvertiseBlock>() as u64,
+            BlockSyncAdvertiseMessage::AdvertiseBlock(_) => mem::size_of::<AdvertiseBlock>() as u64,
+            BlockSyncAdvertiseMessage::AdvertiseQC(_) => mem::size_of::<AdvertiseQC>() as u64,
         }
     }
-
 }
 
+/// A message periodically broadcasted by the sync server to:
+/// 1. Let clients know that the server is available,
+/// 2. Commit to providing blocks at least up to the highest committed block height, as included in this
+///    message, in case a client decides to sync with the sync server.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvertiseBlock {
     pub chain_id: ChainID,
-    pub block: CryptoHash,
-    pub block_qc: QuorumCertificate, // highest known qc for the block
-    //TODO: pub signature: SignatureBytes, // necessary to authenticate the sender of this message!
+    pub highest_committed_block_height: BlockHeight,
+    pub signature: SignatureBytes,
+}
+
+impl SignedMessage for AdvertiseBlock {
+    fn message_bytes(&self) -> Vec<u8> {
+        (self.chain_id, self.highest_committed_block_height)
+            .try_to_vec()
+            .unwrap()
+    }
+
+    fn signature_bytes(&self) -> SignatureBytes {
+        self.signature
+    }
+}
+
+/// A message periodically broadcasted by the sync server to let clients know about the highestQC the
+/// server knows. This information may serve as an evidence for the fact that a client is lagging
+/// behind, and thus make the client trigger the sync process with some server.
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
+pub struct AdvertiseQC {
+    pub highest_qc: QuorumCertificate,
 }

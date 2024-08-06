@@ -3,16 +3,18 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the 'block' type and its methods.
+//! `Block` type and its methods.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-pub use sha2::Sha256 as CryptoHasher;
 use sha2::Digest;
+pub use sha2::Sha256 as CryptoHasher;
 
 use crate::hotstuff::types::QuorumCertificate;
+use crate::state::block_tree::{BlockTree, BlockTreeError};
+use crate::state::kv_store::KVStore;
 use crate::types::basic::*;
-use crate::types::validators::ValidatorSet;
 
+use super::collectors::Certificate;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
@@ -52,8 +54,13 @@ impl Block {
     }
 
     /// Checks if hash and justify are cryptographically correct.
-    pub fn is_correct(&self, validator_set: &ValidatorSet) -> bool {
-        self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
-            && self.justify.is_correct(validator_set)
+    pub fn is_correct<K: KVStore>(
+        &self,
+        block_tree: &BlockTree<K>,
+    ) -> Result<bool, BlockTreeError> {
+        Ok(
+            self.hash == Block::hash(self.height, &self.justify, &self.data_hash)
+                && self.justify.is_correct(block_tree)?,
+        )
     }
 }
