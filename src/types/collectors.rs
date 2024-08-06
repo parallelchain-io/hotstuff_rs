@@ -32,7 +32,8 @@ pub trait Certificate {
     ///
     /// ## Guidelines for implementation
     ///
-    /// Implementations of `is_correct` should generally proceed in three steps:
+    /// Implementations of `is_correct` should generally execute the following three steps (in addition to
+    /// any specialized steps needed to check the correctness of the specific implementing type):
     /// 1. Get [`ValidatorSetState`] from `block_tree`.
     /// 2. Decide whether the certificate should be tested against the committed validator set, or the previous
     ///    validator set, or against both.

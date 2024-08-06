@@ -36,10 +36,10 @@ pub struct QuorumCertificate {
 }
 
 impl Certificate for QuorumCertificate {
-    /// Computes the appropriate validator set that the QC should be checked against, and checks if the
+    /// Compute the appropriate validator set that the QC should be checked against, and check if the
     /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
-    /// A special case is if the qc is the genesis qc, in which case it is automatically correct.
+    /// A special case is if the qc is the Genesis QC, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         if self.is_genesis_qc() {
             return Ok(true);
@@ -50,47 +50,84 @@ impl Certificate for QuorumCertificate {
         let validator_set_state = block_tree.validator_set_state()?;
 
         let result = match (block_height, validator_set_state.update_height()) {
+            // If the Block that the QC certifies is not in the block tree, **or** else if the validator set has
+            // never been updated in the history of the blockchain, validate the QC according to the current
+            // committed validator set.
             (None, _) | (Some(_), &None) => {
                 self.is_correctly_signed(validator_set_state.committed_validator_set())
             }
+
+            // If the Block that the QC certifies is in the block tree at `height` **and** the validator set was
+            // last updated at height `update_height`:
             (Some(height), &Some(update_height)) => {
+                // If the Block comes in the block tree before the latest validator set updating block, validate the QC
+                // according to the previous validator set.
                 if height < update_height {
                     self.is_correctly_signed(validator_set_state.previous_validator_set())
+
+                // Else if the Block comes after the latest validator set updating block, validate the QC according to
+                // the committed validator set.
                 } else if height > update_height {
                     self.is_correctly_signed(validator_set_state.committed_validator_set())
+
+                // Else if the Block **is** the latest validator set updating block:
                 } else {
                     match self.phase {
+                        // If the QC is a Decide QC:
                         Phase::Decide => {
-                            // Check if the validator set updates associated with this block have been committed.
-                            // This tells us which validator set is expected to have voted on this QC.
                             match block_tree.validator_set_updates_status(&self.block)? {
+                                // If the block's validator set updates have been committed, then validate the QC according to the
+                                // committed validator set.
                                 ValidatorSetUpdatesStatus::Committed => self.is_correctly_signed(
                                     validator_set_state.committed_validator_set(),
                                 ),
+
+                                // If the block's validator set updates have not been committed, then apply the validator set updates
+                                // to the committed validator set and validate the QC according to the resulting validator set.
+                                //
+                                // Note (from Karolina): this may be the case if the block justified by this QC is received via sync
+                                // hence the updates have not been applied yet. In this case we need to compute the validator set
+                                // expected to have voted "Decide" for the block.
                                 ValidatorSetUpdatesStatus::Pending(vs_updates) => {
-                                    // This may be the case if the block justified by this QC is received via sync,
-                                    // hence the updates have not been applied yet. In this case we need to compute
-                                    // the validator set expected to have voted "decide" for the block.
                                     let mut new_validator_set =
                                         block_tree.committed_validator_set()?;
                                     new_validator_set.apply_updates(&vs_updates);
                                     self.is_correctly_signed(&new_validator_set)
                                 }
+
+                                // If the block does not have validator set updates, then it should be justified by a Generic QC, not
+                                // a phased mode QC like a Decide QC. Therefore, the QC is invalid.
+                                //
+                                // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
                                 ValidatorSetUpdatesStatus::None => false,
                             }
                         }
+
+                        // Else if the QC is a phased mode QC that is not a Decide QC:
                         Phase::Prepare | Phase::Precommit | Phase::Commit => {
                             match block_tree.validator_set_updates_status(&self.block)? {
+                                // If the latest validator set update has been committed
                                 ValidatorSetUpdatesStatus::Committed => self.is_correctly_signed(
                                     validator_set_state.previous_validator_set(),
                                 ),
                                 ValidatorSetUpdatesStatus::Pending(_) => self.is_correctly_signed(
                                     validator_set_state.committed_validator_set(),
                                 ),
+
+                                // If the block does not have validator set updates, then it should be justified by a Generic QC, not
+                                // a phased mode QC like a Prepare QC, Precommit QC, or Commit QC. Therefore, the QC is invalid.
+                                //
+                                // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
                                 ValidatorSetUpdatesStatus::None => false,
                             }
                         }
-                        _ => false, // Note: cannot panic here, since safe_qc has not been checked yet.
+
+                        // If the block has validator set updates, then it should be justified by a phased mode QC, not a
+                        // Generic QC. Therefore, the QC is invalid.
+                        //
+                        // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
+                        // Note (from Karolina): cannot panic here, since safe_qc has not been checked yet.
+                        _ => false,
                     }
                 }
             }
@@ -99,8 +136,8 @@ impl Certificate for QuorumCertificate {
         Ok(result)
     }
 
-    /// Checks if all of the signatures in the certificate are correct, and if the set of signatures forms
-    /// a quorum.
+    /// Check if all of the signatures in the certificate are correct, and if the set of signatures forms
+    /// a quorum according to the provided `validator_set`.
     fn is_correctly_signed(&self, validator_set: &ValidatorSet) -> bool {
         // Check whether the size of the signature set is the same as the size of the validator set.
         if self.signatures.len() != validator_set.len() {
