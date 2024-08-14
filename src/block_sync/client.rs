@@ -79,7 +79,6 @@ use crate::block_sync::messages::{
     AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest,
 };
 use crate::events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent};
-use crate::hotstuff::protocol::update_block_tree;
 use crate::messages::SignedMessage;
 use crate::networking::{
     BlockSyncClientStub, BlockSyncResponseReceiveError, Network, SenderHandle,
@@ -375,7 +374,7 @@ impl<N: Network> BlockSyncClient<N> {
                         } = app.validate_block_for_sync(validate_block_request)
                         {
                             // 1. Insert the block into the block tree.
-                            block_tree.insert_block(
+                            block_tree.insert(
                                 &block,
                                 app_state_updates.as_ref(),
                                 validator_set_updates.as_ref(),
@@ -387,11 +386,8 @@ impl<N: Network> BlockSyncClient<N> {
                             .publish(&self.event_publisher);
 
                             // 2. Trigger block tree updates: update highestQC, lock, commit.
-                            let committed_validator_set_updates = update_block_tree(
-                                &block.justify,
-                                block_tree,
-                                &self.event_publisher,
-                            )?;
+                            let committed_validator_set_updates =
+                                block_tree.update(&block.justify, &self.event_publisher)?;
 
                             if let Some(vs_updates) = committed_validator_set_updates {
                                 self.validator_set_update_handle
@@ -417,11 +413,7 @@ impl<N: Network> BlockSyncClient<N> {
                         if response.highest_qc.is_correct(block_tree)?
                             && safe_qc(&response.highest_qc, block_tree, self.config.chain_id)?
                         {
-                            update_block_tree(
-                                &response.highest_qc,
-                                block_tree,
-                                &self.event_publisher,
-                            )?;
+                            block_tree.update(&response.highest_qc, &self.event_publisher)?;
                         }
                     }
                 }

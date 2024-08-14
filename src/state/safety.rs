@@ -254,9 +254,9 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 /// Like [`qc_to_lock`], this function should be called whenever a new, correct, and safe `justify` QC
 /// is seen, whether received in a `Proposal`, or a `Nudge`.
 ///
-/// ## Precondition
+/// ## Preconditions
 ///
-/// The block or nudge with this justify must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+/// The block or nudge containing `justify` must satisfy [`safe_block`] or [`safe_nudge`] respectively.
 ///
 /// ## Lower-level Commit Rules
 ///

@@ -371,7 +371,7 @@ impl<N: Network> HotStuff<N> {
             validator_set_updates,
         } = app.validate_block(validate_block_request)
         {
-            block_tree.insert_block(
+            block_tree.insert(
                 &proposal.block,
                 app_state_updates.as_ref(),
                 validator_set_updates.as_ref(),
@@ -384,7 +384,7 @@ impl<N: Network> HotStuff<N> {
 
             // 3. Trigger block tree updates: update highestQC, lock, commit.
             let committed_validator_set_updates =
-                update_block_tree(&proposal.block.justify, block_tree, &self.event_publisher)?;
+                block_tree.update(&proposal.block.justify, &self.event_publisher)?;
 
             if let Some(vs_updates) = committed_validator_set_updates {
                 self.validator_set_update_handle
@@ -484,7 +484,7 @@ impl<N: Network> HotStuff<N> {
 
         // 2. Trigger block tree updates: update highestQC, lock, commit.
         let committed_validator_set_updates =
-            update_block_tree(&nudge.justify, block_tree, &self.event_publisher)?;
+            block_tree.update(&nudge.justify, &self.event_publisher)?;
 
         if let Some(vs_updates) = committed_validator_set_updates {
             self.validator_set_update_handle
@@ -578,7 +578,7 @@ impl<N: Network> HotStuff<N> {
 
                 // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
                 let committed_validator_set_updates =
-                    update_block_tree(&new_qc, block_tree, &self.event_publisher)?;
+                    block_tree.update(&new_qc, &self.event_publisher)?;
 
                 if let Some(vs_updates) = committed_validator_set_updates {
                     self.validator_set_update_handle
@@ -618,7 +618,7 @@ impl<N: Network> HotStuff<N> {
         {
             // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
             let committed_validator_set_updates =
-                update_block_tree(&new_view.highest_qc, block_tree, &self.event_publisher)?;
+                block_tree.update(&new_view.highest_qc, &self.event_publisher)?;
 
             if let Some(vs_updates) = committed_validator_set_updates {
                 self.validator_set_update_handle
@@ -694,228 +694,9 @@ impl ProposalStatus {
     }
 
     /// Have all (max. 2) leaders already proposed/nudged in this view?
+    ///
     /// Note: this can evaluate to true only during the validator set update period.
     fn have_all_leaders_proposed(&self) -> bool {
         matches!(self, ProposalStatus::AllLeadersProposed)
     }
-}
-
-/// Commits a block and its ancestors if they have not been committed already.
-///
-/// Returns the hashes of the newly committed blocks, with the updates they caused to the validator set,
-/// in sequence (from lowest height to highest height).
-pub(crate) fn commit_block<K: KVStore>(
-    block_tree: &mut BlockTree<K>,
-    wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
-    block: &CryptoHash,
-) -> Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> {
-    // Obtain an iterator over the "block" and its ancestors, all the way until genesis, from newest ("block") to oldest.
-    let blocks_iter = successors(Some(*block), |b| {
-        block_tree
-            .block_justify(b)
-            .ok()
-            .map(|qc| {
-                if !qc.is_genesis_qc() {
-                    Some(qc.block)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-    });
-
-    // Newest committed block height, we do not consider the blocks from this height downwards.
-    let min_height = block_tree.highest_committed_block_height()?;
-
-    // Obtain an iterator over the uncomitted blocks among "block" and its ancestors from oldest to newest,
-    // the newest block being "block".
-    // This is required because we want to commit blocks in correct order, applying updates from oldest to
-    // newest.
-    let uncommitted_blocks_iter = blocks_iter.take_while(|b| {
-        min_height.is_none()
-            || min_height.is_some_and(|h| block_tree.block_height(b).unwrap().unwrap() > h)
-    });
-    let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
-    let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
-
-    // Helper closure that
-    // (1) commits block b, applying all related updates to the write batch,
-    // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional
-    //     validator set updates associated with b,
-    // (3) returns the extended vector of blocks committed so far (updated accumulator).
-    let commit = |committed_blocks_res: Result<
-        Vec<(CryptoHash, Option<ValidatorSetUpdates>)>,
-        BlockTreeError,
-    >,
-                  b: &CryptoHash|
-     -> Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> {
-        let mut committed_blocks = committed_blocks_res?;
-
-        let block_height = block_tree
-            .block_height(b)?
-            .ok_or(BlockTreeError::BlockExpectedButNotFound { block: b.clone() })?;
-        // Work steps:
-
-        // Set block at height.
-        wb.set_block_at_height(block_height, b)?;
-
-        // Delete all of block's siblings.
-        block_tree.delete_siblings(wb, b)?;
-
-        // Apply pending app state updates.
-        if let Some(pending_app_state_updates) = block_tree.pending_app_state_updates(b)? {
-            wb.apply_app_state_updates(&pending_app_state_updates);
-            wb.delete_pending_app_state_updates(b);
-        }
-
-        // Apply pending validator set updates.
-        if let ValidatorSetUpdatesStatus::Pending(validator_set_updates) =
-            block_tree.validator_set_updates_status(b)?
-        {
-            let mut committed_validator_set = block_tree.committed_validator_set()?;
-            let previous_validator_set = committed_validator_set.clone();
-            committed_validator_set.apply_updates(&validator_set_updates);
-
-            wb.set_committed_validator_set(&committed_validator_set)?;
-            wb.set_previous_validator_set(&previous_validator_set)?;
-            wb.set_validator_set_update_block_height(block_height)?;
-            wb.set_validator_set_update_decided(false)?;
-            wb.set_committed_validator_set_updates(block)?;
-
-            committed_blocks.push((*b, Some(validator_set_updates.clone())));
-        } else {
-            committed_blocks.push((*b, None));
-        }
-
-        // Update the highest committed block.
-        wb.set_highest_committed_block(b)?;
-
-        // Return the blocks committed so far together with their corresponding validator set updates.
-        Ok(committed_blocks)
-    };
-
-    // Iterate over the uncommitted blocks from oldest to newest,
-    // (1) applying related updates (by mutating the write batch), and
-    // (2) building up the vector of committed blocks (by pushing the newely committed blocks to
-    //     the accumulator vector).
-    // Finally, return the accumulator.
-    uncommitted_blocks_ordered_iter.fold(Ok(Vec::new()), commit)
-}
-
-/// Performs the necessary block tree updates on seeing a safe [qc](QuorumCertificate) justifying a
-/// [nugde](Nudge) or a [block](crate::types::block::Block). These updates may include:
-/// 1. Updating the highestQC,
-/// 2. Updating the lockedQC,
-/// 3. Commiting block(s).
-/// 4. Setting the validator set updates associated with a block as decided.
-///
-/// Returns optional [validator set updates](crate::types::validators::ValidatorSetUpdates) caused by
-/// committing a block. Note that even if multiple blocks are committed on calling this method, only max. 1
-/// of them can have associated validator set updates. This is because validator-set-updating blocks are
-/// committed via a non-pipelined protocol.
-///
-/// # Precondition
-/// The block or nudge with this justify must satisfy [safety::safe_block] or [safety::safe_nudge] respectively.
-pub(crate) fn update_block_tree<K: KVStore>(
-    justify: &QuorumCertificate,
-    block_tree: &mut BlockTree<K>,
-    event_publisher: &Option<Sender<Event>>,
-) -> Result<Option<ValidatorSetUpdates>, BlockTreeError> {
-    let mut wb = BlockTreeWriteBatch::new();
-
-    let mut update_locked_qc: Option<QuorumCertificate> = None;
-    let mut update_highest_qc: Option<QuorumCertificate> = None;
-    let mut committed_blocks: Vec<(CryptoHash, Option<ValidatorSetUpdates>)> = Vec::new();
-
-    // 1. Update highestQC if needed.
-    if justify.view > block_tree.highest_qc()?.view {
-        wb.set_highest_qc(justify)?;
-        update_highest_qc = Some(justify.clone())
-    }
-
-    // 2. Update lockedQC if needed.
-    if let Some(new_locked_qc) = safety::qc_to_lock(justify, block_tree)? {
-        wb.set_locked_qc(&new_locked_qc)?;
-        update_locked_qc = Some(new_locked_qc)
-    }
-
-    // 3. Commit block(s) if needed.
-    if let Some(block) = safety::block_to_commit(justify, block_tree)? {
-        committed_blocks = commit_block(block_tree, &mut wb, &block)?;
-    }
-
-    // 4. Set validator set updates as decided if needed.
-    if justify.phase.is_decide() {
-        wb.set_validator_set_update_decided(true)?
-    }
-
-    block_tree.write(wb);
-
-    publish_update_block_tree_events(
-        event_publisher,
-        update_highest_qc,
-        update_locked_qc,
-        &committed_blocks,
-    );
-
-    // Safety: a block that updates the validator set must be followed by a block that contains a decide
-    // qc. A block becomes committed immediately if its commitQC or decideQC is seen. Therefore, under normal
-    // operation, at most 1 validator-set-updating block can be committed at a time.
-    let resulting_vs_update = committed_blocks
-        .into_iter()
-        .rev()
-        .find_map(|(_, validator_set_updates_opt)| validator_set_updates_opt);
-
-    Ok(resulting_vs_update)
-}
-
-/// Publish all events resulting from calling [update_block_tree]. These events have to do with changing
-/// persistent state, and  possibly include: [`UpdateHighestQCEvent`], [`UpdateLockedQCEvent`],
-/// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
-///
-/// Invariant: this method is invoked immediately after the corresponding changes are written to the [`BlockTree`].
-fn publish_update_block_tree_events(
-    event_publisher: &Option<Sender<Event>>,
-    update_highest_qc: Option<QuorumCertificate>,
-    update_locked_qc: Option<QuorumCertificate>,
-    committed_blocks: &Vec<(CryptoHash, Option<ValidatorSetUpdates>)>,
-) {
-    if let Some(highest_qc) = update_highest_qc {
-        Event::UpdateHighestQC(UpdateHighestQCEvent {
-            timestamp: SystemTime::now(),
-            highest_qc,
-        })
-        .publish(event_publisher)
-    };
-
-    if let Some(locked_qc) = update_locked_qc {
-        Event::UpdateLockedQC(UpdateLockedQCEvent {
-            timestamp: SystemTime::now(),
-            locked_qc,
-        })
-        .publish(event_publisher)
-    };
-
-    committed_blocks
-        .iter()
-        .for_each(|(b, validator_set_updates_opt)| {
-            Event::PruneBlock(PruneBlockEvent {
-                timestamp: SystemTime::now(),
-                block: b.clone(),
-            })
-            .publish(event_publisher);
-            Event::CommitBlock(CommitBlockEvent {
-                timestamp: SystemTime::now(),
-                block: b.clone(),
-            })
-            .publish(event_publisher);
-            if let Some(validator_set_updates) = validator_set_updates_opt {
-                Event::UpdateValidatorSet(UpdateValidatorSetEvent {
-                    timestamp: SystemTime::now(),
-                    cause_block: *b,
-                    validator_set_updates: validator_set_updates.clone(),
-                })
-                .publish(event_publisher);
-            }
-        });
 }

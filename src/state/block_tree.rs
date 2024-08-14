@@ -81,45 +81,69 @@
 //! |---|---|
 //! |Committed App State|Provided to [`initialize`](crate::replica::Replica::initialize).|
 //! |Committed Validator Set|Provided to [`initialize`](crate::replica::Replica::initialize).|
-//! |Previous Validator Set| Provided to [`initialize`](crate::replica::Replica::initialize).|
+//! |Previous Validator Set|Provided to [`initialize`](crate::replica::Replica::initialize).|
 //! |Validator Set Update Block Height|Provided to [`initialize`](crate::replica::Replica::initialize).|
 //! |Validator Set Update Complete|Provided to [`initialize`](crate::replica::Replica::initialize).|
-//! |Locked QC|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
+//! |Locked QC|The [Genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 //! |Highest View Entered|0|
-//! |Highest Quorum Certificate|The [genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
+//! |Highest Quorum Certificate|The [Genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{ChildrenList, CryptoHash, ViewNumber};
-use crate::types::*;
 use std::cmp::max;
 use std::iter::successors;
+use std::sync::mpsc::Sender;
+use std::time::SystemTime;
 
-use self::basic::{AppStateUpdates, BlockHeight, Data, DataLen, Datum};
-use self::block::Block;
-use self::validators::{
-    ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus,
+use crate::events::{
+    CommitBlockEvent, Event, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedQCEvent,
+    UpdateValidatorSetEvent,
+};
+use crate::hotstuff::types::QuorumCertificate;
+use crate::pacemaker::types::TimeoutCertificate;
+use crate::types::{
+    basic::{
+        AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+    },
+    block::Block,
+    validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus},
 };
 
 use super::app_block_tree_view::AppBlockTreeView;
 use super::block_tree_snapshot::BlockTreeSnapshot;
 use super::kv_store::{KVGetError, KVStore};
+use super::safety;
 use super::write_batch::{BlockTreeWriteBatch, KVSetError};
 
-/// A read and write handle into the block tree exclusively owned by the algorithm thread.
-pub struct BlockTree<K: KVStore>(pub(super) K);
+/// Read and write handle into the block tree to be exclusively owned by the algorithm thread.
+pub struct BlockTree<K: KVStore>(K);
 
+/// "Lifecycle" methods of Block Tree.
+///
+/// i.e., methods for creating and initializing a `BlockTree`, as well as for using it to create and
+/// consume other block tree-related types, namely, [`BlockTreeSnapshot`], [`BlockTreeWriteBatch`], and
+/// [`AppBlockTreeView`].
 impl<K: KVStore> BlockTree<K> {
+    /// Create a new instance of `BlockTree` on top of `kv_store`.
+    ///
+    /// This constructor is private (`pub(crate)`). To create an instance of `BlockTree` as a library user,
+    /// use [`new_unsafe`](Self::new_unsafe).
     pub(crate) fn new(kv_store: K) -> Self {
         BlockTree(kv_store)
     }
 
+    /// Create a new instance of `BlockTree` on top of `kv_store`.
+    ///
+    /// ## Safety
+    ///
+    /// Read
+    /// [mutating the block tree directly from user code](#mutating-the-block-tree-directly-from-user-code).
     pub unsafe fn new_unsafe(kv_store: K) -> Self {
         Self::new(kv_store)
     }
 
-    /* ↓↓↓ Initialize ↓↓↓ */
-
+    /// Initialize the block tree variables listed in [initial state](#initial-state).
+    ///
+    /// This function must be called exactly once on a `BlockTree` with an empty backing `kv_store`, before
+    /// any of the other functions (except the constructors `new` or `new_unsafe`) are called.
     pub fn initialize(
         &mut self,
         initial_app_state: &AppStateUpdates,
@@ -152,170 +176,18 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
-    /// Insert a block into the block tree. This includes:
-    /// 1. Setting pending app states and validator set updates associated with the block,
-    /// 2. Updating all relevant mappings from the block.
-    ///
-    /// # Precondition
-    /// [super::safety::safe_block]
-    pub fn insert_block(
-        &mut self,
-        block: &Block,
-        app_state_updates: Option<&AppStateUpdates>,
-        validator_set_updates: Option<&ValidatorSetUpdates>,
-    ) -> Result<(), BlockTreeError> {
-        let mut wb = BlockTreeWriteBatch::new();
-
-        // Insert block.
-        wb.set_block(block)?;
-        wb.set_newest_block(&block.hash)?;
-        if let Some(app_state_updates) = app_state_updates {
-            wb.set_pending_app_state_updates(&block.hash, app_state_updates)?;
-        }
-        if let Some(validator_set_updates) = validator_set_updates {
-            wb.set_pending_validator_set_updates(&block.hash, validator_set_updates)?;
-        }
-
-        let mut siblings = self
-            .children(&block.justify.block)
-            .unwrap_or(ChildrenList::default());
-        siblings.push(block.hash);
-        wb.set_children(&block.justify.block, &siblings)?;
-
-        self.write(wb);
-
-        Ok(())
-    }
-
-    pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
-        let mut wb = BlockTreeWriteBatch::new();
-        wb.set_highest_qc(qc)?;
-        self.write(wb);
-        Ok(())
-    }
-
-    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
-        let mut wb = BlockTreeWriteBatch::new();
-        wb.set_highest_tc(tc)?;
-        self.write(wb);
-        Ok(())
-    }
-
-    pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
-        let mut wb = BlockTreeWriteBatch::new();
-        wb.set_highest_view_entered(view)?;
-        self.write(wb);
-        Ok(())
-    }
-
-    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
-        let mut wb = BlockTreeWriteBatch::new();
-        wb.set_highest_view_voted(view)?;
-        self.write(wb);
-        Ok(())
-    }
-
-    /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
-
-    /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending
-    /// app state updates). Siblings
-    /// here refer to other blocks that share the same parent as the specified block.
-    ///
-    ///  # Precondition
-    /// Block is in its parents' (or the genesis) children list.
-    ///
-    /// # Error
-    /// Returns an error if the block is not in the block tree, or if the block's parent (or genesis) does not have a
-    /// children list.
-    pub fn delete_siblings(
-        &mut self,
-        wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
-        block: &CryptoHash,
-    ) -> Result<(), BlockTreeError> {
-        let parent_or_genesis = self.block_justify(block)?.block;
-        let parents_or_genesis_children = self.children(&parent_or_genesis)?;
-        let siblings = parents_or_genesis_children
-            .iter()
-            .filter(|sib| *sib != block);
-        for sibling in siblings {
-            self.delete_branch(wb, sibling);
-        }
-
-        wb.set_children(&parent_or_genesis, &ChildrenList::new(vec![*block]))?;
-        Ok(())
-    }
-
-    /// Deletes all data of blocks in a branch starting from (and including) a given root block.
-    fn delete_branch(&mut self, wb: &mut BlockTreeWriteBatch<K::WriteBatch>, root: &CryptoHash) {
-        for block in self.blocks_in_branch(*root) {
-            wb.delete_children(&block);
-            wb.delete_pending_app_state_updates(&block);
-            wb.delete_block_validator_set_updates(&block);
-
-            if let Ok(Some(data_len)) = self.block_data_len(&block) {
-                wb.delete_block(&block, data_len)
-            }
-        }
-    }
-
-    /// Performs depth-first search to collect the hashes of all blocks in the branch rooted at `root` into
-    /// a single iterator.
-    pub fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
-        let mut stack: Vec<CryptoHash> = vec![root];
-        let mut branch: Vec<CryptoHash> = vec![];
-
-        while let Some(block) = stack.pop() {
-            if let Ok(children) = self.children(&block) {
-                for child in children.iter() {
-                    stack.push(*child)
-                }
-            };
-            branch.push(block)
-        }
-        branch.into_iter()
-    }
-
-    /* ↓↓↓ Extra state getters for convenience ↓↓↓ */
-
-    pub fn contains(&self, block: &CryptoHash) -> bool {
-        self.block(block).is_ok_and(|block_opt| block_opt.is_some())
-    }
-
-    pub fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
-        Ok(max(
-            self.highest_view_entered()?,
-            max(
-                self.highest_qc()?.view,
-                self.highest_tc()?
-                    .map(|tc| tc.view)
-                    .unwrap_or(ViewNumber::init()),
-            ),
-        ))
-    }
-
-    pub fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
-        let highest_committed_block = self.highest_committed_block()?;
-        if let Some(block) = highest_committed_block {
-            Ok(self.block_height(&block)?)
-        } else {
-            Ok(None)
-        }
-    }
-
-    /* ↓↓↓ WriteBatch commit ↓↓↓ */
-
-    pub fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
-        self.0.write(write_batch.0)
-    }
-
-    /* ↓↓↓ Snapshot ↓↓↓ */
-
+    /// Create a `BlockTreeSnapshot`.
     pub fn snapshot(&self) -> BlockTreeSnapshot<K::Snapshot<'_>> {
         BlockTreeSnapshot::new(self.0.snapshot())
     }
 
-    /* ↓↓↓ Get AppBlockTreeView for ProposeBlockRequest and ValidateBlockRequest */
+    /// Atomically write the changes in `write_batch` into the `BlockTree`.
+    pub fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
+        self.0.write(write_batch.0)
+    }
 
+    /// Create an `AppBlockTreeView` which sees the app state as it will be right after `parent` becomes
+    /// committed.
     pub fn app_view<'a>(
         &'a self,
         parent: Option<&CryptoHash>,
@@ -380,9 +252,400 @@ impl<K: KVStore> BlockTree<K> {
             pending_ancestors_app_state_updates,
         })
     }
+}
 
-    /* ↓↓↓ Basic state getters ↓↓↓ */
+/// "Top-level updaters" of Block Tree.
+impl<K: KVStore> BlockTree<K> {
+    /// Insert a `block` that will cause the provided `app_state_updates` and `validator_set_updates`
+    /// (when committed) into the block tree.
+    ///
+    /// ## Precondition
+    ///
+    /// [`safe_block`](super::safety::safe_block) is `true` for `block`.
+    pub fn insert(
+        &mut self,
+        block: &Block,
+        app_state_updates: Option<&AppStateUpdates>,
+        validator_set_updates: Option<&ValidatorSetUpdates>,
+    ) -> Result<(), BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
 
+        // Set block, which entails setting block's fields in separate key-value pairs.
+        wb.set_block(block)?;
+
+        // Set the block as the newest inserted block.
+        wb.set_newest_block(&block.hash)?;
+
+        // Insert the block's pending app state updates and validator set updates.
+        if let Some(app_state_updates) = app_state_updates {
+            wb.set_pending_app_state_updates(&block.hash, app_state_updates)?;
+        }
+        if let Some(validator_set_updates) = validator_set_updates {
+            wb.set_pending_validator_set_updates(&block.hash, validator_set_updates)?;
+        }
+
+        // Mark the block as a child of its parent block.
+        let mut siblings = self
+            .children(&block.justify.block)
+            .unwrap_or(ChildrenList::default());
+        siblings.push(block.hash);
+        wb.set_children(&block.justify.block, &siblings)?;
+
+        // Atomically write the above changes to persistent storage.
+        self.write(wb);
+
+        Ok(())
+    }
+
+    /// Update the block tree upon seeing a safe `justify` in a [`Nudge`] or a [`Block`].
+    ///
+    /// ## Updates
+    ///
+    /// Depending on the specific Quorum Certificate received and the state of the Block Tree, the updates
+    /// that this function performs will include:
+    /// 1. Updating the Highest QC if `justify.view > highest_qc.view`.
+    /// 2. Updating the Locked QC if appropriate, as determined by the [`qc_to_lock`](safety::qc_to_lock)
+    ///    helper.
+    /// 3. Committing a block and all of its ancestors if appropriate, as determined by the
+    ///    [`block_to_commit`](safety::block_to_commit) helper.
+    /// 4. Marking the latest validator set updates as decided if `justify` is a Decide QC.
+    ///
+    /// ## Preconditions
+    ///
+    /// The `Block` or `Nudge` containing `justify` must satisfy [`safe_block`](safety::safe_block) or
+    /// [`safe_nudge`](safety::safe_nudge), respectively.
+    pub(crate) fn update(
+        &mut self,
+        justify: &QuorumCertificate,
+        event_publisher: &Option<Sender<Event>>,
+    ) -> Result<Option<ValidatorSetUpdates>, BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
+
+        let mut update_locked_qc: Option<QuorumCertificate> = None;
+        let mut update_highest_qc: Option<QuorumCertificate> = None;
+        let mut committed_blocks: Vec<(CryptoHash, Option<ValidatorSetUpdates>)> = Vec::new();
+
+        // 1. Update highestQC if needed.
+        if justify.view > self.highest_qc()?.view {
+            wb.set_highest_qc(justify)?;
+            update_highest_qc = Some(justify.clone())
+        }
+
+        // 2. Update lockedQC if needed.
+        if let Some(new_locked_qc) = safety::qc_to_lock(justify, &self)? {
+            wb.set_locked_qc(&new_locked_qc)?;
+            update_locked_qc = Some(new_locked_qc)
+        }
+
+        // 3. Commit block(s) if needed.
+        if let Some(block) = safety::block_to_commit(justify, &self)? {
+            committed_blocks = self.commit(&mut wb, &block)?;
+        }
+
+        // 4. Set validator set updates as decided if needed.
+        if justify.phase.is_decide() {
+            wb.set_validator_set_update_decided(true)?
+        }
+
+        self.write(wb);
+
+        Self::publish_update_block_tree_events(
+            event_publisher,
+            update_highest_qc,
+            update_locked_qc,
+            &committed_blocks,
+        );
+
+        // Safety: a block that updates the validator set must be followed by a block that contains a decide
+        // qc. A block becomes committed immediately if its commitQC or decideQC is seen. Therefore, under normal
+        // operation, at most 1 validator-set-updating block can be committed at a time.
+        let resulting_vs_update = committed_blocks
+            .into_iter()
+            .rev()
+            .find_map(|(_, validator_set_updates_opt)| validator_set_updates_opt);
+
+        Ok(resulting_vs_update)
+    }
+
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_tc(tc)?;
+        self.write(wb);
+        Ok(())
+    }
+
+    pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_view_entered(view)?;
+        self.write(wb);
+        Ok(())
+    }
+
+    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        let mut wb = BlockTreeWriteBatch::new();
+        wb.set_highest_view_voted(view)?;
+        self.write(wb);
+        Ok(())
+    }
+}
+
+/// Helper functions for [BlockTree::update].
+impl<K: KVStore> BlockTree<K> {
+    /// Commit `block` and all of its ancestors, if they have not already been committed.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the hashes of the newly committed blocks, along with the updates each caused to the
+    /// validator set, in order from the newly committed block with the lowest height to the newly committed
+    /// block with the highest height.
+    ///
+    /// ## Preconditions
+    ///
+    /// [`block_to_commit`](safety::block_to_commit) returns `block`.
+    pub fn commit(
+        &mut self,
+        wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
+        block: &CryptoHash,
+    ) -> Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> {
+        // Obtain an iterator over the "block" and its ancestors, all the way until genesis, from newest ("block") to oldest.
+        let blocks_iter = successors(Some(*block), |b| {
+            self.block_justify(b)
+                .ok()
+                .map(|qc| {
+                    if !qc.is_genesis_qc() {
+                        Some(qc.block)
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+        });
+
+        // Newest committed block height, we do not consider the blocks from this height downwards.
+        let min_height = self.highest_committed_block_height()?;
+
+        // Obtain an iterator over the uncomitted blocks among "block" and its ancestors from oldest to newest,
+        // the newest block being "block".
+        // This is required because we want to commit blocks in correct order, applying updates from oldest to
+        // newest.
+        let uncommitted_blocks_iter = blocks_iter.take_while(|b| {
+            min_height.is_none()
+                || min_height.is_some_and(|h| self.block_height(b).unwrap().unwrap() > h)
+        });
+        let uncommitted_blocks = uncommitted_blocks_iter.collect::<Vec<CryptoHash>>();
+        let uncommitted_blocks_ordered_iter = uncommitted_blocks.iter().rev();
+
+        // Helper closure that
+        // (1) commits block b, applying all related updates to the write batch,
+        // (2) extends the vector of blocks committed so far (accumulator) with b together with the optional
+        //     validator set updates associated with b,
+        // (3) returns the extended vector of blocks committed so far (updated accumulator).
+        let commit =
+            |committed_blocks_res: Result<
+                Vec<(CryptoHash, Option<ValidatorSetUpdates>)>,
+                BlockTreeError,
+            >,
+             b: &CryptoHash|
+             -> Result<Vec<(CryptoHash, Option<ValidatorSetUpdates>)>, BlockTreeError> {
+                let mut committed_blocks = committed_blocks_res?;
+
+                let block_height = self
+                    .block_height(b)?
+                    .ok_or(BlockTreeError::BlockExpectedButNotFound { block: b.clone() })?;
+                // Work steps:
+
+                // Set block at height.
+                wb.set_block_at_height(block_height, b)?;
+
+                // Delete all of block's siblings.
+                self.delete_siblings(wb, b)?;
+
+                // Apply pending app state updates.
+                if let Some(pending_app_state_updates) = self.pending_app_state_updates(b)? {
+                    wb.apply_app_state_updates(&pending_app_state_updates);
+                    wb.delete_pending_app_state_updates(b);
+                }
+
+                // Apply pending validator set updates.
+                if let ValidatorSetUpdatesStatus::Pending(validator_set_updates) =
+                    self.validator_set_updates_status(b)?
+                {
+                    let mut committed_validator_set = self.committed_validator_set()?;
+                    let previous_validator_set = committed_validator_set.clone();
+                    committed_validator_set.apply_updates(&validator_set_updates);
+
+                    wb.set_committed_validator_set(&committed_validator_set)?;
+                    wb.set_previous_validator_set(&previous_validator_set)?;
+                    wb.set_validator_set_update_block_height(block_height)?;
+                    wb.set_validator_set_update_decided(false)?;
+                    wb.set_committed_validator_set_updates(block)?;
+
+                    committed_blocks.push((*b, Some(validator_set_updates.clone())));
+                } else {
+                    committed_blocks.push((*b, None));
+                }
+
+                // Update the highest committed block.
+                wb.set_highest_committed_block(b)?;
+
+                // Return the blocks committed so far together with their corresponding validator set updates.
+                Ok(committed_blocks)
+            };
+
+        // Iterate over the uncommitted blocks from oldest to newest,
+        // (1) applying related updates (by mutating the write batch), and
+        // (2) building up the vector of committed blocks (by pushing the newely committed blocks to
+        //     the accumulator vector).
+        // Finally, return the accumulator.
+        uncommitted_blocks_ordered_iter.fold(Ok(Vec::new()), commit)
+    }
+
+    /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
+
+    /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending
+    /// app state updates). Siblings
+    /// here refer to other blocks that share the same parent as the specified block.
+    ///
+    ///  # Precondition
+    /// Block is in its parents' (or the genesis) children list.
+    ///
+    /// # Error
+    /// Returns an error if the block is not in the block tree, or if the block's parent (or genesis) does not have a
+    /// children list.
+    pub fn delete_siblings(
+        &mut self,
+        wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
+        block: &CryptoHash,
+    ) -> Result<(), BlockTreeError> {
+        let parent_or_genesis = self.block_justify(block)?.block;
+        let parents_or_genesis_children = self.children(&parent_or_genesis)?;
+        let siblings = parents_or_genesis_children
+            .iter()
+            .filter(|sib| *sib != block);
+        for sibling in siblings {
+            self.delete_branch(wb, sibling);
+        }
+
+        wb.set_children(&parent_or_genesis, &ChildrenList::new(vec![*block]))?;
+        Ok(())
+    }
+
+    /// Deletes all data of blocks in a branch starting from (and including) a given root block.
+    pub fn delete_branch(
+        &mut self,
+        wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
+        root: &CryptoHash,
+    ) {
+        for block in self.blocks_in_branch(*root) {
+            wb.delete_children(&block);
+            wb.delete_pending_app_state_updates(&block);
+            wb.delete_block_validator_set_updates(&block);
+
+            if let Ok(Some(data_len)) = self.block_data_len(&block) {
+                wb.delete_block(&block, data_len)
+            }
+        }
+    }
+
+    /// Performs depth-first search to collect the hashes of all blocks in the branch rooted at `root` into
+    /// a single iterator.
+    pub fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
+        let mut stack: Vec<CryptoHash> = vec![root];
+        let mut branch: Vec<CryptoHash> = vec![];
+
+        while let Some(block) = stack.pop() {
+            if let Ok(children) = self.children(&block) {
+                for child in children.iter() {
+                    stack.push(*child)
+                }
+            };
+            branch.push(block)
+        }
+        branch.into_iter()
+    }
+
+    /// Publish all events resulting from calling [update_block_tree]. These events have to do with changing
+    /// persistent state, and  possibly include: [`UpdateHighestQCEvent`], [`UpdateLockedQCEvent`],
+    /// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
+    ///
+    /// Invariant: this method is invoked immediately after the corresponding changes are written to the [`BlockTree`].
+    fn publish_update_block_tree_events(
+        event_publisher: &Option<Sender<Event>>,
+        update_highest_qc: Option<QuorumCertificate>,
+        update_locked_qc: Option<QuorumCertificate>,
+        committed_blocks: &Vec<(CryptoHash, Option<ValidatorSetUpdates>)>,
+    ) {
+        if let Some(highest_qc) = update_highest_qc {
+            Event::UpdateHighestQC(UpdateHighestQCEvent {
+                timestamp: SystemTime::now(),
+                highest_qc,
+            })
+            .publish(event_publisher)
+        };
+
+        if let Some(locked_qc) = update_locked_qc {
+            Event::UpdateLockedQC(UpdateLockedQCEvent {
+                timestamp: SystemTime::now(),
+                locked_qc,
+            })
+            .publish(event_publisher)
+        };
+
+        committed_blocks
+            .iter()
+            .for_each(|(b, validator_set_updates_opt)| {
+                Event::PruneBlock(PruneBlockEvent {
+                    timestamp: SystemTime::now(),
+                    block: b.clone(),
+                })
+                .publish(event_publisher);
+                Event::CommitBlock(CommitBlockEvent {
+                    timestamp: SystemTime::now(),
+                    block: b.clone(),
+                })
+                .publish(event_publisher);
+                if let Some(validator_set_updates) = validator_set_updates_opt {
+                    Event::UpdateValidatorSet(UpdateValidatorSetEvent {
+                        timestamp: SystemTime::now(),
+                        cause_block: *b,
+                        validator_set_updates: validator_set_updates.clone(),
+                    })
+                    .publish(event_publisher);
+                }
+            });
+    }
+}
+
+/// Extra state getters.
+impl<K: KVStore> BlockTree<K> {
+    pub fn contains(&self, block: &CryptoHash) -> bool {
+        self.block(block).is_ok_and(|block_opt| block_opt.is_some())
+    }
+
+    pub fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
+        Ok(max(
+            self.highest_view_entered()?,
+            max(
+                self.highest_qc()?.view,
+                self.highest_tc()?
+                    .map(|tc| tc.view)
+                    .unwrap_or(ViewNumber::init()),
+            ),
+        ))
+    }
+
+    pub fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+        let highest_committed_block = self.highest_committed_block()?;
+        if let Some(block) = highest_committed_block {
+            Ok(self.block_height(&block)?)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+// Basic state getters.
+impl<K: KVStore> BlockTree<K> {
     pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {
         Ok(self.0.block(block)?)
     }
