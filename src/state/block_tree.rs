@@ -113,12 +113,23 @@ use super::kv_store::{KVGetError, KVStore};
 use super::safety;
 use super::write_batch::{BlockTreeWriteBatch, KVSetError};
 
-/// Read and write handle into the block tree to be exclusively owned by the algorithm thread.
+/// Read and write handle into the block tree that should be owned exclusively by the algorithm thread.
+///
+/// ## Categories of methods
+///
+/// `BlockTree` has a large number of methods. To improve understandability, these methods are grouped
+/// into five categories, with methods in each separate category being defined in a separate `impl`
+/// block. These five categories are:
+/// 1. [Lifecycle methods](#impl-BlockTree<K>).
+/// 2. [Top-level mutators](#impl-BlockTree<K>-1).
+/// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTree<K>-2).
+/// 4. [Basic state getters](#impl-BlockTree<K>-3).
+/// 5. [Extra state getters](#impl-BlockTree<K>-4).
 pub struct BlockTree<K: KVStore>(K);
 
-/// "Lifecycle" methods of Block Tree.
+/// Lifecycle methods.
 ///
-/// i.e., methods for creating and initializing a `BlockTree`, as well as for using it to create and
+/// These are methods for creating and initializing a `BlockTree`, as well as for using it to create and
 /// consume other block tree-related types, namely, [`BlockTreeSnapshot`], [`BlockTreeWriteBatch`], and
 /// [`AppBlockTreeView`].
 impl<K: KVStore> BlockTree<K> {
@@ -254,10 +265,15 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// "Top-level updaters" of Block Tree.
+/// Top-level mutators.
+///
+/// These are the methods that mutate the block tree that are called directly by code in the
+/// subprotocols (i.e., [`hotstuff`](crate::hotstuff), [`block_sync`](crate::block_sync), and
+/// [`pacemaker`](crate::pacemaker)). Mutating methods outside of this `impl` and the lifecycle methods
+/// `impl` above are only used internally in this module.
 impl<K: KVStore> BlockTree<K> {
-    /// Insert a `block` that will cause the provided `app_state_updates` and `validator_set_updates`
-    /// (when committed) into the block tree.
+    /// Insert into the block tree a `block` that will cause the provided `app_state_updates` and
+    /// `validator_set_updates` to be applied when committed.
     ///
     /// ## Precondition
     ///
@@ -297,7 +313,8 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
-    /// Update the block tree upon seeing a safe `justify` in a [`Nudge`] or a [`Block`].
+    /// Update the block tree upon seeing a safe `justify` in a [`Nudge`](crate::hotstuff::messages::Nudge)
+    /// or a [`Block`].
     ///
     /// ## Updates
     ///
@@ -367,6 +384,7 @@ impl<K: KVStore> BlockTree<K> {
         Ok(resulting_vs_update)
     }
 
+    /// Set the highest `TimeoutCertificate` to be `tc`.
     pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_tc(tc)?;
@@ -374,6 +392,7 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
+    /// Set the highest view entered to be `view`.
     pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_entered(view)?;
@@ -381,6 +400,7 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
+    /// Set the highest view voted to be `view`.
     pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_voted(view)?;
@@ -389,7 +409,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Helper functions for [BlockTree::update].
+/// Helper functions called by [BlockTree::update].
 impl<K: KVStore> BlockTree<K> {
     /// Commit `block` and all of its ancestors, if they have not already been committed.
     ///
@@ -500,16 +520,17 @@ impl<K: KVStore> BlockTree<K> {
         uncommitted_blocks_ordered_iter.fold(Ok(Vec::new()), commit)
     }
 
-    /* ↓↓↓ For deleting abandoned branches in insert_block ↓↓↓ */
-
     /// Delete the "siblings" of the specified block, along with all of its associated data (e.g., pending
-    /// app state updates). Siblings
-    /// here refer to other blocks that share the same parent as the specified block.
+    /// app state updates, validator set updates).
     ///
-    ///  # Precondition
-    /// Block is in its parents' (or the genesis) children list.
+    /// "Siblings" refer to other blocks that share the same parent as the specified block.
     ///
-    /// # Error
+    /// ## Precondition
+    ///
+    /// `block` is in its parents' (or the genesis) children list.
+    ///
+    /// ## Error
+    ///
     /// Returns an error if the block is not in the block tree, or if the block's parent (or genesis) does not have a
     /// children list.
     pub fn delete_siblings(
@@ -547,7 +568,7 @@ impl<K: KVStore> BlockTree<K> {
         }
     }
 
-    /// Performs depth-first search to collect the hashes of all blocks in the branch rooted at `root` into
+    /// Perform depth-first search to collect the hashes of all blocks in the branch rooted at `root` into
     /// a single iterator.
     pub fn blocks_in_branch(&self, root: CryptoHash) -> impl Iterator<Item = CryptoHash> {
         let mut stack: Vec<CryptoHash> = vec![root];
@@ -616,35 +637,12 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Extra state getters.
-impl<K: KVStore> BlockTree<K> {
-    pub fn contains(&self, block: &CryptoHash) -> bool {
-        self.block(block).is_ok_and(|block_opt| block_opt.is_some())
-    }
-
-    pub fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
-        Ok(max(
-            self.highest_view_entered()?,
-            max(
-                self.highest_qc()?.view,
-                self.highest_tc()?
-                    .map(|tc| tc.view)
-                    .unwrap_or(ViewNumber::init()),
-            ),
-        ))
-    }
-
-    pub fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
-        let highest_committed_block = self.highest_committed_block()?;
-        if let Some(block) = highest_committed_block {
-            Ok(self.block_height(&block)?)
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-// Basic state getters.
+/// "Basic" state getters.
+///
+/// Each basic state getter calls a corresponding provided method of [`KVGet`](super::kv_store::KVGet) and
+/// return whatever they return.
+///
+/// The exact same set of basic state getters are also defined on `BlockTreeSnapshot`.
 impl<K: KVStore> BlockTree<K> {
     pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {
         Ok(self.0.block(block)?)
@@ -736,6 +734,47 @@ impl<K: KVStore> BlockTree<K> {
 
     pub fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
         Ok(self.0.highest_view_voted()?)
+    }
+}
+
+/// "Extra" state getters.
+///
+/// Extra state getters call [basic state getters](#impl-BlockTree<K>-3) and aggregate or modify what
+/// they return into forms that are more convenient to use.
+///
+/// Unlike basic state getters, these functions are not defined on `BlockTreeSnapshot`.
+impl<K: KVStore> BlockTree<K> {
+    /// Check whether `block` exists on the block tree.
+    pub fn contains(&self, block: &CryptoHash) -> bool {
+        self.block(block).is_ok_and(|block_opt| block_opt.is_some())
+    }
+
+    /// Get the maximum of:
+    /// - [`self.highest_view_entered()`](Self::highest_view_entered).
+    /// - [`self.highest_qc()`](Self::highest_qc).
+    /// - [`self.highest_tc()`](Self::highest_tc).
+    ///
+    /// This is useful for deciding which view to initially enter after starting or restarting a replica.
+    pub fn highest_view_with_progress(&self) -> Result<ViewNumber, BlockTreeError> {
+        Ok(max(
+            self.highest_view_entered()?,
+            max(
+                self.highest_qc()?.view,
+                self.highest_tc()?
+                    .map(|tc| tc.view)
+                    .unwrap_or(ViewNumber::init()),
+            ),
+        ))
+    }
+
+    /// Get the height of the highest committed block.
+    pub fn highest_committed_block_height(&self) -> Result<Option<BlockHeight>, BlockTreeError> {
+        let highest_committed_block = self.highest_committed_block()?;
+        if let Some(block) = highest_committed_block {
+            Ok(self.block_height(&block)?)
+        } else {
+            Ok(None)
+        }
     }
 }
 

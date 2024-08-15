@@ -5,7 +5,6 @@
 
 //! Implementation of a participant in the HotStuff subprotocol.
 
-use std::iter::successors;
 use std::sync::mpsc::Sender;
 use std::time::SystemTime;
 
@@ -15,10 +14,9 @@ use crate::app::{
     App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
 };
 use crate::events::{
-    CollectQCEvent, CommitBlockEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent,
-    ProposeEvent, PruneBlockEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent,
-    ReceiveVoteEvent, StartViewEvent, UpdateHighestQCEvent, UpdateLockedQCEvent,
-    UpdateValidatorSetEvent, VoteEvent,
+    CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent,
+    ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent,
+    VoteEvent,
 };
 use crate::hotstuff::messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote};
 use crate::hotstuff::types::{Phase, VoteCollector};
@@ -28,15 +26,13 @@ use crate::networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::pacemaker::protocol::ViewInfo;
 use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
-use crate::state::safety::{self, repropose_block, safe_block, safe_nudge, safe_qc};
-use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::{BlockHeight, CryptoHash};
+use crate::state::safety::{repropose_block, safe_block, safe_nudge, safe_qc};
+use crate::types::basic::BlockHeight;
 use crate::types::block::Block;
 use crate::types::collectors::{Certificate, Collectors};
-use crate::types::validators::{ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus};
+use crate::types::validators::ValidatorSetState;
 use crate::types::{basic::ChainID, keypair::Keypair};
 
-use super::types::QuorumCertificate;
 use super::voting::vote_recipient;
 
 /// A participant in the HotStuff subprotocol.

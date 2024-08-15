@@ -131,7 +131,7 @@ pub(crate) fn safe_block<K: KVStore>(
 ///
 /// `safe_qc` returns `true` in case all of the following predicates are `true`:
 /// 1. `qc.chain_id` either matches the chain ID of the replica, or `qc` is the genesis qc.
-/// 2. `qc` justifies a known block, or is the Genesis QC.
+/// 2. Either `qc.block` is in the block tree, or `qc` is the Genesis QC.
 /// 3. Either `qc`'s view number is greater than the Locked QC's view, or its block extends from the locked
 ///    block.
 /// 4. If `qc` is a Prepare, Precommit, or Commit QC, the block it justifies has pending validator state
