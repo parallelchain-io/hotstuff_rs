@@ -51,9 +51,9 @@ pub(crate) fn is_proposer(
 
 /// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`, given the
 /// current `validator_set_state`.
-/// 
+///
 /// ## Rules
-/// 
+///
 /// Which replica should be the recipient of `vote` depends on whether the latest validator set update
 /// has been decided:
 /// - If it **has** been decided, then the recipient should be the leader of `vote.view + 1` in the

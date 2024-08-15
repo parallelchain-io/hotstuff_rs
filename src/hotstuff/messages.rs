@@ -3,31 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Structured messages that are sent between replicas as part of the HotStuff subprotocol.
-//!
-//! ## Messages
-//!
-//! HotStuff-rs' modified HotStuff protocol involves four types of messages:
-//! 1. [`Proposal`]: broadcasted by the leader of a given view, who proposes to extend the blockchain by
-//!    inserting a block contained in the proposal.
-//! 2. [`Nudge`]: broadcasted by the leader of a given view, who nudges other validators to participate in
-//!    a next voting phase for a block with a given quorum certificate.
-//! 3. [`Vote`]: sent by a validator to the leader of a next view to vote for a given proposal or nudge,
-//!    contains a cryptographic signature over the information passed through a vote.
-//! 4. [`NewView`]: sent by a replica to the next leader on view timeout, serves to update the next leader
-//!    on the highestQC that replicas know of.
-//!
-//! ## `NewView` and view synchronization
-//!
-//! In the original HotStuff protocol, the leader of the next view keeps track of the number of
-//! `NewView` messages collected in the current view with the aim of advancing to the next view once a
-//! quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
-//! view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
-//! not come with a "fully-featured" BFT view synchronization mechanism.
-//!
-//! HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
-//! form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
-//! unnecessary.
+//! Messages that are sent between replicas as part of the HotStuff subprotocol. 
 
 use std::mem;
 
@@ -38,16 +14,24 @@ use crate::types::{basic::*, block::*, keypair::*};
 
 use super::types::{Phase, QuorumCertificate};
 
+/// Messages that are sent between replicas as part of the HotStuff subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum HotStuffMessage {
+pub enum HotStuffMessage { 
+    /// See [`Proposal`].
     Proposal(Proposal),
+
+    /// See [`Nudge`].
     Nudge(Nudge),
+
+    /// See [`Vote`].
     Vote(Vote),
+
+    /// See [`NewView`].
     NewView(NewView),
 }
 
 impl HotStuffMessage {
-    /// Returns the chain ID associated with a given [`HotStuffMessage`].
+    /// Get the `ChainID` associated with the `HotStuffMessage`.
     pub fn chain_id(&self) -> ChainID {
         match self {
             HotStuffMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
@@ -57,7 +41,7 @@ impl HotStuffMessage {
         }
     }
 
-    /// Returns the view number associated with a given [`HotStuffMessage`].
+    /// Get the view number associated with a given [`HotStuffMessage`].
     pub fn view(&self) -> ViewNumber {
         match self {
             HotStuffMessage::Proposal(Proposal { view, .. }) => *view,
@@ -118,8 +102,8 @@ impl Into<ProgressMessage> for HotStuffMessage {
     }
 }
 
-/// Broadcasted by the leader of a given view, who proposes to extend the blockchain by inserting a
-/// block contained in the proposal.
+/// Message broadcasted by a leader in `view`, who proposes it to extend the block tree identified by
+/// `chain_id` by inserting `block`.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
     pub chain_id: ChainID,
@@ -127,8 +111,9 @@ pub struct Proposal {
     pub block: Block,
 }
 
-/// Broadcasted by the leader of a given view, who nudges other validators to participate in a next
-/// voting phase for a block with a given quorum certificate.
+/// Message broadcasted by a leader in `view` to "nudge" other validators to participate in the voting
+/// phase after `justify.phase` in order to make progress in committing a **validator-set-updating**
+/// block in the block tree identified by `chain_id`.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     pub chain_id: ChainID,
@@ -156,8 +141,8 @@ impl Nudge {
     }
 }
 
-/// Sent by a validator to the leader of a next view to vote for a given proposal or nudge, contains a
-/// cryptographic signature over the information passed through a vote.
+/// Message sent by a validator to [a leader of `view + 1`](super::voting::vote_recipient) to vote for
+/// a [`Proposal`] or [`Nudge`]. 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
     pub chain_id: ChainID,
@@ -202,8 +187,20 @@ impl SignedMessage for Vote {
     }
 }
 
-/// Sent by a replica to the next leader on view timeout, serves to update the next leader on the
-/// highestQC that replicas know of.
+/// Message sent by a replica to the next leader on view timeout to update the next leader about the
+/// highest QC that replicas know of.
+/// 
+/// ## `NewView` and view synchronization
+///
+/// In the original HotStuff protocol, the leader of the next view keeps track of the number of
+/// `NewView` messages collected in the current view with the aim of advancing to the next view once a
+/// quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
+/// view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
+/// not come with a "fully-featured" BFT view synchronization mechanism.
+///
+/// HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
+/// form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
+/// unnecessary.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
     pub chain_id: ChainID,
