@@ -51,11 +51,18 @@ pub(crate) fn is_proposer(
 
 /// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`, given the
 /// current `validator_set_state`.
-///
-/// Usually, the recipient of a vote is the leader of the committed validator set for the subsequent
-/// view. However, during the validator set update period the leader of the previous validator set
-/// for the next view is tasked with collecting all kinds of votes other than decide-phase votes, which
-/// are addressed to the next leader of the committed validator set.
+/// 
+/// ## Rules
+/// 
+/// Which replica should be the recipient of `vote` depends on whether the latest validator set update
+/// has been decided:
+/// - If it **has** been decided, then the recipient should be the leader of `vote.view + 1` in the
+///   **committed** validator set.
+/// - If it **has not** been decided:
+///     - ...and if `vote.phase` is `Generic`, `Prepare`, `Precommit`, or `Commit`, then the recipient should
+///       be the leader of `vote.view + 1` in the **previous** validator set.
+///     - ...and if `vote.phase` is `Decide`, then the recipient should be the leader of `vote.view + 1` in
+///       the **committed** validator set.
 pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
     if validator_set_state.update_decided() {
         select_leader(vote.view + 1, validator_set_state.committed_validator_set())
@@ -83,17 +90,12 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
 /// Whether or not `replica`'s vote can become part of QCs that directly extend `justify` depends on
 /// whether or not the latest validator set update has been decided:
 /// ([`validator_set_state.update_decided()`](ValidatorSetState::update_decided)):
-/// 1. If it **has** been decided, then `replica` is allowed to vote only if it is in the committed
+/// - If it **has** been decided, then `replica` is allowed to vote only if it is in the **committed**
 ///    validator set.
-/// 2. If it **has not** been decided, then `replica` is allowed to vote if:
-///     1. `justify.phase` is `Commit`, and `replica` is in the committed validator set.
-///     2. `justify.phase` is `Generic`, `Prepare`, `Precommit`, or `Decide`, and `replica` is in the previous
+/// - If it **has not** been decided, then `replica` is allowed to vote only if:
+///     - `justify.phase` is `Commit`, and `replica` is in the **committed** validator set.
+///     - `justify.phase` is `Generic`, `Prepare`, `Precommit`, or `Decide`, and `replica` is in the previous
 ///       validator set.
-///
-/// `replica` must be in the committed validator set in case 2.1 since `justify.phase` is `Commit` only
-/// if a `Decide` QC is to be formed in this view, and `Decide` QCs must contain votes from the next
-/// validator set, while case 2.2 keeps validators in the previous validator set "active" until a
-/// validator set update has been decided.
 ///
 /// ## Preconditions
 ///
@@ -127,8 +129,8 @@ pub(crate) fn is_voter(
 /// current `validator_set_state`.
 ///
 /// An active validator can:
-/// 1. Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
-/// 2. Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
+/// - Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
+/// - Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
 ///    [advance view messages](crate::pacemaker::messages::AdvanceView).
 ///
 /// In general, members of the committed validator set are always active, but during the validator
