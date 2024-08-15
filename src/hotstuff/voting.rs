@@ -32,11 +32,13 @@ use crate::hotstuff::types::{Phase, QuorumCertificate};
 use crate::pacemaker::protocol::select_leader;
 use crate::types::{basic::ViewNumber, validators::ValidatorSetState};
 
-/// Check whether the `validator` with the given `VerifyingKey` is allowed to act as the proposer
-/// for a given view.
+/// Check whether `validator` is allowed to act as a proposer in the given `view`, given the current
+/// `validator_set_state`.
 ///
-/// Usually, the proposer is the leader of the committed validator set. However, during the validator
-/// set update period the leader of the previous validator set can also act as the proposer.
+/// `validator` is a proposer in two situations:
+/// 1. `validator` is the leader of the current view in the **committed** validator set, or
+/// 2. The latest validator set update is not decided yet, and `validator` is the leader of the current
+///    view in the **previous** validator set.
 pub(crate) fn is_proposer(
     validator: &VerifyingKey,
     view: ViewNumber,
