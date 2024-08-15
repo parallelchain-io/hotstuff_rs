@@ -49,7 +49,8 @@ pub(crate) fn is_proposer(
             && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
-/// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`.
+/// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`, given the
+/// current `validator_set_state`.
 ///
 /// Usually, the recipient of a vote is the leader of the committed validator set for the subsequent
 /// view. However, during the validator set update period the leader of the previous validator set
@@ -70,15 +71,20 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
     }
 }
 
-/// Check whether the `replica` with the given `VerifyingKey` is allowed to vote for a nudge or proposal
-/// with the given `justify`, given the current `validator_set_state`.
+/// Check whether `replica`'s votes can become part of quorum certificates that directly extend `justify`,
+/// given the current `validator_set_update`.
+///
+/// If `replica`'s votes cannot become part of QCs that directly extend `justify`, then it is fruitless
+/// to vote for the `Proposal` or `Nudge` containing `justify`, since the next leader will ignore the
+/// replica's votes anyway.
 ///
 /// ## Rules
 ///
-/// Whether or not `replica` is allowed to vote depends on whether or not the latest validator set
-/// update has been decided:
+/// Whether or not `replica`'s vote can become part of QCs that directly extend `justify` depends on
+/// whether or not the latest validator set update has been decided:
+/// ([`validator_set_state.update_decided()`](ValidatorSetState::update_decided)):
 /// 1. If it **has** been decided, then `replica` is allowed to vote only if it is in the committed
-///   validator set.
+///    validator set.
 /// 2. If it **has not** been decided, then `replica` is allowed to vote if:
 ///     1. `justify.phase` is `Commit`, and `replica` is in the committed validator set.
 ///     2. `justify.phase` is `Generic`, `Prepare`, `Precommit`, or `Decide`, and `replica` is in the previous
@@ -88,7 +94,7 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
 /// if a `Decide` QC is to be formed in this view, and `Decide` QCs must contain votes from the next
 /// validator set, while case 2.2 keeps validators in the previous validator set "active" until a
 /// validator set update has been decided.
-///       
+///
 /// ## Preconditions
 ///
 /// `justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
