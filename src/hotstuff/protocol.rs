@@ -322,6 +322,10 @@ impl<N: Network> HotStuff<N> {
     }
 
     /// Process a newly received `proposal`.
+    ///
+    /// ## Preconditions
+    ///
+    /// `is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`
     fn on_receive_proposal<K: KVStore>(
         &mut self,
         proposal: Proposal,

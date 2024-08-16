@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Messages that are sent between replicas as part of the HotStuff subprotocol. 
+//! Messages that are sent between replicas as part of the HotStuff subprotocol.
 
 use std::mem;
 
@@ -16,7 +16,7 @@ use super::types::{Phase, QuorumCertificate};
 
 /// Messages that are sent between replicas as part of the HotStuff subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum HotStuffMessage { 
+pub enum HotStuffMessage {
     /// See [`Proposal`].
     Proposal(Proposal),
 
@@ -142,7 +142,7 @@ impl Nudge {
 }
 
 /// Message sent by a validator to [a leader of `view + 1`](super::voting::vote_recipient) to vote for
-/// a [`Proposal`] or [`Nudge`]. 
+/// a [`Proposal`] or [`Nudge`].
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Vote {
     pub chain_id: ChainID,
@@ -189,7 +189,7 @@ impl SignedMessage for Vote {
 
 /// Message sent by a replica to the next leader on view timeout to update the next leader about the
 /// highest QC that replicas know of.
-/// 
+///
 /// ## `NewView` and view synchronization
 ///
 /// In the original HotStuff protocol, the leader of the next view keeps track of the number of
