@@ -20,7 +20,7 @@ use crate::events::{
 };
 use crate::hotstuff::messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote};
 use crate::hotstuff::types::{Phase, VoteCollector};
-use crate::hotstuff::voting::{is_proposer, is_voter, leaders};
+use crate::hotstuff::voting::{is_proposer, is_voter, new_view_recipients};
 use crate::messages::SignedMessage;
 use crate::networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::pacemaker::protocol::ViewInfo;
@@ -135,7 +135,7 @@ impl<N: Network> HotStuff<N> {
             highest_qc: block_tree.highest_qc()?,
         };
 
-        match leaders(self.view_info.view + 1, &validator_set_state) {
+        match new_view_recipients(&new_view, &validator_set_state) {
             (committed_vs_leader, None) => self
                 .sender_handle
                 .send::<HotStuffMessage>(committed_vs_leader, new_view.clone().into()),

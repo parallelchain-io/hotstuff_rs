@@ -27,55 +27,33 @@
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::hotstuff::messages::Vote;
-use crate::hotstuff::types::{Phase, QuorumCertificate};
 use crate::pacemaker::protocol::select_leader;
 use crate::types::{basic::ViewNumber, validators::ValidatorSetState};
 
-/// Check whether `validator` is allowed to act as a proposer in the given `view`, given the current
-/// `validator_set_state`.
-///
-/// `validator` is a proposer in two situations:
-/// 1. `validator` is the leader of the current view in the **committed** validator set, or
-/// 2. The latest validator set update is not decided yet, and `validator` is the leader of the current
-///    view in the **previous** validator set.
-pub(crate) fn is_proposer(
-    validator: &VerifyingKey,
-    view: ViewNumber,
-    validator_set_state: &ValidatorSetState,
-) -> bool {
-    validator == &select_leader(view, validator_set_state.committed_validator_set())
-        || (!validator_set_state.update_decided()
-            && validator == &select_leader(view, validator_set_state.previous_validator_set()))
-}
+use super::messages::{NewView, Vote};
+use super::types::{Phase, QuorumCertificate};
 
-/// Get the `VerifyingKey` of the replica tasked with receiving and collecting a given `vote`, given the
+/// Check whether the `replica` with the specified `VerifyingKey` is an active validator, given the
 /// current `validator_set_state`.
 ///
-/// ## Rules
+/// An active validator can:
+/// - Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
+/// - Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
+///    [advance view messages](crate::pacemaker::messages::AdvanceView).
 ///
-/// Which replica should be the recipient of `vote` depends on whether the latest validator set update
-/// has been decided:
-/// - If it **has** been decided, then the recipient should be the leader of `vote.view + 1` in the
-///   **committed** validator set.
-/// - If it **has not** been decided:
-///     - ...and if `vote.phase` is `Generic`, `Prepare`, `Precommit`, or `Commit`, then the recipient should
-///       be the leader of `vote.view + 1` in the **previous** validator set.
-///     - ...and if `vote.phase` is `Decide`, then the recipient should be the leader of `vote.view + 1` in
-///       the **committed** validator set.
-pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
-    if validator_set_state.update_decided() {
-        select_leader(vote.view + 1, validator_set_state.committed_validator_set())
-    } else {
-        match vote.phase {
-            Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Commit => {
-                select_leader(vote.view + 1, validator_set_state.previous_validator_set())
-            }
-            Phase::Decide => {
-                select_leader(vote.view + 1, validator_set_state.committed_validator_set())
-            }
-        }
-    }
+/// In general, members of the committed validator set are always active, but during the validator
+/// set update period members of the previous validator set are active too.
+pub(crate) fn is_validator(
+    replica: &VerifyingKey,
+    validator_set_state: &ValidatorSetState,
+) -> bool {
+    validator_set_state
+        .committed_validator_set()
+        .contains(replica)
+        || (!validator_set_state.update_decided()
+            && validator_set_state
+                .previous_validator_set()
+                .contains(replica))
 }
 
 /// Check whether `replica`'s votes can become part of quorum certificates that directly extend `justify`,
@@ -125,30 +103,52 @@ pub(crate) fn is_voter(
     }
 }
 
-/// Check whether the `replica` with the specified `VerifyingKey` is an active validator, given the
-/// current `validator_set_state`.
+/// Check whether `validator` is allowed to act as a proposer in the given `view`, given the current
+/// `validator_set_state`.
 ///
-/// An active validator can:
-/// - Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
-/// - Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
-///    [advance view messages](crate::pacemaker::messages::AdvanceView).
-///
-/// In general, members of the committed validator set are always active, but during the validator
-/// set update period members of the previous validator set are active too.
-pub(crate) fn is_validator(
-    replica: &VerifyingKey,
+/// `validator` is a proposer in two situations:
+/// 1. `validator` is the leader of the current view in the **committed** validator set, or
+/// 2. The latest validator set update is not decided yet, and `validator` is the leader of the current
+///    view in the **previous** validator set.
+pub(crate) fn is_proposer(
+    validator: &VerifyingKey,
+    view: ViewNumber,
     validator_set_state: &ValidatorSetState,
 ) -> bool {
-    validator_set_state
-        .committed_validator_set()
-        .contains(replica)
+    validator == &select_leader(view, validator_set_state.committed_validator_set())
         || (!validator_set_state.update_decided()
-            && validator_set_state
-                .previous_validator_set()
-                .contains(replica))
+            && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
-/// Compute the leader(s) of a given `view` given the current `validator_set_state`.
+/// Identify the replica that should receive `vote`, given the current `validator_set_state`.
+///
+/// ## Rules
+///
+/// Which replica should be the recipient of `vote` depends on whether the latest validator set update
+/// has been decided:
+/// - If it **has** been decided, then the recipient should be the leader of `vote.view + 1` in the
+///   **committed** validator set.
+/// - If it **has not** been decided:
+///     - ...and if `vote.phase` is `Generic`, `Prepare`, `Precommit`, or `Commit`, then the recipient should
+///       be the leader of `vote.view + 1` in the **previous** validator set.
+///     - ...and if `vote.phase` is `Decide`, then the recipient should be the leader of `vote.view + 1` in
+///       the **committed** validator set.
+pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
+    if validator_set_state.update_decided() {
+        select_leader(vote.view + 1, validator_set_state.committed_validator_set())
+    } else {
+        match vote.phase {
+            Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Commit => {
+                select_leader(vote.view + 1, validator_set_state.previous_validator_set())
+            }
+            Phase::Decide => {
+                select_leader(vote.view + 1, validator_set_state.committed_validator_set())
+            }
+        }
+    }
+}
+
+/// Identify the replica(s) that should receive `new_view`, given the current `validator_set_state`.
 ///
 /// If the latest validator set update has been decided, then the view only has one leader (taken from
 /// the committed validator set), but if it hasn't, then the view will have two leaders (the one
@@ -157,20 +157,23 @@ pub(crate) fn is_validator(
 /// ## Return value
 ///
 /// Returns a pair containing the following items:
-/// 1. `VerifyingKey`: the leader in the committed validator set in the specified view.
-/// 2. `Option<VerifyingKey>`: the leader in the resigning validator set in the specified view (`None`
+/// 1. `VerifyingKey`: the leader in the committed validator set in `new_view.view + 1`.
+/// 2. `Option<VerifyingKey>`: the leader in the resigning validator set in `new_view.view + 1` (`None`
 ///     if the most recently initiated validator set update has been decided).
-pub(crate) fn leaders(
-    view: ViewNumber,
+pub(crate) fn new_view_recipients(
+    new_view: &NewView,
     validator_set_state: &ValidatorSetState,
 ) -> (VerifyingKey, Option<VerifyingKey>) {
     (
-        select_leader(view, validator_set_state.committed_validator_set()),
+        select_leader(
+            new_view.view + 1,
+            validator_set_state.committed_validator_set(),
+        ),
         if validator_set_state.update_decided() {
             None
         } else {
             Some(select_leader(
-                view,
+                new_view.view + 1,
                 validator_set_state.previous_validator_set(),
             ))
         },
