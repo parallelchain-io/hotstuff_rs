@@ -55,6 +55,25 @@
 //! de-activate themselves on seeing a DecideQC for the block. This guarantees the invariant that
 //! if a DecideQC exists, a quorum from the new validator set has committed the validator set update
 //! and is ready to make progress.
+//!
+//! ## Validator Set Update protocol
+//!
+//! HotStuff-rs' modified HotStuff SMR adds an extra "decide" phase to the phased HotStuff protocol.
+//! This phase serves as the transition phase for the validator set update, and is associated with
+//! the following invariant which implies the liveness as well as immediacy of a validator set update:
+//!
+//! > "If there exists a valid decideQC for a validator-set-updating block, then a quorum from the new
+//! > validator set has committed the block together with the validator-set-update, and hence is ready
+//! > to act as the newly committed validator set"
+//!
+//! Concretely, suppose B is a block that updates the validator set from vs to vs'. Once a commitQC
+//! for B is seen, vs' becomes the committed validator set, and vs is stored as the previous validator
+//! set, with the update being marked as incomplete. While the update is incomplete, vs may still be
+//! active: it is allowed to re-broadcast the proposal for B or nudges for B. This is to account for the
+//! possibility that due to asynchrony or byzantine behaviour not enough replicas may have received the
+//! commitQC, and hence progressing to a succesful "decide" phase is not possible without such
+//! re-broadcast. Once a valid decideQC signed by a quorum of validators from vs' is seen, the update is
+//! marked as complete and vs becomes inactive.
 
 pub mod messages;
 
@@ -62,4 +81,4 @@ pub mod types;
 
 pub(crate) mod protocol;
 
-pub(crate) mod voting;
+pub(crate) mod roles;

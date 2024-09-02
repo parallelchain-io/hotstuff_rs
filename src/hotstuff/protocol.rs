@@ -19,8 +19,8 @@ use crate::events::{
     VoteEvent,
 };
 use crate::hotstuff::messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote};
+use crate::hotstuff::roles::{is_proposer, is_voter, new_view_recipients};
 use crate::hotstuff::types::{Phase, VoteCollector};
-use crate::hotstuff::voting::{is_proposer, is_voter, new_view_recipients};
 use crate::messages::SignedMessage;
 use crate::networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
 use crate::pacemaker::protocol::ViewInfo;
@@ -33,7 +33,7 @@ use crate::types::collectors::{Certificate, Collectors};
 use crate::types::validators::ValidatorSetState;
 use crate::types::{basic::ChainID, keypair::Keypair};
 
-use super::voting::vote_recipient;
+use super::roles::vote_recipient;
 
 /// A participant in the HotStuff subprotocol.
 ///
@@ -325,7 +325,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// ## Preconditions
     ///
-    /// `is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`
+    /// [`is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`](is_proposer).
     fn on_receive_proposal<K: KVStore>(
         &mut self,
         proposal: Proposal,
@@ -447,6 +447,10 @@ impl<N: Network> HotStuff<N> {
     }
 
     /// Process the received nudge.
+    ///
+    /// ## Preconditions
+    ///
+    /// [`is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`](is_proposer).
     fn on_receive_nudge<K: KVStore>(
         &mut self,
         nudge: Nudge,

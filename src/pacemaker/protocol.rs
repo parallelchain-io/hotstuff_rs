@@ -51,7 +51,7 @@ use crate::events::{
     AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
     TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
 };
-use crate::hotstuff::voting::is_validator;
+use crate::hotstuff::roles::is_validator;
 use crate::messages::{Message, SignedMessage};
 use crate::networking::{Network, SenderHandle};
 use crate::pacemaker::messages::ProgressCertificate;
