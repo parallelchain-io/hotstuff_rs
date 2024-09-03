@@ -29,7 +29,7 @@ use crate::state::kv_store::KVStore;
 use crate::state::safety::{repropose_block, safe_block, safe_nudge, safe_qc};
 use crate::types::basic::BlockHeight;
 use crate::types::block::Block;
-use crate::types::collectors::{Certificate, Collectors};
+use crate::types::collectors::{ActiveCollectors, Certificate};
 use crate::types::validators::ValidatorSetState;
 use crate::types::{basic::ChainID, keypair::Keypair};
 
@@ -60,7 +60,7 @@ pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     view_info: ViewInfo,
     proposal_status: ProposalStatus,
-    vote_collectors: Collectors<VoteCollector>,
+    vote_collectors: ActiveCollectors<VoteCollector>,
     sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     event_publisher: Option<Sender<Event>>,
@@ -76,7 +76,7 @@ impl<N: Network> HotStuff<N> {
         init_validator_set_state: ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let vote_collectors = <Collectors<VoteCollector>>::new(
+        let vote_collectors = <ActiveCollectors<VoteCollector>>::new(
             config.chain_id,
             view_info.view,
             &init_validator_set_state,
@@ -157,7 +157,7 @@ impl<N: Network> HotStuff<N> {
         //    votes for the new view.
         self.view_info = new_view_info;
         self.proposal_status = ProposalStatus::WaitingForProposal;
-        self.vote_collectors = <Collectors<VoteCollector>>::new(
+        self.vote_collectors = <ActiveCollectors<VoteCollector>>::new(
             self.config.chain_id,
             self.view_info.view,
             &validator_set_state,

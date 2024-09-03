@@ -161,7 +161,7 @@ pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetStat
 
 /// Identify the leader(s) that `new_view` should be sent to, given the current `validator_set_state`.
 ///
-/// ## Logic
+/// ## `new_view_recipients` Logic
 ///
 /// Upon exiting a view, a replica should send a `new_view` message to the leader of `new_view.view + 1`
 /// in the committed validator set (CVS), *and*, if `!validator_set_state.update_decided` (not decided),

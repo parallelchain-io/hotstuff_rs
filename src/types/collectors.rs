@@ -85,16 +85,23 @@ pub(crate) trait Collector: Clone {
     fn collect(&mut self, signer: &VerifyingKey, message: Self::S) -> Option<Self::C>;
 }
 
-/// Combines the collectors for the two potentially active validator sets:
-/// 1. The committed validator set,
-/// 2. The previous validator set (only during the validator set update period).
-pub(crate) struct Collectors<CL: Collector> {
+/// A struct that combines [`Collector`]s for the two validator sets that could be considered "active"
+/// at any given [`ValidatorSetState`] (the committed validator set and the previous validator set) and
+/// wraps interactions with them behind a single interface.
+///
+/// ## Usage
+///
+/// Use [`new`](Self::new) to create a `ActiveCollectors` for a specific `ChainID`, `View`, and the
+/// current `ValidatorSetState`. Then, [`collect`](Self::collect) on it to collect any `SignedMessage`s
+/// that arrive. Call [`update_validator_sets`](Self::update_validator_sets) whenever the current
+/// `ValidatorSetState` changes.
+pub(crate) struct ActiveCollectors<CL: Collector> {
     committed_validator_set_collector: CL,
     prev_validator_set_collector: Option<CL>,
 }
 
-impl<CL: Collector> Collectors<CL> {
-    /// Create fresh collectors for given view, chain id, and validator set state.
+impl<CL: Collector> ActiveCollectors<CL> {
+    /// Create `ActiveCollectors` for `chain_id`, `view`, and `validator_set_state`.
     pub(crate) fn new(
         chain_id: ChainID,
         view: ViewNumber,
@@ -118,9 +125,26 @@ impl<CL: Collector> Collectors<CL> {
         }
     }
 
-    /// Checks if the collectors should be updated given possible updates to the
-    /// [validator set state](ValidatorSetState), and if so it updates the collectors to match the new
-    /// validator set state. Returns whether the collectors have been updated.
+    /// Collect `message` with the appropriate collector in this `ActiveCollectors`.
+    pub(crate) fn collect(&mut self, signer: &VerifyingKey, message: CL::S) -> Option<CL::C> {
+        if let Some(certificate) = self
+            .committed_validator_set_collector
+            .collect(signer, message.clone())
+        {
+            return Some(certificate);
+        } else if let Some(ref mut collector) = self.prev_validator_set_collector {
+            if let Some(certificate) = collector.collect(signer, message) {
+                return Some(certificate);
+            }
+        }
+        None
+    }
+
+    /// Inform this `ActiveCollectors` of the latest current `validator_set_state`.  
+    ///
+    /// If `validator_set_state` is different from the latest `ValidatorSetState` known by the
+    /// `ActiveCollectors`, the collectors will be updated and this function will return `true`. Otherwise
+    /// this function returns `false`.
     pub(crate) fn update_validator_sets(
         &mut self,
         validator_set_state: &ValidatorSetState,
@@ -170,20 +194,5 @@ impl<CL: Collector> Collectors<CL> {
         validator_set_update_period_started
             || committed_validator_set_was_updated
             || validator_set_update_period_ended
-    }
-
-    /// Collects the message with the appropriate collector.
-    pub(crate) fn collect(&mut self, signer: &VerifyingKey, message: CL::S) -> Option<CL::C> {
-        if let Some(certificate) = self
-            .committed_validator_set_collector
-            .collect(signer, message.clone())
-        {
-            return Some(certificate);
-        } else if let Some(ref mut collector) = self.prev_validator_set_collector {
-            if let Some(certificate) = collector.collect(signer, message) {
-                return Some(certificate);
-            }
-        }
-        None
     }
 }

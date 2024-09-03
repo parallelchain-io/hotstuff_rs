@@ -61,7 +61,7 @@ use crate::state::block_tree::{BlockTree, BlockTreeError};
 use crate::state::kv_store::KVStore;
 use crate::state::write_batch::BlockTreeWriteBatch;
 use crate::types::basic::EpochLength;
-use crate::types::collectors::{Certificate, Collectors};
+use crate::types::collectors::{ActiveCollectors, Certificate};
 use crate::types::validators::{ValidatorSet, ValidatorSetState};
 use crate::types::{
     basic::{ChainID, ViewNumber},
@@ -475,7 +475,7 @@ impl<N: Network> Pacemaker<N> {
         );
 
         // Update the timeout vote collectors.
-        self.state.timeout_vote_collectors = <Collectors<TimeoutVoteCollector>>::new(
+        self.state.timeout_vote_collectors = <ActiveCollectors<TimeoutVoteCollector>>::new(
             self.config.chain_id,
             next_view,
             validator_set_state,
@@ -527,7 +527,7 @@ pub(crate) struct PacemakerConfiguration {
 /// (if any), and the [timeout votes][TimeoutVote] collected for the current view.
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
-    timeout_vote_collectors: Collectors<TimeoutVoteCollector>,
+    timeout_vote_collectors: ActiveCollectors<TimeoutVoteCollector>,
 
     // The view in which this replica last broadcasted an Advance View message.
     last_advance_view: Option<ViewNumber>,
@@ -543,7 +543,7 @@ impl PacemakerState {
     ) -> Self {
         Self {
             timeouts: Self::initial_timeouts(init_view, config),
-            timeout_vote_collectors: <Collectors<TimeoutVoteCollector>>::new(
+            timeout_vote_collectors: <ActiveCollectors<TimeoutVoteCollector>>::new(
                 config.chain_id,
                 init_view,
                 validator_set_state,

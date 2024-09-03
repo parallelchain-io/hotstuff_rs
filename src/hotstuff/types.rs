@@ -286,19 +286,19 @@ impl Collector for VoteCollector {
         self.chain_id
     }
 
-    fn validator_set(&self) -> &ValidatorSet {
-        &self.validator_set
-    }
-
     fn view(&self) -> ViewNumber {
         self.view
     }
 
-    /// Add a `vote` to a signature set for the specified view, block, and phase. Returns a Quorum
-    /// Certificate if adding this vote allows for one to be created.
+    fn validator_set(&self) -> &ValidatorSet {
+        &self.validator_set
+    }
+
+    /// Collect a `vote` using this collector. Return a Quorum Certificate if collecting this vote allows
+    /// for one to be created.
     ///
-    /// If the vote is not signed correctly, or doesn't match the collector's view, or the signer is not
-    /// part of its validator set, then this function is a no-op.
+    /// If the vote is not signed correctly, not signed by `signer`, or has a `chain_id` or `view` that does
+    /// not match this `VoteCollector`'s `chain_id` or `view`, then this function is a `no-op`.
     ///
     /// ## Preconditions
     ///
