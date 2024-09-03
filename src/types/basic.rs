@@ -225,9 +225,10 @@ impl SignatureBytes {
 }
 
 /// Set of signatures, represented as a vector with the size of a given validator set.
+///
 /// The value at a particular position is either:
-/// 1. None: if the a valid signature from the validator at the given position has not been obtained, or
-/// 2. Some(signature_bytes): if signature_bytes has been obtained from the validator at the given position.
+/// 1. `None`: if the a valid signature from the validator at the given position has not been obtained, or
+/// 2. `Some(signature_bytes)`: if signature_bytes has been obtained from the validator at the given position.
 #[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
 pub struct SignatureSet(Vec<Option<SignatureBytes>>);
 

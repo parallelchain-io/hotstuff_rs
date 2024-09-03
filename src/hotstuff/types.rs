@@ -241,13 +241,31 @@ impl Phase {
     }
 }
 
-/// Serves to incrementally form a [`QuorumCertificate`] by keeping track of votes for the same chain id,
-/// view, block, and phase by replicas from a given [validator set](ValidatorSet).
+/// A struct that incrementally forms [`QuorumCertificate`]s by combining [`Vote`]s into [`SignatureSet`]s.
+///
+/// ## Usage
+///
+/// Every `VoteCollector` is created around a fixed `(ChainID, ViewNumber, ValidatorSet)` triple using
+/// [`new`](Self::new). This triple is constant through the lifetime of the `VoteCollector`.
+///
+/// The user can then hold on to the `VoteCollector`, calling [`collect`](Self::collect) every time it
+/// receives a `Vote`. If the vote's `chain_id` and `view` matches the vote collector's `chain_id` and
+/// `view`, and in addition its `signature` comes from a validator in the collector's `validator_set`,
+/// the collector will store the vote's `signature` in its internal buffer of signature sets.
+///
+/// If after storing `signature` in the internal buffer it is found that a
+/// [`quorum`](Certificate::quorum) of votes have been collected for a particular Block Hash and `Phase`
+/// pair, `collect` will form a `QuorumCertificate` using the collected votes and return it from `collect`.
 #[derive(Clone)]
 pub(crate) struct VoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
+
+    /// For each key-value pair in this HashMap:
+    /// - The key is a Block Hash followed by a `Phase`.
+    /// - The value is a `SignatureSet` containing signatures over `(self.chain_id, self.view, key.0, key.1)`
+    ///   by a subset of validators in `self.validator_set`, followed by the `TotalPower` of the subset.
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 

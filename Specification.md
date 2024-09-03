@@ -6,9 +6,11 @@
 
 #### Locked QC
 
+TODO Wednesday.
+
 #### Highest QC
 
-All other fields TODO.
+TODO Wednesday.
 
 #### Validator Sets State
 
@@ -16,23 +18,39 @@ All other fields TODO.
 
 #### Insert
 
+TODO Wednesday.
+
 #### Update
+
+TODO Wednesday.
 
 ### Safety predicates
 
 #### Safe QC
 
+TODO Tuesday.
+
 #### Safe Block
+
+TODO Tuesday.
 
 #### Safe Nudge
 
+TODO Tuesday.
+
 #### Repropose Block
+
+TODO Wednesday.
 
 ### Update predicates
 
 #### QC to Lock 
 
+TODO Tuesday.
+
 #### Block to Commit
+
+TODO Tuesday.
 
 ## HotStuff
 
@@ -40,9 +58,13 @@ All other fields TODO.
 
 #### Quorum Certificate
 
+TODO Wednesday.
+
 ### State
 
 #### Vote Collector
+
+TODO Tuesday.
 
 #### Keypair
 
@@ -229,14 +251,26 @@ fn on_receive_nudge(nudge: Nudge, origin: VerifyingKey) {
 
 #### On Receive Vote
 
+TODO Tuesday.
+
 #### On Receive New View
+
+TODO Tuesday.
 
 ### Role predicates
 
 #### Is Proposer
 
-#### Is Validator
+Code and Specification: `hotstuff_rs::hotstuff::roles::is_proposer`
+
+#### Is Voter
+
+Code and Specification: `hotstuff_rs::hotstuff::roles::is_voter`
 
 #### Vote Recipient
 
-#### New View Recipient
+Code and Specification: `hotstuff_rs::hotstuff::roles::vote_recipient`
+
+#### New View Recipients
+
+Code and Specification: `hotstuff_rs::hotstuff::roles::new_view_recipients`
