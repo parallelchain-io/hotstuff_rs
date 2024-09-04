@@ -152,31 +152,46 @@ impl<CL: Collector> ActiveCollectors<CL> {
         let chain_id = self.committed_validator_set_collector.chain_id();
         let view = self.committed_validator_set_collector.view();
 
+        // If the PVS collector is currently `None`, but now that latest validator set update is not decided,
+        // this implies that between the last `update_validator_sets` call and this call, the validator set
+        // update period **started**.
         let validator_set_update_period_started =
-            self.prev_validator_set_collector.is_none() & !validator_set_state.update_decided();
+            self.prev_validator_set_collector.is_none() && !validator_set_state.update_decided();
 
+        // If the current committed validator set is not the same as the latest committed validator set, then
+        // the committed validator set was updated.
         let committed_validator_set_was_updated =
             self.committed_validator_set_collector.validator_set()
                 != validator_set_state.committed_validator_set();
 
+        // If the PVS collector is currently `Some`, but now the latest validator set update is decided, this
+        // implies that between the last `update_validator_sets` call and this call, the validator set update
+        // period **ended**.
         let validator_set_update_period_ended =
             self.prev_validator_set_collector.is_some() && validator_set_state.update_decided();
 
-        // If a validator set update has been initiated but no vote collector has been assigned for
-        // the previous validator set. In this case, the previous validator set must be equal to the
-        // committed validator set stored by the vote collectors.
+        // If a validator set update has been initiated but no vote collector has been assigned for the
+        // previous validator set, the latest previous validator set must be equal to the
+        // current committed validator set...
         if validator_set_update_period_started {
             if validator_set_state.previous_validator_set()
                 == self.committed_validator_set_collector.validator_set()
             {
+                // ...so we replace the current previous validator set with the current committed validator set.
                 self.prev_validator_set_collector =
                     Some(self.committed_validator_set_collector.clone())
             } else {
-                unreachable!() // Safety: as explained above.
+                unreachable!(
+                    "if the validator set update period started, then the latest previous validator set should be equal
+                    to committed validator set currently known by the `ActiveCollectors`. The fact that this invariant
+                    is broken suggests that an internal call to `update_validator_sets` was 'skipped' and therefore the
+                    `ActiveCollectors` missed a validator set update. This is a library bug"
+                )
             }
         }
 
-        // If the committed validator set has been updated.
+        // If the latest committed validator set was updated, create a new collector and set it as the CVS
+        // collector.
         if committed_validator_set_was_updated {
             self.committed_validator_set_collector = CL::new(
                 chain_id,
@@ -185,8 +200,8 @@ impl<CL: Collector> ActiveCollectors<CL> {
             )
         }
 
-        // If the validator set update has been marked as decided. In this case, a collector
-        // for the previous validator set is not required anymore.
+        // If the validator set update period has ended, set the PVS collector to `None`. It is not needed
+        // anymore.
         if validator_set_update_period_ended {
             self.prev_validator_set_collector = None
         }
