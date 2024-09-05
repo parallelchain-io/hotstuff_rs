@@ -92,10 +92,10 @@ fn enter_view(view: ViewNum) {
     }
 
     // 2. Update the HotStuff subprotocol's copy of the current view.
-    let current_view = view;
+    current_view = view;
 
-    // 3. Tell the vote collector to start collecting votes for the newly entered view.
-    vote_collector.update_current_view(current_view);
+    // 3. Replace the existing vote collectors with new ones for the current view.
+    vote_collectors = VoteCollector::new(chain_id, current_view, block_tree.validator_sets_state());
 
     // 4. If I am a proposer for the newly-entered view, then broadcast a `Proposal` or a `Nudge`.
     if is_proposer(
@@ -168,9 +168,9 @@ fn on_receive_proposal(proposal: Proposal, origin: VerifyingKey) {
                 // 5. Update the block tree using `proposal.block.justify`.
                 block_tree.update(&proposal.block.justify);
 
-                // 6. Tell the vote collector to start collecting votes according to the new validator sets state (which
+                // 6. Tell the vote collectors to start collecting votes according to the new validator sets state (which
                 // may or may not have been changed in the block tree update in the previous step).
-                vote_collector.update_validator_sets(block_tree.validator_sets_state());
+                vote_collectors.update_validator_sets(block_tree.validator_sets_state());
 
                 // 7. If the local replica's votes can become part of QCs that directly extend `proposal.block.justify`,
                 //    vote for `proposal`.
@@ -216,8 +216,8 @@ fn on_receive_nudge(nudge: Nudge, origin: VerifyingKey) {
             // 3. Update the block tree using `nudge.justify`.
             block_tree.update(&nudge.justify);
 
-            // 4. Tell the vote collector to start collecting votes according to the new validator sets state (which
-            //    may or may not have been changed in the block tree update).
+            // 4. Tell the vote collectors to start collecting votes according to the new validator sets state (which
+            // may or may not have been changed in the block tree update in the previous step).
             vote_collectors.update_validator_sets(block_tree.validator_sets_state());
 
             // 5. If the local replica's votes can become part of QCs that directly extend `nudge.justify`, vote for
@@ -251,11 +251,39 @@ fn on_receive_nudge(nudge: Nudge, origin: VerifyingKey) {
 
 #### On Receive Vote
 
-TODO Tuesday.
+```rust
+fn on_receive_vote(vote: Vote, origin: VerifyingKey) {
+    // 1. Confirm that `vote` was signed by `origin`.
+    if vote.is_correct(origin) {
+
+        // 2. Collect `vote` using the vote collectors.
+        let new_qc = vote_collectors.collect(vote, origin);
+
+        // 3. If sufficient votes were collected to form a `new_qc`, use `new_qc` to update the block tree. 
+        if let Some(new_qc) = new_qc {
+            // 3.1. Confirm that `new_qc` is safe according to the rules of the block tree. 
+            // 
+            // Note (TODO): I can think of at least three ways this check can fail:
+            // 1. A quorum of replicas are byzantine and form a QC with an illegal phase, that is:
+            //     1. A Generic QC that justifies a VSU-block.
+            //     2. A non-Generic QC that justifies a non-VSU-block.
+            // 2. We forgot to create a new vote collector with a higher view in `enter_view` (library bug). 
+            // 3. We collected a QC for a block that isn't in the block tree yet (block sync may help).
+            if block_tree.safe_qc(new_qc) {
+
+                // 3.2. Update the block tree using `new_qc`.
+                block_tree.update(new_qc);
+
+                // 3.3. Tell the vote collectors to start collecting votes according to the new validator sets state (which
+                // may or may not have been changed in the block tree update in the previous step). 
+                vote_collectors.update_validator_sets(block_tree.validator_set_state());
+            }
+        }
+    }
+}
+```
 
 #### On Receive New View
-
-TODO Tuesday.
 
 ### Role predicates
 

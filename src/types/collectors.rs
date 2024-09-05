@@ -95,6 +95,9 @@ pub(crate) trait Collector: Clone {
 /// current `ValidatorSetState`. Then, [`collect`](Self::collect) on it to collect any `SignedMessage`s
 /// that arrive. Call [`update_validator_sets`](Self::update_validator_sets) whenever the current
 /// `ValidatorSetState` changes.
+///
+/// When the current `View` changes, discard the `ActiveCollectors` and create a new one using the
+/// current view.
 pub(crate) struct ActiveCollectors<CL: Collector> {
     committed_validator_set_collector: CL,
     prev_validator_set_collector: Option<CL>,

@@ -136,7 +136,7 @@ pub(crate) fn safe_block<K: KVStore>(
 ///    block.
 /// 4. If `qc` is a Prepare, Precommit, or Commit QC, the block it justifies has pending validator state
 ///    updates.
-/// 5. If `qc` is a generic qc, the block it justifies *does not* have pending validator set updates.
+/// 5. If `qc` is a Generic qc, the block it justifies *does not* have pending validator set updates.
 ///
 /// ## Precondition
 ///
