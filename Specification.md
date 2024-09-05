@@ -285,6 +285,21 @@ fn on_receive_vote(vote: Vote, origin: VerifyingKey) {
 
 #### On Receive New View
 
+```rust
+fn on_receive_new_view(new_view: NewView, origin: VerifyingKey) {
+    // 1. Confirm that `new_qc` is safe according to the rules of the block tree. 
+    if block_tree.safe_qc(&new_view.highest_qc) {
+
+        // 2. Update the block tree using `new_view.highest_qc`.
+        block_tree.update(new_view.highest_qc);
+
+        // 3. Tell the vote collectors to start collecting votes according to the new validator sets state (which
+        // may or may not have been changed in the block tree update in the previous step). 
+        vote_collectors.update_validator_sets(block_tree.validator_set_state());
+    }
+}
+```
+
 ### Role predicates
 
 #### Is Proposer
