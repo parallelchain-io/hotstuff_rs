@@ -3,88 +3,62 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Rules and predicates that collectively guarantee the safety of HotStuff-rs SMR.
+//! Rules and predicates that collectively ensure that all state updates made to the block tree are
+//! safe.
 //!
-//! ## Safety and state updates
+//! ## Block Tree state updates
 //!
-//! In HotStuff-rs, the key events that can trigger state updates are:
-//! 1. Receiving a [`Proposal`](crate::hotstuff::messages::Proposal).
-//! 2. Receiving a [`Nudge`].
+//! A state machine replication algorithm like HotStuff-rs is considered "safe" if it is impossible for
+//! two replicas to commit conflicting state updates as long as less than a threshold of validators are
+//! Byzantine.
 //!
-//! A `Proposal` or `Nudge` is considered **safe** if it is safe for it to trigger state updates inside
-//! the [`BlockTree`]. This generally requires that the block or nudge is well-formed, and that the
-//! quorum certificate that it references is cryptographically correct and safe. In addition, since
-//! nudges implement a version of the "phased" HotStuff consensus for validator-set-updating blocks, a
-//! non-Decide-phase nudge is only safe if it is broadcasted in the next view relative to the view in
-//! which its justify is collected.
+//! The top-level state updates that a HotStuff-rs replica can perform are performed by the
+//! [top-level state updaters](BlockTree#impl-BlockTree<K>-1) category of methods defined in the
+//! `block_tree` module on the `BlockTree` struct.
 //!
-//! This module defines two primary sets of functions, each implementing a specific aspect of safety and
-//! state updates:
+//! The crate-public methods in this (`safety`) module are only relevant to the
+//! [`insert`](BlockTree::insert), [`update`](BlockTree::update) top-level state updaters. The remaining
+//! three state updaters have much simpler preconditions and perform much simpler state mutations, and
+//! thus do not need helper functions like those defined here.
 //!
-//! The crate-public functions that this module defines fall into two main categories:
-//! 1. [`safe_block`], [`safe_nudge`], and [`safe_qc`] checks **whether** a Block, Nudge, or QC is safe,
-//!    respectively. One extra function, [`repropose_block`], is related to `safe_nudge`.
-//! 2. [`qc_to_lock`], and [`block_to_commit`] determine **what** state updates should be made upon seeing
-//!    a safe Block or a safe Nudge.
+//! ## Two categories of methods
 //!
-//! ## Safe QC
+//! The crate-public methods defined in module `safety` fall into two categories. Each category of
+//! methods follow a consistent naming convention and play a distinct part in ensuring that all updates
+//! made to the block tree are safe. Simply put, the first category of methods check **whether** state
+//! updates can safely be triggered, while the second category of methods help determine **what** state
+//! updates should be triggered.
 //!
-//! A safe QC must match the Chain ID of the replica (to avoid having state updates triggered by a
-//! QC from another blockchain). It must also have an appropriate phase depending on whether the
-//! block it justifies has associated validator set updates or not, and it must be for a known
-//! block, i.e., a block that is already stored in the BlockTree.
+//! ### safe_{type}
 //!
-//! Most importantly, it must either:
-//! 1. Reference a block that extends the branch of the block referenced by the locked QC, or
-//! 2. Have a higher view than the locked QC.
+//! Methods: [`safe_qc`], [`safe_block`], [`safe_nudge`].
 //!
-//! The former condition guarantees safety in case a quorum of replicas is locked on a given block,
-//! while the latter ensures liveness in case the quorum has moved to a conflicting branch and
-//! there exists evidence for it. The evidence would be a newly received QC with a view higher than the
-//! view of the replica's locked QC.
+//! These methods check **whether** a `QuorumCertificate`, `Block`, or `Nudge` (respectively) can safely
+//! trigger state updates. Methods in this category are part of the preconditions of `insert` and `update`.
 //!
-//! ## Commit Rules
+//! Methods in this category check two kinds of properties to determine safety:
+//! 1. Internal properties: these properties are simple and can be checked without querying the block tree.
+//!    For example: checking in `safe_nudge` that `nudge.justify` is a `Prepare`, `Precommit`, or
+//!    `Commit` QC.
+//! 2. External properties: these properties are more complicated and checking them entail querying the
+//!    block tree. For example: checking in `safe_qc` that either: (i) `qc.view` is greater than
+//!    `block_tree.locked_qc()?.view`, or (ii). `qc.block` extends (directly or transitively) from
+//!    `block_tree.locked_qc()?.block`.
 //!
-//! To prevent different replicas from entering inconsistent states due to Byzantine leaders causing
-//! safety-threatening branch switches, the pipelined HotStuff protocol requires that a block must be
-//! followed by a "3-chain" in order to be committed. This means that the block must be followed by
-//! a child, a grandchild, and a great-grandchild block.
+//! ### {type}\_to\_{lock/commit}
 //!
-//! In addition, the three QCs contained in its child, grandchild, and great-grandchild blocks, serving
-//! as its "virtual" Prepare QC, Precommit QC, and Commit QC respectively, must have **consecutive
-//! views**. Note however that while consecutive views are required for a block to be safely committed,
-//! they are not required for a block to be inserted to the block tree, and therefore `safe_block` does
-//! not enforce it. Consecutive views are also not required for a block to be locked.
+//! Methods: [`qc_to_lock`], [`block_to_commit`].
 //!
-//! To obtain an equivalent guarantee for the phased HotStuff protocol for validator-set-updating
-//! blocks, we require that the Prepare QC, Precommit QC, and Commit QC for a validator-set-updating
-//! block received via nudges have consecutive views. If this flow is interrupted by a temporary loss of
-//! synchrony or a Byzantine leader, the validator-set-updating block has to be re-proposed, as
-//! specified in [`repropose_block`]. This rule is enforced through [`safe_nudge`]. Unlike block
-//! insertions, nudges cannot cause state updates unless they satisfy the consecutive views rule.
+//! These methods help determine **what** state updates should be triggered in `update` in response to
+//! obtaining a `QuorumCertificate`, whether through receiving a `Proposal`, `Nudge`, or `NewView`
+//! message, or by collecting enough `Vote`s. Methods in this category are called inside `update`.
 //!
-//! ## Locking Rules
+//! ### repropose_block
 //!
-//! Locking serves to guarantee the safety of commit. In SMR protocols that follow the lock-commit
-//! paradigm, a value has to be locked before it is committed. If a block is locked, then any new
-//! proposal or nudge must "extend" it unless there exists evidence that a quorum of replicas do not
-//! share this lock and have moved to an alternative branch. The idea is that even if only some replicas
-//! commit, the others hold a lock to the committed value and should eventually commit it.
-//!
-//! The locked value is essentially a block, but we consider any QC that references the block to be
-//! valid proxy for it, and hence store a locked QC instead. This enables keeping track of information on
-//! the view in which a quorum of replicas last voted for this block.
-//!
-//! In the pipelined HotStuff protocol, a block is locked if there is a 2-chain supporting it, i.e.,
-//! there is a QC for the block and a QC for its child, which serve as the block's prepare QC and
-//! precommit QC respectively. In such case it is the prepare QC that is locked.
-//!
-//! To adapt this rule to the phased HotStuff protocol for validator-set-updating blocks, we lock
-//! the block on seeing a nudge with a precommit QC for it - it is the precommit QC that becomes locked
-//! this time, as by the consecutive views requirement this is equivalent to locking the prepareQC.
-//! Since the block sync protocol does not involve sending nudges, we must also lock the decideQC when
-//! referenced by the block. This is to ensure that subsequently received blocks are not accepted if
-//! they conflict with it.
+//! This module also defines a method called [`repropose_block`]. This does not fit neatly into either
+//! of the above two categories in terms of name or function, but is closely related to `safe_nudge`
+//! in that it serves to help proposers choose a block to propose that satisfy the "consecutive views"
+//! property that `safe_nudge` checks.
 
 use crate::hotstuff::{
     messages::Nudge,
@@ -106,7 +80,7 @@ use super::{
 ///
 /// `safe_block` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&block.justify, block_tree, chain_id)`.
-/// 2. `block.qc` is either a generic qc or a decide qc.
+/// 2. `block.qc` is either a Generic QC or a Decide QC.
 ///
 /// ## Precondition
 ///
@@ -130,13 +104,13 @@ pub(crate) fn safe_block<K: KVStore>(
 /// ## Conditional checks
 ///
 /// `safe_qc` returns `true` in case all of the following predicates are `true`:
-/// 1. `qc.chain_id` either matches the chain ID of the replica, or `qc` is the genesis qc.
+/// 1. `qc.chain_id` either matches the Chain ID of the replica, or `qc` is the genesis qc.
 /// 2. Either `qc.block` is in the block tree, or `qc` is the Genesis QC.
 /// 3. Either `qc`'s view number is greater than the Locked QC's view, or its block extends from the locked
 ///    block.
 /// 4. If `qc` is a Prepare, Precommit, or Commit QC, the block it justifies has pending validator state
 ///    updates.
-/// 5. If `qc` is a Generic qc, the block it justifies *does not* have pending validator set updates.
+/// 5. If `qc` is a Generic QC, the block it justifies *does not* have pending validator set updates.
 ///
 /// ## Precondition
 ///
@@ -164,7 +138,7 @@ pub(crate) fn safe_qc<K: KVStore>(
 ///
 /// `safe_nudge` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
-/// 2. `nudge.justify` is a Prepare, Precommit, or Commit qc.
+/// 2. `nudge.justify` is a Prepare, Precommit, or Commit QC.
 /// 3. `nudge.chain_id` matches the Chain ID configured for the replica.
 /// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = cur_view - 1`.
 ///
@@ -195,6 +169,29 @@ pub fn safe_nudge<K: KVStore>(
 ///
 /// The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`]
 /// respectively.
+///
+/// ## Locking Rules
+///
+/// Locking serves to guarantee the safety of commit. In SMR protocols that follow the lock-commit
+/// paradigm, a value has to be locked before it is committed. If a block is locked, then any new
+/// proposal or nudge must "extend" it unless there exists evidence that a quorum of replicas do not
+/// share this lock and have moved to an alternative branch. The idea is that even if only some replicas
+/// commit, the others hold a lock to the committed value and should eventually commit it.
+///
+/// The locked value is essentially a block, but we consider any QC that references the block to be
+/// valid proxy for it, and hence store a locked QC instead. This enables keeping track of information on
+/// the view in which a quorum of replicas last voted for this block.
+///
+/// In the pipelined HotStuff protocol, a block is locked if there is a 2-chain supporting it, i.e.,
+/// there is a QC for the block and a QC for its child, which serve as the block's prepare QC and
+/// precommit QC respectively. In such case it is the prepare QC that is locked.
+///
+/// To adapt this rule to the phased HotStuff protocol for validator-set-updating blocks, we lock
+/// the block on seeing a nudge with a precommit QC for it - it is the precommit QC that becomes locked
+/// this time, as by the consecutive views requirement this is equivalent to locking the prepareQC.
+/// Since the block sync protocol does not involve sending nudges, we must also lock the decideQC when
+/// referenced by the block. This is to ensure that subsequently received blocks are not accepted if
+/// they conflict with it.
 ///
 /// ## Lower-level Locking Rules
 ///
@@ -258,7 +255,27 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 ///
 /// The block or nudge containing `justify` must satisfy [`safe_block`] or [`safe_nudge`] respectively.
 ///
-/// ## Lower-level Commit Rules
+/// ## Commit Rules
+///
+/// To prevent different replicas from entering inconsistent states due to Byzantine leaders causing
+/// safety-threatening branch switches, the pipelined HotStuff protocol requires that a block must be
+/// followed by a "3-chain" in order to be committed. This means that the block must be followed by
+/// a child, a grandchild, and a great-grandchild block.
+///
+/// In addition, the three QCs contained in its child, grandchild, and great-grandchild blocks, serving
+/// as its "virtual" Prepare QC, Precommit QC, and Commit QC respectively, must have **consecutive
+/// views**. Note however that while consecutive views are required for a block to be safely committed,
+/// they are not required for a block to be inserted to the block tree, and therefore `safe_block` does
+/// not enforce it. Consecutive views are also not required for a block to be locked.
+///
+/// To obtain an equivalent guarantee for the phased HotStuff protocol for validator-set-updating
+/// blocks, we require that the Prepare QC, Precommit QC, and Commit QC for a validator-set-updating
+/// block received via nudges have consecutive views. If this flow is interrupted by a temporary loss of
+/// synchrony or a Byzantine leader, the validator-set-updating block has to be re-proposed, as
+/// specified in [`repropose_block`]. This rule is enforced through [`safe_nudge`]. Unlike block
+/// insertions, nudges cannot cause state updates unless they satisfy the consecutive views rule.
+///
+/// ## Commit Rules
 ///
 /// This function implements the "high-level" [Commit Rules](super::safety#commit-rules) by evaluating
 /// the following "lower-level" Commit Rules:

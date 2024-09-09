@@ -121,7 +121,7 @@ use super::write_batch::{BlockTreeWriteBatch, KVSetError};
 /// into five categories, with methods in each separate category being defined in a separate `impl`
 /// block. These five categories are:
 /// 1. [Lifecycle methods](#impl-BlockTree<K>).
-/// 2. [Top-level mutators](#impl-BlockTree<K>-1).
+/// 2. [Top-level state updaters](#impl-BlockTree<K>-1).
 /// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTree<K>-2).
 /// 4. [Basic state getters](#impl-BlockTree<K>-3).
 /// 5. [Extra state getters](#impl-BlockTree<K>-4).
@@ -265,7 +265,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Top-level mutators.
+/// Top-level state updaters.
 ///
 /// These are the methods that mutate the block tree that are called directly by code in the
 /// subprotocols (i.e., [`hotstuff`](crate::hotstuff), [`block_sync`](crate::block_sync), and
@@ -274,6 +274,11 @@ impl<K: KVStore> BlockTree<K> {
 impl<K: KVStore> BlockTree<K> {
     /// Insert into the block tree a `block` that will cause the provided `app_state_updates` and
     /// `validator_set_updates` to be applied when committed.
+    ///
+    /// ## Relationship with `update`
+    ///
+    /// `insert` does not internally call [`update`](Self::update). Calling code is responsible for
+    /// calling `update` on `block.justify` after calling `insert`.
     ///
     /// ## Precondition
     ///

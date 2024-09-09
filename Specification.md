@@ -18,39 +18,43 @@ TODO Wednesday.
 
 #### Insert
 
-TODO Wednesday.
+TODO Monday.
 
 #### Update
 
-TODO Wednesday.
+TODO Monday.
 
 ### Safety predicates
 
+Documentation: `hotstuff_rs::state::safety`
+
 #### Safe QC
 
-TODO Tuesday.
+Code and documentation: `hotstuff_rs::state::safety::safe_qc`
 
 #### Safe Block
 
-TODO Tuesday.
+Code and documentation: `hotstuff_rs::state::safety::safe_block`
 
 #### Safe Nudge
 
-TODO Tuesday.
+Code and documentation: `hotstuff_rs::state::safety::safe_nudge`
 
 #### Repropose Block
 
-TODO Wednesday.
+Code and documentation: `hotstuff_rs::state::safety::repropose_block`
 
 ### Update predicates
 
+Documentation: `hotstuff_rs::state::safety`
+
 #### QC to Lock 
 
-TODO Tuesday.
+Code and documentation: `hotstuff_rs::state::safety::qc_to_lock`
 
 #### Block to Commit
 
-TODO Tuesday.
+Code and documentation: `hotstuff_rs::state::safety::block_to_commit`
 
 ## HotStuff
 
