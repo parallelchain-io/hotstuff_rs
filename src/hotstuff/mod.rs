@@ -1,7 +1,7 @@
 //! A version of the [HotStuff](https://arxiv.org/abs/1803.05069) protocol for Byzantine Fault Tolerant
 //! State Machine Replication, with adaptations designed to enable dynamically-changing validator sets.
 //!
-//! ## HotStuff for dynamic validator sets
+//! ## Operating modes
 //!
 //! The modified version of the HotStuff consensus protocol that HotStuff-rs implements dynamically
 //! switches between two operating modes:

@@ -14,31 +14,37 @@ TODO Wednesday.
 
 #### Validator Sets State
 
-### Mutators
+TODO Wednesday.
+
+### Updaters
 
 #### Insert
 
-TODO Monday.
+TODO Wednesday.
 
 #### Update
 
-TODO Monday.
+TODO Wednesday.
 
 ### Safety predicates
 
 Documentation: `hotstuff_rs::state::safety`
+TODO ("Locking and Committing" doc section): Tuesday.1.
 
 #### Safe QC
 
 Code and documentation: `hotstuff_rs::state::safety::safe_qc`
+TODO (documentation): Tuesday.4.
 
 #### Safe Block
 
 Code and documentation: `hotstuff_rs::state::safety::safe_block`
+TODO (documentation): Tuesday.5.
 
 #### Safe Nudge
 
 Code and documentation: `hotstuff_rs::state::safety::safe_nudge`
+TODO (documentation): Tuesday.6
 
 #### Repropose Block
 
@@ -51,10 +57,12 @@ Documentation: `hotstuff_rs::state::safety`
 #### QC to Lock 
 
 Code and documentation: `hotstuff_rs::state::safety::qc_to_lock`
+TODO (documentation): Tuesday.2.
 
 #### Block to Commit
 
 Code and documentation: `hotstuff_rs::state::safety::block_to_commit`
+TODO (documentation): Tuesday.3.
 
 ## HotStuff
 
@@ -68,7 +76,7 @@ TODO Wednesday.
 
 #### Vote Collector
 
-TODO Tuesday.
+TODO (documentation): Tuesday.7.
 
 #### Keypair
 
@@ -305,6 +313,8 @@ fn on_receive_new_view(new_view: NewView, origin: VerifyingKey) {
 ```
 
 ### Role predicates
+
+TODO: Wednesday.
 
 #### Is Proposer
 
