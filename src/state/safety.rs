@@ -173,13 +173,13 @@ use super::{
     kv_store::KVStore,
 };
 
-/// Check whether `block` can safely cause updates to the block tree.
+/// Check whether `block` can safely cause updates to `block_tree`, given the replica's `chain_id`.
 ///
 /// ## Conditional checks
 ///
 /// `safe_block` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&block.justify, block_tree, chain_id)`.
-/// 2. `block.qc` is either a Generic QC or a Decide QC.
+/// 2. `block.qc.phase` is either `Generic` or `Decide`.
 ///
 /// ## Precondition
 ///
@@ -196,20 +196,18 @@ pub(crate) fn safe_block<K: KVStore>(
     )
 }
 
-/// Check whether a QC can safely cause updates to the block tree, whether as part of a block through
-/// [`insert_block`](BlockTree::insert_block), or through being set as the Highest QC, or, if it is a
-/// Precommit or Commit QC, through being set as the Locked QC.
+/// Check whether `qc` can safely cause updates to `block_tree`, given the replica's `chain_id`.
 ///
 /// ## Conditional checks
 ///
 /// `safe_qc` returns `true` in case all of the following predicates are `true`:
-/// 1. `qc.chain_id` either matches the Chain ID of the replica, or `qc` is the genesis qc.
-/// 2. Either `qc.block` is in the block tree, or `qc` is the Genesis QC.
-/// 3. Either `qc`'s view number is greater than the Locked QC's view, or its block extends from the locked
+/// 1. Either `qc.chain_id` equals `chain_id`, or `qc` is the Genesis QC.
+/// 2. Either `block_tree` contains `qc.block`, or `qc` is the Genesis QC.
+/// 3. Either `qc.view` is greater than `block_tree`'s `locked_qc.view`, or `qc.block` extends from
+///    `locked_qc.block`.
+/// 4. If `qc.phase` is `Prepare`, `Precommit`, `Commit`, or `Decide`, `qc.block` is a validator set
+///    updating block. Else, if `qc.phase` is `Generic`, `qc.block` is not a validator set updating
 ///    block.
-/// 4. If `qc` is a Prepare, Precommit, or Commit QC, the block it justifies has pending validator state
-///    updates.
-/// 5. If `qc` is a Generic QC, the block it justifies *does not* have pending validator set updates.
 ///
 /// ## Precondition
 ///
@@ -226,27 +224,27 @@ pub(crate) fn safe_qc<K: KVStore>(
         /* 3 */ (qc.view > block_tree.locked_qc()?.view || extends_locked_qc_block(qc, block_tree)?) &&
         /* 4 */ (((qc.phase.is_prepare() || qc.phase.is_precommit() || qc.phase.is_commit() || qc.phase.is_decide()) &&
                    block_tree.validator_set_updates_status(&qc.block)?.contains_updates()) ||
-        /* 5 */ (qc.phase.is_generic() && !block_tree.validator_set_updates_status(&qc.block)?.contains_updates())),
+        /* 4 (else) */ (qc.phase.is_generic() && !block_tree.validator_set_updates_status(&qc.block)?.contains_updates())),
     )
 }
 
-/// Check whether a `Nudge` can safely cause updates to the Block Tree. This method enforces the
-/// commit rule for validator-set-updating blocks.
+/// Check whether `nudge` can safely cause updates to `block_tree`, given the replica's `current_view`
+/// and `chain_id`.
 ///
 /// ## Conditional checks
 ///
 /// `safe_nudge` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
-/// 2. `nudge.justify` is a Prepare, Precommit, or Commit QC.
-/// 3. `nudge.chain_id` matches the Chain ID configured for the replica.
-/// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = cur_view - 1`.
+/// 2. `nudge.justify.phase` is `Prepare`, `Precommit`, or `Commit`.
+/// 3. `nudge.chain_id` equals `chain_id`.
+/// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = current_view - 1`.
 ///
 /// ## Precondition
 ///
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `nudge.justify`.
 pub fn safe_nudge<K: KVStore>(
     nudge: &Nudge,
-    cur_view: ViewNumber,
+    current_view: ViewNumber,
     block_tree: &BlockTree<K>,
     chain_id: ChainID,
 ) -> Result<bool, BlockTreeError> {
@@ -255,14 +253,11 @@ pub fn safe_nudge<K: KVStore>(
         safe_qc(&nudge.justify, block_tree, chain_id)? &&
         /* 2 */ nudge.justify.is_nudge_justify() &&
         /* 3 */ (nudge.chain_id == chain_id) &&
-        /* 4 */ (nudge.justify.phase.is_commit() || nudge.justify.view == cur_view - 1),
+        /* 4 */ (nudge.justify.phase.is_commit() || nudge.justify.view == current_view - 1),
     )
 }
 
 /// Get the QC (if any) that should be set as the Locked QC after the replica sees the given `justify`.
-///
-/// Like [`block_to_commit`], this function should be called whenever a new, correct, and
-/// [safe](`safe_qc`) `justify` QC is seen, whether received in a `Proposal`, or a `Nudge`.
 ///
 /// ## Precondition
 ///
@@ -271,7 +266,10 @@ pub fn safe_nudge<K: KVStore>(
 ///
 /// ## `qc_to_lock` logic
 ///
-/// |`justify` is the/a|QC to lock if `justify.block != locked_qc.block`|
+/// `qc_to_lock`'s return value depends on `justify`'s phase and whether or not it is the Genesis QC.
+/// What `qc_to_lock` returns in every case is summarized in the below table:
+///
+/// |`justify` is the/a|QC to lock if not already the current locked QC|
 /// |---|---|
 /// |Genesis QC|`None`|
 /// |`Generic` QC|`justify.block.justify`|
@@ -279,6 +277,9 @@ pub fn safe_nudge<K: KVStore>(
 /// |`Precommit` QC|`justify`|
 /// |`Commit` QC|`justify`|
 /// |`Decide` QC|`justify`|
+///
+/// The rationale behind `qc_to_lock`'s logic is explained in
+/// [`safety`'s module-level docs](super::safety#updating-the-lock).
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,
@@ -288,9 +289,9 @@ pub(crate) fn qc_to_lock<K: KVStore>(
         return Ok(None);
     }
 
-    // Determine the "QC to lock" according to the Lower-level Locking Rules.
+    // Determine the "QC to lock" according to the documented logic.
     let locked_qc = block_tree.locked_qc()?;
-    let new_locked_qc = match justify.phase {
+    let qc_to_lock = match justify.phase {
         Phase::Generic => {
             let parent_justify = block_tree.block_justify(&justify.block)?;
             Some(parent_justify.clone())
@@ -307,22 +308,20 @@ pub(crate) fn qc_to_lock<K: KVStore>(
     };
 
     // Prevent redundant locking by returning Some only if the QC to lock is not already the locked QC.
-    if new_locked_qc.as_ref().is_some_and(|qc| qc != &locked_qc) {
-        Ok(new_locked_qc)
+    if qc_to_lock.as_ref().is_some_and(|qc| qc != &locked_qc) {
+        Ok(qc_to_lock)
     } else {
         Ok(None)
     }
 }
 
-/// Get the Block (if any) that, along with its uncommitted predecessors, should be committed after the
-/// replica sees the given `justify`.
-///
-/// Like [`qc_to_lock`], this function should be called whenever a new, correct, and safe `justify` QC
-/// is seen, whether received in a `Proposal`, or a `Nudge`.
+/// Get the `Block` in `block_tree` (if any) that, along with all of its uncommitted predecessors,
+/// should be committed after the replica sees `justify`.
 ///
 /// ## Preconditions
 ///
-/// The block or nudge containing `justify` must satisfy [`safe_block`] or [`safe_nudge`] respectively.
+/// The `Block` or `Nudge` containing `justify` must satisfy [`safe_block`] or [`safe_nudge`]
+/// respectively.
 ///
 /// ## Commit Rules
 ///
@@ -427,10 +426,14 @@ pub(crate) fn block_to_commit<K: KVStore>(
     }
 }
 
-/// Get the block which the leader of the current view should re-propose (if any).
+/// Get the `Block` in the `block_tree` which a leader of the `current_view` should re-propose.
+///
+/// ## Usage
 ///
 /// If `Ok(Some(block_hash))` is returned, then the leader should re-propose the block identified by
-/// `block_hash`. Else if `Ok(None)` is returned, then the leader should either propose a new block, or
+/// `block_hash`.
+///
+/// Else if `Ok(None)` is returned, then the leader should either propose a new block, or
 /// nudge using the highest qc.
 ///
 /// ## Purpose
@@ -440,22 +443,24 @@ pub(crate) fn block_to_commit<K: KVStore>(
 /// block has been broken. In these scenarios, nudging the Highest QC will not allow state machine
 /// replication to make progress.
 pub(crate) fn repropose_block<K: KVStore>(
-    cur_view: ViewNumber,
+    current_view: ViewNumber,
     block_tree: &BlockTree<K>,
 ) -> Result<Option<CryptoHash>, BlockTreeError> {
     let highest_qc = block_tree.highest_qc()?;
     match highest_qc.phase {
-        Phase::Prepare | Phase::Precommit if cur_view != highest_qc.view + 1 => {
+        Phase::Prepare | Phase::Precommit if current_view != highest_qc.view + 1 => {
             Ok(Some(highest_qc.block))
         }
         _ => Ok(None),
     }
 }
 
-/// Check whether a given quorum certificate belongs to the branch that extends from the locked block.
+/// Check whether `qc` belongs to the branch that extends from the `block_tree`'s `locked_qc.block`.
 ///
-/// Since in pipelined HotStuff it is always the grandparent of the newest block that is locked, we only
-/// need to check the QC's block, its parent, and its grandparent.
+/// In the phased mode, it is always the latest block that is locked, while in the pipelined mode, it
+/// is the grandparent of the newest block that is locked. Therefore, to see whether `qc` extends from
+/// `locked_qc.block`, we only need to check whether or not `locked_qc.block` is `qc.block`, or its
+/// parent, or its grandparent. We do not need to check deeper.
 fn extends_locked_qc_block<K: KVStore>(
     qc: &QuorumCertificate,
     block_tree: &BlockTree<K>,
