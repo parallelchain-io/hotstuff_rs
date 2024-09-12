@@ -6,7 +6,7 @@
 //! Rules and predicates that collectively ensure that all state updates made to the block tree are
 //! safe.
 //!
-//! ## Block Tree state updates
+//! # Block Tree state updates
 //!
 //! A state machine replication algorithm like HotStuff-rs is considered "safe" if it is impossible for
 //! two replicas to commit conflicting state updates as long as less than a threshold of validators are
@@ -21,10 +21,12 @@
 //! three state updaters have much simpler preconditions and perform much simpler state mutations, and
 //! thus do not need helper functions like those defined here.
 //!
-//! First we list these methods, then we discuss one of the big picture invariants that these methods
-//! maintain to keep HotStuff-rs SMR safe: Locking. (TODO Alice: expand).
+//! The following sections discuss the methods in this module in more detail. First,
+//! [Two categories of methods](#two-categories-of-methods) list these methods. Then, [Locking](#locking)
+//! discusses an important cross-cutting invariant (locking) that multiple separate methods in this module
+//! work together to maintain.
 //!
-//! ## Two categories of methods
+//! # Two categories of methods
 //!
 //! The crate-public methods defined in module `safety` fall into two categories. Each category of
 //! methods follow a consistent naming convention and play a distinct part in ensuring that all updates
@@ -32,7 +34,7 @@
 //! updates can safely be triggered, while the second category of methods help determine **what** state
 //! updates should be triggered.
 //!
-//! ### Category 1: safe_{type}
+//! ## Category 1: safe_{type}
 //!
 //! Methods in this category: [`safe_qc`], [`safe_block`], [`safe_nudge`].
 //!
@@ -48,7 +50,7 @@
 //!    `block_tree.locked_qc()?.view`, or (ii). `qc.block` extends (directly or transitively) from
 //!    `block_tree.locked_qc()?.block`.
 //!
-//! ### Category 2: {type}\_to\_{lock/commit}
+//! ## Category 2: {type}\_to\_{lock/commit}
 //!
 //! Methods in this category: [`qc_to_lock`], [`block_to_commit`].
 //!
@@ -56,7 +58,7 @@
 //! obtaining a `QuorumCertificate`, whether through receiving a `Proposal`, `Nudge`, or `NewView`
 //! message, or by collecting enough `Vote`s. Methods in this category are called inside `update`.
 //!
-//! ### Outlier: repropose_block
+//! ## Outlier: repropose_block
 //!
 //! This module also defines a method called [`repropose_block`]. This does not fit neatly into either
 //! of the above two categories in terms of name or function, but is closely related to `safe_nudge`
@@ -81,7 +83,7 @@
 //! block, then a quorum of replicas has at least *locked* on the block, which ensures that (i) will
 //! eventually be true.
 //!
-//! ### Checking against the lock
+//! ## Checking against the lock
 //!
 //! The 3rd predicate of `safe_qc` checks whether any received or collected QC satisfies the lock and is
 //! therefore allowed to trigger state updates.
@@ -103,13 +105,13 @@
 //! and unless the 3rd predicate of `safe_qc` includes a relaxing clause, these replicas will be stuck,
 //! unable to grow their blockchain further.
 //!
-//! This is where the second clause (the "liveness clause") comes in. It allows the replicas that did
-//! lock on the now "abandoned" QC to eventually accept new `Block`s and `Nudge`s, and does so by
-//! relaxing the third predicate to allow `Block`s and `Nudge`s that build on a different branch than
-//! the current `locked_qc.block` to cause state updates as long as the QC they contain has a higher
-//! view than `locked_qc.view`.
+//! This is where the second clause (the "liveness clause") comes in. This clause enables the replicas
+//! that did lock on the now "abandoned" QC to eventually accept new `Block`s and `Nudge`s, and does so
+//! by relaxing the third predicate to allow `Block`s and `Nudge`s that build on a different branch
+//! than the current `locked_qc.block` to cause state updates as long as the QC they contain has a
+//! higher view than `locked_qc.view`.
 //!
-//! ### Updating the lock
+//! ## Updating the lock
 //!
 //! Any time [`BlockTree::update`] is called, Locked QC should potentially be updated, and `qc_to_lock`
 //! decides what Locked QC should be updated *to*.
@@ -132,11 +134,30 @@
 //!   `locked_qc` upon receiving a `Commit` QC (there is no phase called `Decide` in the original HotStuff
 //!   paper).
 //!
-//! This difference is necessary so that replicas can reliably update their `locked_qc`s during
-//! [Block Sync](crate::block_sync). During Block Sync, Sync Servers only send their `highest_qc` in their
-//! [`SyncResponse`](crate::block_sync::messages::BlockSyncResponse). This means that sometimes, replicas
-//! may not receive a `Precommit` QC during Block Sync. We still want `locked_qc` to be updated if this
-//! happens, which is why we update `locked_qc` if `justify.phase` is `Commit` or `Decide`. (TODO Alice: improve language)
+//! The reason why the original HotStuff does not lock upon receiving a `Commit` or `Decide` QC and
+//! HotStuff-rs does becomes clearer when we consider that the original HotStuff makes a simplifying
+//! assumption that receiving any proposal implies that we have received every proposal in the chain
+//! that precedes the proposal. E.g., receiving a proposal for a block at height 10 means that we (the
+//! replica) has previously received a complete set of proposals for the ancestor blocks at heights
+//! 0..9, *including for every phase*.
+//!
+//! This assumption simplifies the specification of the algorithm, and is one that is made by many
+//! publications. However, this assumption is difficult to uphold in a production setting, where
+//! messages are often dropped. HotStuff-rs' [Block Sync](crate::block_sync) goes some way toward making
+//! this assumption hold, but is not perfect: in particular, Sync Servers only send their singular
+//! current [`highest_qc`](crate::block_sync::messages::BlockSyncResponse::highest_qc) in their
+//! `SyncResponse`s, which could be a QC of any phase: `Generic` up to `Decide`.
+//!
+//! This means that if we use the same logic as used in Algorithm 1 to decide on which QC to lock on
+//! upon receiving a [phased mode](crate::hotstuff#phased-mode) QC, i.e., to lock only if
+//! `justify.phase == Precommit`, then we will fail to lock on `justify.block` if `justify.phase` is
+//!  `Commit` or `Decide`, which can lead to safety violations because the next block may then extend
+//! a conflicting branch.
+//!
+//! Because extending the Block Sync protocol to return multiple QCs in a `SyncResponse` could be
+//! complicated (in particular, it would probably require replicas to store extra state), we instead
+//! solve this issue by deviating from the original HotStuff slightly by locking upon receiving a
+//! `Commit` or `Decide` QC.
 
 use crate::hotstuff::{
     messages::Nudge,
