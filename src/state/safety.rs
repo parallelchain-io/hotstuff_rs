@@ -65,7 +65,7 @@
 //! in that it serves to help proposers choose a block to propose that satisfy the "consecutive views"
 //! property that `safe_nudge` checks.
 //!
-//! ## Locking
+//! # Locking
 //!
 //! The most integral, and yet least obvious invariant that the methods in this module maintains has
 //! to do with *locking*.
@@ -158,6 +158,8 @@
 //! complicated (in particular, it would probably require replicas to store extra state), we instead
 //! solve this issue by deviating from the original HotStuff slightly by locking upon receiving a
 //! `Commit` or `Decide` QC.
+//!
+//! # Committing
 
 use crate::hotstuff::{
     messages::Nudge,
@@ -175,13 +177,13 @@ use super::{
 
 /// Check whether `block` can safely cause updates to `block_tree`, given the replica's `chain_id`.
 ///
-/// ## Conditional checks
+/// # Conditional checks
 ///
 /// `safe_block` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&block.justify, block_tree, chain_id)`.
 /// 2. `block.qc.phase` is either `Generic` or `Decide`.
 ///
-/// ## Precondition
+/// # Precondition
 ///
 /// [`is_correct`](Block::is_correct) is `true` for `block`.
 pub(crate) fn safe_block<K: KVStore>(
@@ -198,7 +200,7 @@ pub(crate) fn safe_block<K: KVStore>(
 
 /// Check whether `qc` can safely cause updates to `block_tree`, given the replica's `chain_id`.
 ///
-/// ## Conditional checks
+/// # Conditional checks
 ///
 /// `safe_qc` returns `true` in case all of the following predicates are `true`:
 /// 1. Either `qc.chain_id` equals `chain_id`, or `qc` is the Genesis QC.
@@ -209,7 +211,7 @@ pub(crate) fn safe_block<K: KVStore>(
 ///    updating block. Else, if `qc.phase` is `Generic`, `qc.block` is not a validator set updating
 ///    block.
 ///
-/// ## Precondition
+/// # Precondition
 ///
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `block.justify`.
 pub(crate) fn safe_qc<K: KVStore>(
@@ -231,7 +233,7 @@ pub(crate) fn safe_qc<K: KVStore>(
 /// Check whether `nudge` can safely cause updates to `block_tree`, given the replica's `current_view`
 /// and `chain_id`.
 ///
-/// ## Conditional checks
+/// # Conditional checks
 ///
 /// `safe_nudge` returns `true` in case all of the following predicates are `true`:
 /// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
@@ -239,7 +241,7 @@ pub(crate) fn safe_qc<K: KVStore>(
 /// 3. `nudge.chain_id` equals `chain_id`.
 /// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = current_view - 1`.
 ///
-/// ## Precondition
+/// # Precondition
 ///
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `nudge.justify`.
 pub fn safe_nudge<K: KVStore>(
@@ -259,12 +261,12 @@ pub fn safe_nudge<K: KVStore>(
 
 /// Get the QC (if any) that should be set as the Locked QC after the replica sees the given `justify`.
 ///
-/// ## Precondition
+/// # Precondition
 ///
 /// The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`]
 /// respectively.
 ///
-/// ## `qc_to_lock` logic
+/// # `qc_to_lock` logic
 ///
 /// `qc_to_lock`'s return value depends on `justify`'s phase and whether or not it is the Genesis QC.
 /// What `qc_to_lock` returns in every case is summarized in the below table:
@@ -289,15 +291,25 @@ pub(crate) fn qc_to_lock<K: KVStore>(
         return Ok(None);
     }
 
-    // Determine the "QC to lock" according to the documented logic.
+    // Determine the `QuorumCertificate` to lock according to `justify.phase`.
     let locked_qc = block_tree.locked_qc()?;
     let qc_to_lock = match justify.phase {
+        // If `justify.phase` is `Generic`, lock on `justify.block.justify`.
         Phase::Generic => {
             let parent_justify = block_tree.block_justify(&justify.block)?;
             Some(parent_justify.clone())
         }
+
+        // If `justify.phase` is `Prepare`, don't lock.
         Phase::Prepare => None,
+
+        // If `justify.phase` is `Precommit`, lock on `justify`.
         Phase::Precommit => Some(justify.clone()),
+
+        // If `justify.phase` is `Commit` or `Decide`, *and* `locked_qc.block != justify.block`, lock on
+        // `justify`. The second condition is to prevent redundant locking (e.g., once we've locked on a
+        // `Precommit` QC justifying a block, we don't have to lock on a `Commit` or `Decide` QC justifying
+        // the same block).
         Phase::Commit | Phase::Decide => {
             if locked_qc.block != justify.block {
                 Some(justify.clone())
@@ -369,31 +381,38 @@ pub(crate) fn block_to_commit<K: KVStore>(
         return Ok(None);
     };
 
+    // Determine the `Block` to commit according to `justify.phase`.
     match justify.phase {
+        // If `justify.phase` is `Generic`, commit the `justify`'s great-grandparent block, if it has one in
+        // the block tree.
         Phase::Generic => {
+            // Check whether the parent block or the grandparent block is a genesis block. If so, there is no
+            // great-grandparent block to commit.
             let parent_justify = block_tree.block_justify(&justify.block)?;
             if parent_justify.is_genesis_qc() {
                 return Ok(None);
             };
-
             let grandparent_justify = block_tree.block_justify(&parent_justify.block)?;
             if grandparent_justify.is_genesis_qc() {
                 return Ok(None);
             };
 
-            // Check the "consecutive views" requirement of the commit rule.
+            // Check whether the "consecutive views" requirement of the commit rule is satisfied.
             let commit_rule_satisfied = justify.view == parent_justify.view + 1
                 && parent_justify.view == grandparent_justify.view + 1;
 
-            // Determine whether the great-grandparent block has been committed already.
-            let commit_block_height = block_tree.block_height(&grandparent_justify.block)?.ok_or(
-                BlockTreeError::BlockExpectedButNotFound {
-                    block: grandparent_justify.block.clone(),
-                },
-            )?;
-            let highest_committed_block_height = block_tree.highest_committed_block_height()?;
-            let not_committed_yet = highest_committed_block_height.is_none()
-                || commit_block_height > highest_committed_block_height.unwrap();
+            // Check whether the great-grandparent block has been committed already.
+            let not_committed_yet = {
+                let greatgrandparent_height = block_tree
+                    .block_height(&grandparent_justify.block)?
+                    .ok_or(BlockTreeError::BlockExpectedButNotFound {
+                        block: grandparent_justify.block.clone(),
+                    })?;
+                let highest_committed_block_height = block_tree.highest_committed_block_height()?;
+
+                highest_committed_block_height.is_none()
+                    || greatgrandparent_height > highest_committed_block_height.unwrap()
+            };
 
             // If the commit rule is satisfied and the great-grandparent block has not been committed yet, ask the
             // caller to commit it. Otherwise, return `None` to prevent redundant commits.
@@ -403,17 +422,24 @@ pub(crate) fn block_to_commit<K: KVStore>(
                 Ok(None)
             }
         }
+
+        // If `justify.phase` is `Prepare` or `Precommit`, do not commit any block.
         Phase::Prepare | Phase::Precommit => Ok(None),
+
+        // If `justify.phase` is `Commit` or `Decide`, commit `justify.block`.
         Phase::Commit | Phase::Decide => {
-            // Determine whether `justify.block` has been committed already.
-            let commit_block_height = block_tree.block_height(&justify.block)?.ok_or(
-                BlockTreeError::BlockExpectedButNotFound {
-                    block: justify.block.clone(),
-                },
-            )?;
-            let highest_committed_block_height = block_tree.highest_committed_block_height()?;
-            let not_committed_yet = highest_committed_block_height.is_none()
-                || commit_block_height > highest_committed_block_height.unwrap();
+            // Check whether the parent block has been committed already.
+            let not_committed_yet = {
+                let parent_height = block_tree.block_height(&justify.block)?.ok_or(
+                    BlockTreeError::BlockExpectedButNotFound {
+                        block: justify.block.clone(),
+                    },
+                )?;
+                let highest_committed_block_height = block_tree.highest_committed_block_height()?;
+
+                highest_committed_block_height.is_none()
+                    || parent_height > highest_committed_block_height.unwrap()
+            };
 
             // If `justify.block` has not been committed yet, ask the caller to commit it. Otherwise, return `None`
             // to prevent redundant commits.
@@ -428,7 +454,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
 
 /// Get the `Block` in the `block_tree` which a leader of the `current_view` should re-propose.
 ///
-/// ## Usage
+/// # Usage
 ///
 /// If `Ok(Some(block_hash))` is returned, then the leader should re-propose the block identified by
 /// `block_hash`.
@@ -436,7 +462,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
 /// Else if `Ok(None)` is returned, then the leader should either propose a new block, or
 /// nudge using the highest qc.
 ///
-/// ## Purpose
+/// # Purpose
 ///
 /// The leader needs to re-propose an existing block in scenarios where the Highest QC in the Block Tree
 /// indicates that the consecutive-view sequence of nudges required to commit a validator-set updating
@@ -456,6 +482,8 @@ pub(crate) fn repropose_block<K: KVStore>(
 }
 
 /// Check whether `qc` belongs to the branch that extends from the `block_tree`'s `locked_qc.block`.
+///
+/// # Procedure
 ///
 /// In the phased mode, it is always the latest block that is locked, while in the pipelined mode, it
 /// is the grandparent of the newest block that is locked. Therefore, to see whether `qc` extends from
