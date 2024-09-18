@@ -3,138 +3,155 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Rules and predicates that collectively ensure that all state updates made to the block tree are
-//! safe.
+//! Rules and predicates that help with maintaining the invariant properties of the Block Tree data
+//! structure.
 //!
-//! # Block Tree state updates
+//! The rustdoc for this module is divided into three sections:
+//! 1. [Invariants](#invariants) clarifies the notion of block tree invariants and groups them into two
+//!    categories depending on whether they are "local" or "global" in nature.
+//! 2. [Methods](#methods) lists the methods defined in this module and groups them into two categories
+//!    depending on whether they deal with "whether" questions about state updates or "what" questions.
+//! 3. Finally, [Blockchain Consistency](#blockchain-consistency) discusses HotStuff-rs' overarching
+//!    global invariant, "blockchain consistency", and how the methods in this module work together to
+//!    enforce it.
 //!
-//! A state machine replication algorithm like HotStuff-rs is considered "safe" if it is impossible for
-//! two replicas to commit conflicting state updates as long as less than a threshold of validators are
-//! Byzantine.
+//! # Invariants
+//!  
+//! In the context of this module, invariants are logical properties that are always true about the
+//! Block Tree.
 //!
-//! The top-level state updates that a HotStuff-rs replica can perform are performed by the
-//! [top-level state updaters](BlockTree#impl-BlockTree<K>-1) category of methods defined in the
-//! `block_tree` module on the `BlockTree` struct.
+//! Block tree invariants can be grouped into two categories depending on their scope:
+//! - **Local Invariants**: invariants that pertain to isolated parts of the block tree. For example, the
+//!   invariant enforced by `safe_nudge` that `nudge.justify.phase` must be either `Prepare`, `Precommit`, or
+//!   `Commit`.
+//! - **Global Invariants**: invariants that relate different parts of the block tree. For example, the
+//!   invariant enforced by `safe_qc` that either: (i). `qc.block` extends from
+//!   `block_tree.locked_qc()?.block`, or (ii). `qc.view` is greater than `block_tree.locked_qc()?.view`.
 //!
-//! The crate-public methods in this (`safety`) module are only relevant to the
-//! [`insert`](BlockTree::insert), [`update`](BlockTree::update) top-level state updaters. The remaining
-//! three state updaters have much simpler preconditions and perform much simpler state mutations, and
-//! thus do not need helper functions like those defined here.
+//! Some simple local invariants can be enforced by the type system at compile-time and therefore
+//! do not need to be checked at runtime. For example, the typedef of `Phase` automatically guarantees
+//! the invariant `nudge.justify.phase` could only be one of five values--`Generic`, `Prepare`, `Precommit`,
+//! `Commit` and `Decide`.
 //!
-//! The following sections discuss the methods in this module in more detail. First,
-//! [Two categories of methods](#two-categories-of-methods) list these methods. Then, [Locking](#locking)
-//! discusses an important cross-cutting invariant (locking) that multiple separate methods in this module
-//! work together to maintain.
+//! More complicated invariants, however (including both global invariants and also more complicated local
+//! invariants, as illustrated by the `safe_nudge` and `safe_qc` examples above), can only be enforced by
+//! runtime logic. This is where the methods in this module come in.
+//!  
+//! # Methods
 //!
-//! # Two categories of methods
+//! TODO: mention the top-level state updaters of the block tree.
 //!
-//! The crate-public methods defined in module `safety` fall into two categories. Each category of
-//! methods follow a consistent naming convention and play a distinct part in ensuring that all updates
-//! made to the block tree are safe. Simply put, the first category of methods check **whether** state
-//! updates can safely be triggered, while the second category of methods help determine **what** state
-//! updates should be triggered.
+//! The methods in this module each help enforce a combination of local and global block tree invariants.
+//! Specifically, they do this by ensuring that every block tree *update* is *invariant-preserving*. The idea
+//! can be summarized in simple formulaic terms as: block tree that satisfies invariants + invariant-preserving
+//! update = an updated block tree that also satisfies invariants.
 //!
-//! ## Category 1: safe_{type}
+//! Each method works to ensure that every update is invariant-preserving in one of two different ways:
+//! 1. By checking **whether** an event (like receiving a `Proposal` or collecting a `QuorumCertificate`)
+//!    can trigger an invariant-preserving update, or
+//! 2. By determining **what** invariant-preserving updates should be made in response to an event.
 //!
-//! Methods in this category: [`safe_qc`], [`safe_block`], [`safe_nudge`].
+//! These two different ways allow us to group the methods in this module into two different categories:
 //!
-//! These methods check **whether** a `QuorumCertificate`, `Block`, or `Nudge` (respectively) can safely
-//! trigger state updates. Methods in this category are part of the preconditions of `insert` and `update`.
+//! ## Category 1: "whether"
 //!
-//! Methods in this category check two kinds of properties to determine safety:
-//! 1. Internal properties: these properties are simple and can be checked without querying the block
-//!    tree. For example: checking in `safe_nudge` that `nudge.justify` is a `Prepare`, `Precommit`, or
-//!    `Commit` QC.
-//! 2. External properties: these properties are more complicated and checking them entail querying the
-//!    block tree. For example: checking in `safe_qc` that either: (i) `qc.view` is greater than
-//!    `block_tree.locked_qc()?.view`, or (ii). `qc.block` extends (directly or transitively) from
-//!    `block_tree.locked_qc()?.block`.
+//! Methods in this category: [`safe_qc`], [`safe_block`], [`safe_nudge`], (outlier) [`repropose_block`].
 //!
-//! ## Category 2: {type}\_to\_{lock/commit}
+//! These methods check **whether** a `QuorumCertificate`, `Block`, or `Nudge` (respectively) can trigger
+//! invariant-preserving state updates. Methods in this category feature in the *preconditions* of the
+//! [`insert`](BlockTree::insert) and [`update`](BlockTree::update) block tree mutators.
+//!
+//! We also include in this category the method called `repropose_block`. This does not fit neatly into
+//! this category in terms of name or purpose, but is closely related to `safe_nudge` in that it serves
+//! to help proposers choose a block to propose that satisfy the "consecutive views" requirement that
+//! `safe_nudge` checks.
+//!
+//! ## Category 2: "what"
 //!
 //! Methods in this category: [`qc_to_lock`], [`block_to_commit`].
 //!
-//! These methods help determine **what** state updates should be triggered in `update` in response to
-//! obtaining a `QuorumCertificate`, whether through receiving a `Proposal`, `Nudge`, or `NewView`
-//! message, or by collecting enough `Vote`s. Methods in this category are called inside `update`.
+//! These methods help determine **what** invariant-preserving state updates should be triggered in
+//! `update` in response to obtaining a `QuorumCertificate`, whether through receiving a `Proposal`,
+//! `Nudge`, or `NewView` message, or by collecting enough `Vote`s. Methods in this category are called
+//! *inside* [`update`](BlockTree::update).
 //!
-//! ## Outlier: repropose_block
+//! # Blockchain Consistency
 //!
-//! This module also defines a method called [`repropose_block`]. This does not fit neatly into either
-//! of the above two categories in terms of name or function, but is closely related to `safe_nudge`
-//! in that it serves to help proposers choose a block to propose that satisfy the "consecutive views"
-//! property that `safe_nudge` checks.
+//! The most important global invariant that HotStuff-rs guarantees is called "Blockchain Consistency".
+//! Blockchain consistency is the property that the block trees of all honest replicas are **identical**
+//! below a certain block height.
 //!
-//! # Locking
+//! This "certain block height" is exactly the height of the
+//! [Highest Committed Block](super::block_tree#safety). Below this height, the block*tree* (a directed
+//! acyclic graph of blocks) is reduced to a block*chain*, a directed acyclic graph of blocks with the
+//! restriction that every block has exactly one inward edge (formed by the `justify` of its child) and
+//! one outward edge (formed by its `justify` to its parent).
 //!
-//! The most integral, and yet least obvious invariant that the methods in this module maintains has
-//! to do with *locking*.
+//! The blockchain grows as more and more blocks are *committed*. Committing is a state update whereby
+//! a block (and transitively, all of its ancestors) become part of the permanent blockchain.
+//! Critically, committing is a one-way update: once a block becomes committed, it can never be
+//! un-committed. Because of this, it is essential that the protocol is designed such that a replica only
+//! commits when it is sure that all other honest replicas have either also committed the block, or will
+//! eventually.
+//!
+//! This section explains how the methods in this module work together to maintain blockchain
+//! consistency. The discussion is split into two parts:
+//! 1. First, [Locking](#locking) discusses an intermediate state that blocks enter after being inserted
+//! but before being committed, that is, being "Locked".
+//! 2. Then, [Committing](#committing) discusses how blocks move between being locked into being committed.
+//!
+//! ## Locking
+//!
+//! Before a block is committed, its branch must first be locked.
+//!
+//! Locking ensures that an honest replica only commits a block when either of the following two
+//! conditions hold:
+//! 1. All other honest replicas have also committed the block, in which case the commit is trivially
+//!    consistent, or
+//! 2. If not all honest replicas have committed the block, then a quorum of replicas has at least
+//!    *locked* on the block, which makes it impossible for a QC for a conflicting block to be formed.
+//!
+//! The consequence of condition 2 is that condition 1 will *eventually* hold. Making the block safe to
+//! commit.
 //!
 //! Locking entails keeping track of a block tree variable called
-//! ["Locked QC"](super::block_tree#safety), and doing two things with it:
-//! 1. **Checking** every QC received or collected against it in `safe_qc`. Only QCs that pass this check
+//! ["Locked QC"](super::block_tree#safety) and doing two things with it:
+//! 1. **Updating** the Locked QC whenever it is appropriate, according to the logic implemented by
+//!    `qc_to_lock`.
+//! 2. **Checking** every QC received or collected against the Locked QC. Only QCs that pass this check
 //!    and therefore "satisfy the lock" are allowed to cause state updates.
-//! 2. **Updating** the Locked QC whenever it is appropriate, according to the logic implemented by
-//!    `qc_to_lock`. `qc_to_lock` is called in [`BlockTree::update`] every time the latter is called.
 //!
-//! Locking serves to guarantee the uniqueness of commits. The idea is that if any single honest replica
-//! *commits* on a block, then either: (i). All other honest replicas have also committed the block, in
-//! which case the commit is trivially unique, or (ii). If not all honest replicas have committed the
-//! block, then a quorum of replicas has at least *locked* on the block, which ensures that (i) will
-//! eventually be true.
+//! Updating the locked QC and checking the locked QC is discussed in turn in the following two
+//! subsections:
 //!
-//! ## Checking against the lock
+//! ### Locking on a Block
 //!
-//! The 3rd predicate of `safe_qc` checks whether any received or collected QC satisfies the lock and is
-//! therefore allowed to trigger state updates.
+//! Any time `update` is called, the `locked_qc` should potentially be updated. The [`qc_to_lock`]
+//! method in this module decides what locked QC should be updated to.
 //!
-//! Note how this predicate has two clauses, joined by an "or":
-//! 1. `qc.block` extends from `locked_qc.block`, *or*
-//! 2. `qc.view` is greater than `locked_qc.view`.
+//! The precise logic used by `qc_to_lock` to decide which QC to lock on is documented in
+//! [the doc for `qc_to_lock`](qc_to_lock#qc_to_lock-logic). In short, the basic logic for choosing
+//! which QC to lock in HotStuff-rs is the same as the basic logic for choosing which QC to lock in the
+//! PODC'19 HotStuff paper, that is, "lock on seeing a 2-Chain".
 //!
-//! Both clauses serve distinct purposes which are discussed at length in the original HotStuff paper.
+//! The basic logic is already well-documented in the PODC '19 paper, so for brevity, we do not
+//! re-describe it here. Instead, in the rest of this subsection, we describe a small but nuanced
+//! difference in the precise logic, and then explain the rationale behind this difference:
 //!
-//! In short, the first clause (the "safety clause") will always be satisfied in the stable case, where
-//! in every view, either a 1/3rd of replicas lock on the same `locked_qc`, or none lock.
-//!
-//! In unstable cases, however, where e.g., messages are dropped or a proposer is faulty, less than
-//! 1/3rd but more than one replica may lock on the same `locked_qc` in the same view, and therefore a
-//! `Block` or `Nudge` that conflicts with `locked_qc` may be proposed in the next view and be accepted
-//! by the replicas that didn't lock on `locked_qc` in the previous view. In this case, the replicas that
-//! *did* lock on `locked_qc` in the previous view will not be able to accept the new `Block` or `Nudge`,
-//! and unless the 3rd predicate of `safe_qc` includes a relaxing clause, these replicas will be stuck,
-//! unable to grow their blockchain further.
-//!
-//! This is where the second clause (the "liveness clause") comes in. This clause enables the replicas
-//! that did lock on the now "abandoned" QC to eventually accept new `Block`s and `Nudge`s, and does so
-//! by relaxing the third predicate to allow `Block`s and `Nudge`s that build on a different branch
-//! than the current `locked_qc.block` to cause state updates as long as the QC they contain has a
-//! higher view than `locked_qc.view`.
-//!
-//! ## Updating the lock
-//!
-//! Any time [`BlockTree::update`] is called, Locked QC should potentially be updated, and `qc_to_lock`
-//! decides what Locked QC should be updated *to*.
-//!
-//! The logic used by `qc_to_lock` to decide which QC to lock on is documented in
-//! [the doc for `qc_to_lock`](qc_to_lock#qc_to_lock-logic). Below, we explain the rationale behind
-//! this logic, including how and why the implemented logic is slightly different from the logic used
-//! in the original HotStuff (PODC '19) paper.
-//!
-//! Which QC `qc_to_lock` decides to lock on upon receiving `justify` partly depends on what
-//! `justify.phase` is:
+//! In both HotStuff-rs and PODC '19 HotStuff, which QC `qc_to_lock` decides to lock on upon receiving
+//! `justify` depends on what `justify.phase` is:
 //! - If `justify.phase` is `Generic`, `Prepare`, or `Precommit`, `qc_to_lock`'s
 //!   decision rule is exactly the same as the decision rule used in the algorithm in the original (PODC'
 //!   19) HotStuff paper that corresponds to the [operating mode](crate::hotstuff#operating-mode) that the
 //!   `Phase` is part of (recall that the pipelined mode corresponds to Algorithm 1, while the phased mode
 //!   corresponds to Algorithm 3).
 //! - On the other hand, if `justify.phase` is `Commit` or `Decide`, `qc_to_lock` will decide to lock on
-//!   `justify` (as long as the current `locked_qc.block` is different from `justify.block`). This is in
-//!   contrast to the logic used in Algorithm 1 in the original HotStuff paper, which does not update
-//!   `locked_qc` upon receiving a `Commit` QC (there is no phase called `Decide` in the original HotStuff
-//!   paper).
+//!   `justify` (as long as the current `locked_qc.block` is different from `justify.block`). This is
+//!   **different** from the logic used in Algorithm 1 in the original HotStuff paper, which does not
+//!   update `locked_qc` upon receiving a `Commit` QC (there is no phase called `Decide` in the original
+//!   HotStuff paper).
 //!
-//! The reason why the original HotStuff does not lock upon receiving a `Commit` or `Decide` QC and
+//! The reason why the PODC '19 HotStuff does not lock upon receiving a `Commit` or `Decide` QC and
 //! HotStuff-rs does becomes clearer when we consider that the original HotStuff makes a simplifying
 //! assumption that receiving any proposal implies that we have received every proposal in the chain
 //! that precedes the proposal. E.g., receiving a proposal for a block at height 10 means that we (the
@@ -151,15 +168,82 @@
 //! This means that if we use the same logic as used in Algorithm 1 to decide on which QC to lock on
 //! upon receiving a [phased mode](crate::hotstuff#phased-mode) QC, i.e., to lock only if
 //! `justify.phase == Precommit`, then we will fail to lock on `justify.block` if `justify.phase` is
-//!  `Commit` or `Decide`, which can lead to safety violations because the next block may then extend
+//! `Commit` or `Decide`, which can lead to safety violations because the next block may then extend
 //! a conflicting branch.
 //!
 //! Because extending the Block Sync protocol to return multiple QCs in a `SyncResponse` could be
 //! complicated (in particular, it would probably require replicas to store extra state), we instead
-//! solve this issue by deviating from the original HotStuff slightly by locking upon receiving a
+//! solve this issue by deviating from PODC '19 HotStuff slightly by locking upon receiving a
 //! `Commit` or `Decide` QC.
 //!
-//! # Committing
+//! ### Checking against the Lock
+//!
+//! The [3rd predicate](safe_qc#conditional-checks) of `safe_qc` checks whether any received or
+//! collected QC satisfies the lock and is therefore allowed to trigger state updates. This predicate
+//! is exactly the same as the corresponding predicate in the PODC '19 HotStuff paper, but is simple
+//! enough that we describe it and the rationale behind it fully in the rest of this subsection.
+//!
+//! The 3rd predicate comprises of two clauses, joined by an "or":
+//! 1. **Safety clause**: `qc.block` extends from `locked_qc.block`, *or*
+//! 2. **Liveness clause**: `qc.view` is greater than `locked_qc.view`.
+//!
+//! In stable cases--i.e., where in every view, either 1/3rd of replicas lock on the same `locked_qc`,
+//! or none lock--the safety clause will always be satisfied. This ensures that the `qc` extends the
+//! branch headed by the locked block.
+//!
+//! In unstable cases, however, where e.g., messages are dropped or a proposer is faulty, less than
+//! 1/3rd but more than one replica may lock on the same `locked_qc` in the same view, and therefore a
+//! `Block` or `Nudge` that conflicts with `locked_qc` may be proposed in the next view and be accepted
+//! by the replicas that didn't lock on `locked_qc` in the previous view. In this case, the replicas that
+//! *did* lock on `locked_qc` in the previous view will not be able to accept the new `Block` or `Nudge`,
+//! and unless the 3rd predicate of `safe_qc` includes a relaxing clause, these replicas will be stuck,
+//! unable to grow their blockchain further.
+//!
+//! This is where the liveness clause comes in. This clause enables the replicas that did lock on the
+//! now "abandoned" QC to eventually accept new `Block`s and `Nudge`s, and does so by relaxing the
+//! third predicate to allow `Block`s and `Nudge`s that build on a different branch than the current
+//! `locked_qc.block` to cause state updates as long as the QC they contain has a higher view than
+//! `locked_qc.view`.
+//!
+//! ## Committing
+//!
+//! As is the case with Locking, Committing in HotStuff-rs follows the same basic logic as committing in
+//! PODC '19 HotStuff, but with a small and nuanced difference. The following two subsections discuss, in
+//! turn:
+//! 1. Under what conditions will a block become committed, one of the conditions being a "consecutive
+//!    views requirement" that does not exist in PODC '19 HotStuff.
+//! 2. How the algorithm requires that replicas *re-propose* existing blocks in certain conditions in order
+//!    to satsify the consecutive views requirement while still achieving Immediacy.
+//!
+//! ### Committing a Block
+//!
+//! Any time `update` is called, blocks should potentially be committed. The [`block_to_commit`] method
+//! in this module decides what blocks should be committed.
+//!
+//! Like with `qc_to_lock`, the precise logic used by `block_to_commit` is documented in
+//! [the doc for `block_to_commit`](block_to_commit#block_to_commit-logic). Again, the logic used for
+//! choosing which block to commit in HotStuff-rs is broadly similar as the logic used for choosing
+//! which block to commit in the PODC '19 HotStuff paper. In particular, the logic used in HotStuff-rs'
+//! Pipelined Mode is the same as the logic used in Algorithm 3 in PODC '19 HotStuff; that is, a block
+//! should be committed in the Pipelined Mode when it meets two requirements:
+//! 1. **3-Chain**: the block must head a sequence of 3 QCs.
+//! 2. **Consecutive views**: the 3 QCs that follow the block must each have *consecutively increasing*
+//!    views, i.e., `justify3.view == justify2.view + 1 == justify1.view + 2` where
+//!    `justify3.block.justify == justify2`, `justify2.block.justify == justify1`, and `justify1.block
+//!    = block`.
+//!
+//! The nuanced difference between
+//!
+//! The underlying reason why the consecutive views requirement is needed in HotStuff-rs but not in PODC
+//! '19 HotStuff is a specific difference between PODC '19's Algorithm 1 and HotStuff-rs' Phased Mode:
+//! - In Algorithm 1, each view is comprised of *3 phases*.
+//! - In Phased Mode, each view is comprised of *only 1 phase*.
+//!
+//! This means that in Phased Mode, the formation of `Prepare`, `Precommit`,
+//!
+//!
+//! ### Ensuring Immediacy
+//!
 
 use crate::hotstuff::{
     messages::Nudge,
@@ -367,11 +451,15 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 /// |`Commit` QC|`Some(justify.block)`|Implements the commit rule for validator-set-updating blocks.|
 /// |`Decide` QC|`Some(justify.block)`|Validator-set-updating blocks are usually committed on seeing `Commit` QC. However, during sync `Commit` QCs are not sent, so blocks have to be committed on seeing `Decide` QCs instead.|
 ///
-/// ### Preventing redundant commits
+/// # `block_to_commit` logic
 ///
-/// If the block to commit as determined by the rules described in the table above has already been
-/// committed, then `block_to_commit` will return `None` so that the caller does not commit the same
-/// block multiple times.
+/// |`justify.phase` is a|Block to commit if satisfies the consecutive views rule and not already committed yet|
+/// |---|---|
+/// |`Generic` QC|`justify.block.justify.block.justify.block`|
+/// |`Prepare` QC|`None`|
+/// |`Precommit` QC|`None`|
+/// |`Commit` QC|`justify.block`|
+/// |`Decide` QC|`justify.block`|
 pub(crate) fn block_to_commit<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,

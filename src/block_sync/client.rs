@@ -86,8 +86,8 @@ use crate::networking::{
 };
 use crate::state::{
     block_tree::{BlockTree, BlockTreeError},
+    invariants::{safe_block, safe_qc},
     kv_store::KVStore,
-    safety::{safe_block, safe_qc},
 };
 use crate::types::basic::ViewNumber;
 use crate::types::{

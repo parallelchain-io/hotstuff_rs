@@ -109,8 +109,8 @@ use crate::types::{
 
 use super::app_block_tree_view::AppBlockTreeView;
 use super::block_tree_snapshot::BlockTreeSnapshot;
+use super::invariants;
 use super::kv_store::{KVGetError, KVStore};
-use super::safety;
 use super::write_batch::{BlockTreeWriteBatch, KVSetError};
 
 /// Read and write handle into the block tree that should be owned exclusively by the algorithm thread.
@@ -354,13 +354,13 @@ impl<K: KVStore> BlockTree<K> {
         }
 
         // 2. Update lockedQC if needed.
-        if let Some(new_locked_qc) = safety::qc_to_lock(justify, &self)? {
+        if let Some(new_locked_qc) = invariants::qc_to_lock(justify, &self)? {
             wb.set_locked_qc(&new_locked_qc)?;
             update_locked_qc = Some(new_locked_qc)
         }
 
         // 3. Commit block(s) if needed.
-        if let Some(block) = safety::block_to_commit(justify, &self)? {
+        if let Some(block) = invariants::block_to_commit(justify, &self)? {
             committed_blocks = self.commit(&mut wb, &block)?;
         }
 

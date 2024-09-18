@@ -18,6 +18,24 @@ TODO Wednesday.
 
 ### Updaters
 
+```mermaid
+---
+title: Flow of messages from creation to persistence
+---
+flowchart LR
+    receive_proposal["Receive Proposal"]--->safe_block["Safe Block"]
+    receive_block_sync_response["Receive Block Sync Response"]--->safe_block
+    safe_block--->insert[Insert]--->update[Update]
+
+    receive_nudge["Receive Nudge"]--->safe_nudge["Safe Nudge"]----->update[Update]
+    receive_new_view["Receive New View"]--->safe_qc["Safe QC"]
+    collect_qc["Collect QC (Receive Vote)"]--->safe_qc
+
+    safe_qc----->update
+
+%% TODO: missing Set Highest TC, Set Highest View Entered, and Set Highest View Voted
+```
+
 #### Insert
 
 TODO Wednesday.
@@ -26,7 +44,13 @@ TODO Wednesday.
 
 TODO Wednesday.
 
-### Safety predicates
+#### Set Highest TC
+
+#### Set Highest View Entered
+
+#### Set Highest View Voted
+
+### Invariants 
 
 Documentation: `hotstuff_rs::state::safety`
 TODO ("Locking and Committing" doc section): Tuesday.1.
