@@ -53,7 +53,6 @@ TODO Wednesday.
 ### Invariants 
 
 Documentation: `hotstuff_rs::state::safety`
-TODO ("Locking and Committing" doc section): Tuesday.1.
 
 #### Safe QC
 

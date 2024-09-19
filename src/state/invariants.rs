@@ -286,7 +286,7 @@
 //! formed.
 //!
 //! To make progress in this situation, a proposer must re-propose either the locked block, or a
-//! (possible new) sibling of the locked block. The implementation in HotStuff-rs chooses to do the
+//! (possibly new) sibling of the locked block. The implementation in HotStuff-rs chooses to do the
 //! former: the [`repropose_block`] method in this module helps determine whether a proposer should
 //! re-propose a block by considering its `current_view` and the local block tree's `highest_view.qc`,
 //! and if it finds that it *should* re-propose a block, returns the hash of the block that should
@@ -465,38 +465,6 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 ///
 /// The `Block` or `Nudge` containing `justify` must satisfy [`safe_block`] or [`safe_nudge`]
 /// respectively.
-///
-/// ## Commit Rules
-///
-/// To prevent different replicas from entering inconsistent states due to Byzantine leaders causing
-/// safety-threatening branch switches, the pipelined HotStuff protocol requires that a block must be
-/// followed by a "3-chain" in order to be committed. This means that the block must be followed by
-/// a child, a grandchild, and a great-grandchild block.
-///
-/// In addition, the three QCs contained in its child, grandchild, and great-grandchild blocks, serving
-/// as its "virtual" Prepare QC, Precommit QC, and Commit QC respectively, must have **consecutive
-/// views**. Note however that while consecutive views are required for a block to be safely committed,
-/// they are not required for a block to be inserted to the block tree, and therefore `safe_block` does
-/// not enforce it. Consecutive views are also not required for a block to be locked.
-///
-/// To obtain an equivalent guarantee for the phased HotStuff protocol for validator-set-updating
-/// blocks, we require that the Prepare QC, Precommit QC, and Commit QC for a validator-set-updating
-/// block received via nudges have consecutive views. If this flow is interrupted by a temporary loss of
-/// synchrony or a Byzantine leader, the validator-set-updating block has to be re-proposed, as
-/// specified in [`repropose_block`]. This rule is enforced through [`safe_nudge`]. Unlike block
-/// insertions, nudges cannot cause state updates unless they satisfy the consecutive views rule.
-///
-/// ## Commit Rules
-///
-/// This function implements the "high-level" [Commit Rules](super::safety#commit-rules) by evaluating
-/// the following "lower-level" Commit Rules:
-///
-/// |`justify` is a|Block to commit|Reasoning|
-/// |---|---|---|
-/// |`Generic` QC|If the "consecutive views" requirement is met, then `Some(great_grandparent_block)`, else, `None`|Implements the commit rule for non-validator-set-updating blocks.|
-/// |`Prepare` QC or `Precommit` QC|`None`|Theoretically, we could commit the `grandparent_block` on receiving a `Prepare` QC and the `parent_block` on receiving `Precommit` QC, but we choose not to do so.|
-/// |`Commit` QC|`Some(justify.block)`|Implements the commit rule for validator-set-updating blocks.|
-/// |`Decide` QC|`Some(justify.block)`|Validator-set-updating blocks are usually committed on seeing `Commit` QC. However, during sync `Commit` QCs are not sent, so blocks have to be committed on seeing `Decide` QCs instead.|
 ///
 /// # `block_to_commit` logic
 ///
