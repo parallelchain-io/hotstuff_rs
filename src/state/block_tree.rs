@@ -390,6 +390,10 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     /// Set the highest `TimeoutCertificate` to be `tc`.
+    ///
+    /// ## Preconditions
+    ///
+    /// TODO.
     pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_tc(tc)?;
@@ -398,6 +402,10 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     /// Set the highest view entered to be `view`.
+    ///
+    /// ## Preconditions
+    ///
+    /// `view >= self.highest_view_entered()`.
     pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_entered(view)?;
@@ -406,6 +414,10 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     /// Set the highest view voted to be `view`.
+    ///
+    /// ## Preconditions
+    ///
+    /// `view >= self.highest_view_voted()`.
     pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
         wb.set_highest_view_voted(view)?;
