@@ -336,8 +336,8 @@ pub(crate) fn safe_block<K: KVStore>(
 /// `safe_qc` returns `true` in case all of the following predicates are `true`:
 /// 1. Either `qc.chain_id` equals `chain_id`, or `qc` is the Genesis QC.
 /// 2. Either `block_tree` contains `qc.block`, or `qc` is the Genesis QC.
-/// 3. Either `qc.view` is greater than `block_tree`'s `locked_qc.view`, or `qc.block` extends from
-///    `locked_qc.block`.
+/// 3. Either `qc.view` is (strictly) greater than `block_tree`'s `locked_qc.view`, or `qc.block` extends
+///    from `locked_qc.block`.
 /// 4. If `qc.phase` is `Prepare`, `Precommit`, `Commit`, or `Decide`, `qc.block` is a validator set
 ///    updating block. Else, if `qc.phase` is `Generic`, `qc.block` is not a validator set updating
 ///    block.
@@ -370,7 +370,7 @@ pub(crate) fn safe_qc<K: KVStore>(
 /// 1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
 /// 2. `nudge.justify.phase` is `Prepare`, `Precommit`, or `Commit`.
 /// 3. `nudge.chain_id` equals `chain_id`.
-/// 4. `nudge.justify` is either a Commit QC, or `nudge.justify.view = current_view - 1`.
+/// 4. `nudge.justify.phase` is either `Commit`, or `nudge.justify.view = current_view - 1`.
 ///
 /// # Precondition
 ///
@@ -411,8 +411,10 @@ pub fn safe_nudge<K: KVStore>(
 /// |`Commit` QC|`justify`|
 /// |`Decide` QC|`justify`|
 ///
-/// The rationale behind `qc_to_lock`'s logic is explained in
-/// [`safety`'s module-level docs](super::safety#updating-the-lock).
+/// # Rationale
+///
+/// The rationale behind `qc_to_lock`'s logic is explained in the ["Locking"](super::invariants#locking)
+/// module-level docs.
 pub(crate) fn qc_to_lock<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,
@@ -468,13 +470,21 @@ pub(crate) fn qc_to_lock<K: KVStore>(
 ///
 /// # `block_to_commit` logic
 ///
-/// |`justify.phase` is a|Block to commit if satisfies the consecutive views rule and not already committed yet|
+/// `block_to_commit`'s return value depends on `justify`'s phase and whether or not it is the Genesis
+/// QC. What `block_to_commit` returns in every case is summarized in the below table:
+///
+/// |`justify.phase` is a|Block to commit if it satisfies the consecutive views rule *and* is not already committed yet|
 /// |---|---|
 /// |`Generic` QC|`justify.block.justify.block.justify.block`|
 /// |`Prepare` QC|`None`|
 /// |`Precommit` QC|`None`|
 /// |`Commit` QC|`justify.block`|
 /// |`Decide` QC|`justify.block`|
+///
+/// # Rationale
+///
+/// The rationale behind `block_to_commit`'s logic is explained in the
+/// ["Committing"](super::invariants#committing) section of `safety`'s module-level docs.
 pub(crate) fn block_to_commit<K: KVStore>(
     justify: &QuorumCertificate,
     block_tree: &BlockTree<K>,
@@ -555,7 +565,8 @@ pub(crate) fn block_to_commit<K: KVStore>(
     }
 }
 
-/// Get the `Block` in the `block_tree` which a leader of the `current_view` should re-propose.
+/// Get the `Block` in the `block_tree` which a leader of the `current_view` should re-propose in order
+/// to satisfy the Consecutive Views Rule and make progress in the view.
 ///
 /// # Usage
 ///
@@ -565,12 +576,10 @@ pub(crate) fn block_to_commit<K: KVStore>(
 /// Else if `Ok(None)` is returned, then the leader should either propose a new block, or
 /// nudge using the highest qc.
 ///
-/// # Purpose
+/// # Rationale
 ///
-/// The leader needs to re-propose an existing block in scenarios where the Highest QC in the Block Tree
-/// indicates that the consecutive-view sequence of nudges required to commit a validator-set updating
-/// block has been broken. In these scenarios, nudging the Highest QC will not allow state machine
-/// replication to make progress.
+/// The Consecutive Views Rule and the purpose of `repropose_block` is explained in the
+/// ["Committing"](super::invariants#committing) section of `safety`'s module-level docs.
 pub(crate) fn repropose_block<K: KVStore>(
     current_view: ViewNumber,
     block_tree: &BlockTree<K>,

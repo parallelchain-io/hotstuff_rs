@@ -57,35 +57,26 @@ Documentation: `hotstuff_rs::state::safety`
 #### Safe QC
 
 Code and documentation: `hotstuff_rs::state::safety::safe_qc`
-TODO (documentation): Tuesday.4.
 
 #### Safe Block
 
 Code and documentation: `hotstuff_rs::state::safety::safe_block`
-TODO (documentation): Tuesday.5.
 
 #### Safe Nudge
 
 Code and documentation: `hotstuff_rs::state::safety::safe_nudge`
-TODO (documentation): Tuesday.6
 
 #### Repropose Block
 
 Code and documentation: `hotstuff_rs::state::safety::repropose_block`
 
-### Update predicates
-
-Documentation: `hotstuff_rs::state::safety`
-
 #### QC to Lock 
 
 Code and documentation: `hotstuff_rs::state::safety::qc_to_lock`
-TODO (documentation): Tuesday.2.
 
 #### Block to Commit
 
 Code and documentation: `hotstuff_rs::state::safety::block_to_commit`
-TODO (documentation): Tuesday.3.
 
 ## HotStuff
 
