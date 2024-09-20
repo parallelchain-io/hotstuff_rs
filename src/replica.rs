@@ -15,28 +15,41 @@
 //!   1. `ReplicaSpec::builder` to construct a `ReplicaSpecBuilder`,
 //!   2. The setters of the `ReplicaSpecBuilder`, and
 //!   3. The `ReplicaSpecBuilder::build` method to construct a [`ReplicaSpec`],
-//! - The function to [start](ReplicaSpec::start) a [Replica] given its specification,
-//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::BlockTree),
+//! - The function to [start](ReplicaSpec::start) a [`Replica`] given its specification,
+//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::block_tree),
 //! - [The type](Replica) which keeps the replica alive.
 //!
-//! ## Validators and Listeners
+//! # Kinds of replicas
 //!
-//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely
-//! keep up with consensus decisions, without having weight in them. We call these replicas 'listeners',
-//! and call the replicas that vote in consensus 'validators'.
+//! At any given moment a Replica could either be a Validator, or a Listener, depending on whether it
+//! is currently allowed to take part in consensus decisions:
+//! - **Validators**: replicas that currently take part in consensus decisions.
+//! - **Listeners**: replicas that currently do not take part in consensus decisions, but rather
+//!  merely replicates the block tree.
 //!
-//! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need
-//! to know the identity of listeners. But for listeners to keep up with consensus decisions, they also
-//! need to receive progress messages.
+//! As the definition above implies, the **Validator Set** is dynamic, and will change as
+//! [**validator set-updating**](crate::app::ValidateBlockResponse) blocks are produced and committed.
 //!
-//! Concretely, this requires that the library user's [networking provider's](crate::networking)
-//! broadcast method send progress messages to all peers it is connected to, and not only the
-//! validators. The library user is free to design and implement their own mechanism for deciding which
-//! peers, besides those in the validator set, should be connected to the network.
+//! ## Becoming a Listener
+//!
+//! While HotStuff-rs keeps track of the current committed (and possibly the previous) validator set in
+//! the persistent block tree, it does not keep track of a "Listener Set" anywhere, and nor can the
+//! `App` ever specify "Listener Set Updates".
+//!
+//! This begs the question: "if HotStuff-rs does not know who the listeners are, how can the listeners
+//! receive blocks and replicate the block tree?"
+//!
+//! In order for listeners to replicate the block tree, the library user should make sure that the
+//! `broadcast` method of the [networking implementation](crate::networking) it provides sends messages to
+//! **all** the peers the replica is connected to, and not only the validators. The library user is free
+//! to implement their own mechanism or deciding which peers, besides those in the validator set, should
+//! be connected to the network. This reduces the process of becoming a listener to the process of
+//! becoming a peer in the user-provided network.
+//! messages.
 //!
 //! ## Starting a replica
 //!
-//! Here is an example that demonstrates how to build and start running a replica using the builder pattern:
+//! Below is an example that demonstrates how to build and start running a replica using the builder pattern:
 //!
 //! ```ignore
 //! let replica =

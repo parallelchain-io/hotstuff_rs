@@ -119,17 +119,18 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
     }
 }
 
-/// Response from the app upon receiving a [request to validate a block](ValidateBlockRequest).
-/// The response can either:
-/// 1. Assert that the block is valid, and return the
-///    [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any), as
-///    well as the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with
-///    the block (if any), or
-/// 2. Assert that the block is invalid.
+/// Response from an `App` upon receiving a [`ValidateBlockRequest`].
 pub enum ValidateBlockResponse {
+    /// Indicates that [`ValidateBlockRequest::proposed_block`] is valid according to the `App`'s semantics.
     Valid {
+        /// The `AppStateUpdates` that the proposed block will cause when it is committed.
         app_state_updates: Option<AppStateUpdates>,
+
+        /// The `ValidatorSetUpdates` that the proposed block will cause when it is committed.
         validator_set_updates: Option<ValidatorSetUpdates>,
     },
+
+    /// Indicates that [`ValidateBlockRequest::proposed_block`] is invalid according the the `App`'s
+    /// semantics.
     Invalid,
 }

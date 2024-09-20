@@ -56,7 +56,7 @@
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
-//! |Locked QC|[`QuorumCertificate`]|The currently locked QC. [Read more](super::safety#locking)|
+//! |Locked QC|[`QuorumCertificate`]|The currently locked QC. [Read more](invariants#locking)|
 //! |Highest Voted View|[`ViewNumber`]|The highest view that this validator has voted in.|
 //! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
 //! |Highest Quorum Certificate|[`QuorumCertificate`]|Among the quorum certificates this validator has seen and verified, the one with the highest view number.|
@@ -273,7 +273,7 @@ impl<K: KVStore> BlockTree<K> {
 /// `impl` above are only used internally in this module.
 impl<K: KVStore> BlockTree<K> {
     /// Insert into the block tree a `block` that will cause the provided `app_state_updates` and
-    /// `validator_set_updates` to be applied when committed.
+    /// `validator_set_updates` to be applied when it is committed in the future.
     ///
     /// ## Relationship with `update`
     ///
@@ -282,7 +282,7 @@ impl<K: KVStore> BlockTree<K> {
     ///
     /// ## Precondition
     ///
-    /// [`safe_block`](super::safety::safe_block) is `true` for `block`.
+    /// [`safe_block`](invariants::safe_block) is `true` for `block`.
     pub fn insert(
         &mut self,
         block: &Block,
@@ -326,16 +326,16 @@ impl<K: KVStore> BlockTree<K> {
     /// Depending on the specific Quorum Certificate received and the state of the Block Tree, the updates
     /// that this function performs will include:
     /// 1. Updating the Highest QC if `justify.view > highest_qc.view`.
-    /// 2. Updating the Locked QC if appropriate, as determined by the [`qc_to_lock`](safety::qc_to_lock)
+    /// 2. Updating the Locked QC if appropriate, as determined by the [`qc_to_lock`](invariants::qc_to_lock)
     ///    helper.
     /// 3. Committing a block and all of its ancestors if appropriate, as determined by the
-    ///    [`block_to_commit`](safety::block_to_commit) helper.
+    ///    [`block_to_commit`](invariants::block_to_commit) helper.
     /// 4. Marking the latest validator set updates as decided if `justify` is a Decide QC.
     ///
     /// ## Preconditions
     ///
-    /// The `Block` or `Nudge` containing `justify` must satisfy [`safe_block`](safety::safe_block) or
-    /// [`safe_nudge`](safety::safe_nudge), respectively.
+    /// The `Block` or `Nudge` containing `justify` must satisfy [`safe_block`](invariants::safe_block) or
+    /// [`safe_nudge`](invariants::safe_nudge), respectively.
     pub(crate) fn update(
         &mut self,
         justify: &QuorumCertificate,

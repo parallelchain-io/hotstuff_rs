@@ -1,22 +1,24 @@
 # HotStuff-rs specification
 
+TODO: just pull this out of the Executive Summary.
+
 ## Block Tree
 
-### Fields
+TODO: talk about tree of blocks, chain of blocks, etc., either in `hotstuff::state` or in `hotstuff::state::block_tree`. Should be medium-length but pretty high-level.
 
-#### Locked QC
+### Extra Fields
 
-TODO Wednesday.
+TODO: this is besides the core data structure described above. I think have to write this here. Should be very short.
 
-#### Highest QC
-
-TODO Wednesday.
-
-#### Validator Sets State
-
-TODO Wednesday.
+|Field|Description|
+|---|---|
+|Locked QC|TODO|
+|Highest QC|TODO|
+|Validator Sets State|TODO|
 
 ### Updaters
+
+Documentation: TODO, have to write this here, not in rustdocs. Should be very short.
 
 ```mermaid
 ---
@@ -38,45 +40,51 @@ flowchart LR
 
 #### Insert
 
-TODO Wednesday.
+Documentation: `hotstuff_rs::state::block_tree::BlockTree::insert`
 
 #### Update
 
-TODO Wednesday.
-
-#### Set Highest TC
+Documentation: `hotstuff_rs::state::block_tree::BlockTree::update`
 
 #### Set Highest View Entered
 
+Documentation: `hotstuff_rs::state::block_tree::BlockTree::set_highest_view_entered`
+
 #### Set Highest View Voted
+
+Documentation: `hotstuff_rs::state::block_tree::BlockTree::set_highest_view_voted`
+
+#### Set Highest TC
+
+Documentation (TODO): need to study the preconditions of this function. Good opportunity to start understanding the pacemaker.
 
 ### Invariants 
 
-Documentation: `hotstuff_rs::state::safety`
+Documentation: `hotstuff_rs::state::invariants`
 
 #### Safe QC
 
-Code and documentation: `hotstuff_rs::state::safety::safe_qc`
+Code and documentation: `hotstuff_rs::state::invariants::safe_qc`
 
 #### Safe Block
 
-Code and documentation: `hotstuff_rs::state::safety::safe_block`
+Code and documentation: `hotstuff_rs::state::invariants::safe_block`
 
 #### Safe Nudge
 
-Code and documentation: `hotstuff_rs::state::safety::safe_nudge`
+Code and documentation: `hotstuff_rs::state::invariants::safe_nudge`
 
 #### Repropose Block
 
-Code and documentation: `hotstuff_rs::state::safety::repropose_block`
+Code and documentation: `hotstuff_rs::state::invariants::repropose_block`
 
 #### QC to Lock 
 
-Code and documentation: `hotstuff_rs::state::safety::qc_to_lock`
+Code and documentation: `hotstuff_rs::state::invariants::qc_to_lock`
 
 #### Block to Commit
 
-Code and documentation: `hotstuff_rs::state::safety::block_to_commit`
+Code and documentation: `hotstuff_rs::state::invariants::block_to_commit`
 
 ## HotStuff
 
@@ -86,7 +94,7 @@ Code and documentation: `hotstuff_rs::state::safety::block_to_commit`
 
 TODO Wednesday.
 
-### State
+### Volatile State
 
 #### Vote Collector
 
@@ -329,6 +337,8 @@ fn on_receive_new_view(new_view: NewView, origin: VerifyingKey) {
 ### Role predicates
 
 TODO: Wednesday.
+
+Should link to the place that describes Leaders, Replicas, and Listeners.
 
 #### Is Proposer
 
