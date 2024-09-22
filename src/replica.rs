@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Methods to build, run, and initialize the storage of a replica.
+//! Methods for building and running a replica as well as initializing its storage.
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology,
 //! these processes are called 'replicas', and therefore the set of all replicas is called the

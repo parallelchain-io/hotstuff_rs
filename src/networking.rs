@@ -25,10 +25,10 @@ use crate::types::basic::{BufferSize, ChainID, ViewNumber};
 use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
 
 pub trait Network: Clone + Send {
-    /// Informs the network provider the validator set on wake-up.
+    /// Inform the network provider the validator set on wake-up.
     fn init_validator_set(&mut self, validator_set: ValidatorSet);
 
-    /// Informs the networking provider of updates to the validator set.
+    /// Inform the networking provider of updates to the validator set.
     fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
 
     /// Send a message to all peers (including listeners) without blocking.

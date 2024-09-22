@@ -56,7 +56,7 @@
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
-//! |Locked QC|[`QuorumCertificate`]|The currently locked QC. [Read more](invariants#locking)|
+//! |Locked Quorum Certificate|[`QuorumCertificate`]|The currently locked QC. [Read more](invariants#locking)|
 //! |Highest Voted View|[`ViewNumber`]|The highest view that this validator has voted in.|
 //! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
 //! |Highest Quorum Certificate|[`QuorumCertificate`]|Among the quorum certificates this validator has seen and verified, the one with the highest view number.|

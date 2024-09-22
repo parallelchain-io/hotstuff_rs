@@ -5,27 +5,7 @@
 
 //! The [`App`] trait, HotStuff-rs' interface into the business logic of users' applications.
 //!
-//! ## The App trait
-//!
-//! After receiving your app through [start](crate::replica::Replica::start), replicas communicate with it
-//! by calling the methods it has implemented as part of the App trait when specific things happen.
-//!
-//! The App trait has three methods, each of which returns a response when called with a request:
-//! 1. `produce_block` is called when the replica becomes a leader and has to produce a new
-//!    block. Your app should respond with the data and the data hash of a block extending the
-//!    parent block included in the request, as well as the
-//!    [app state updates](crate::types::basic::AppStateUpdates)
-//!    and [validator set updates](crate::types::validators::ValidatorSetUpdates) that executing it causes.
-//! 2. `validate_block` is called  when the replica receives a proposal. Your app should respond
-//!    with whether the block is valid (according to the semantics of the application), and again
-//!    with the [app state updates](crate::types::basic::AppStateUpdates) and
-//!    [validator set updates](crate::types::validators::ValidatorSetUpdates)
-//!    that executing the block causes.
-//! 3. `validate_block_for_sync` is called when the replica is syncing. Your app should respond
-//!    with whether the block is valid (according to the semantics of the application), and again
-//!    with the [app state updates](crate::types::basic::AppStateUpdates) and
-//!    [validator set updates](crate::types::validators::ValidatorSetUpdates)\
-//!    that executing the block causes.
+//! TODO: Talk about dependency injection.
 
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
@@ -36,9 +16,26 @@ use crate::{
     },
 };
 
+/// # Timing
+///
+///
+///
+/// TODO: how long should `produce_block`, `validate_block` take to execute? How about `validate_block_for_sync`?
 pub trait App<K: KVStore>: Send {
+    /// Called by HotStuff-rs when the replica becomes a leader and has to produce a new `Block` to be
+    /// inserted into the block tree and proposed to other validators.
     fn produce_block(&mut self, request: ProduceBlockRequest<K>) -> ProduceBlockResponse;
+
+    /// Called by HotStuff-rs when the replica receives a `Proposal` and has to validate the `Block` inside
+    /// it to decide whether or not it should insert it into the block tree and vote for it.
     fn validate_block(&mut self, request: ValidateBlockRequest<K>) -> ValidateBlockResponse;
+
+    /// Called when the replica is syncing and receives a `BlockSyncResponse` and has to validate the
+    /// `Block` inside it to decide whether or not it should insert it into the block tree and vote for it.
+    ///
+    /// # Difference compared to `validate_block`
+    ///
+    /// Read ["Timing"](App#Timing).
     fn validate_block_for_sync(
         &mut self,
         request: ValidateBlockRequest<K>,

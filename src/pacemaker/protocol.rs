@@ -519,7 +519,7 @@ pub(crate) struct PacemakerConfiguration {
     pub(crate) keypair: Keypair,
     pub(crate) epoch_length: EpochLength,
 
-    // How long a view can take before timing out.
+    // How much time can elapse in a view before timing out.
     pub(crate) max_view_time: Duration,
 }
 
@@ -552,25 +552,6 @@ impl PacemakerState {
         }
     }
 
-    /// Set the timeout for each view in the epoch starting from a given view.
-    fn set_timeouts(&mut self, start_view: ViewNumber, config: &PacemakerConfiguration) {
-        // Remove the timeouts for expired views.
-        self.timeouts = self.timeouts.split_off(&start_view);
-
-        let epoch = epoch(start_view, config.epoch_length);
-        let epoch_view = epoch * config.epoch_length.int() as u64;
-
-        let start_time = Instant::now();
-
-        // Add timeouts for all remaining views in the epoch of start_view.
-        for view in start_view.int()..=epoch_view {
-            let time_to_view_deadline =
-                Duration::from_secs(config.max_view_time.as_secs() * (view - start_view.int() + 1));
-            self.timeouts
-                .insert(ViewNumber::new(view), start_time + time_to_view_deadline);
-        }
-    }
-
     /// Return initial timeouts on starting the protocol from a given start view.
     fn initial_timeouts(
         start_view: ViewNumber,
@@ -591,6 +572,25 @@ impl PacemakerState {
         }
 
         return timeouts;
+    }
+
+    /// Set the timeout for each view in the epoch starting from a given view.
+    fn set_timeouts(&mut self, start_view: ViewNumber, config: &PacemakerConfiguration) {
+        // Remove the timeouts for expired views.
+        self.timeouts = self.timeouts.split_off(&start_view);
+
+        let epoch = epoch(start_view, config.epoch_length);
+        let epoch_view = epoch * config.epoch_length.int() as u64;
+
+        let start_time = Instant::now();
+
+        // Add timeouts for all remaining views in the epoch of start_view.
+        for view in start_view.int()..=epoch_view {
+            let time_to_view_deadline =
+                Duration::from_secs(config.max_view_time.as_secs() * (view - start_view.int() + 1));
+            self.timeouts
+                .insert(ViewNumber::new(view), start_time + time_to_view_deadline);
+        }
     }
 
     /// Extend the timeout of the epoch-change view by another max_view_time.
@@ -725,10 +725,12 @@ pub fn select_leader(view: ViewNumber, validator_set: &ValidatorSet) -> Verifyin
     unreachable!("Cannot select a leader: index not found!")
 }
 
+/// Check whether `view` is an epoch-change view given the configured `epoch_length`.
 fn is_epoch_change_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {
     view.int() % (epoch_length.int() as u64) == 0
 }
 
+/// Compute the current epoch based on the current `view` and the configured `epoch_length`.
 fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
     view.int().div_ceil(epoch_length.int() as u64)
 }
