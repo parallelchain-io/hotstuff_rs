@@ -1,16 +1,3 @@
-/*
-    Copyright © 2023, ParallelChain Lab
-    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-*/
-
-//! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and
-//! functions that replicas use to interact with the network.
-//!
-//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their
-//! [`VerifyingKey`](ed25519_dalek::VerifyingKey). Networking providers interact with HotStuff-rs' threads
-//! through implementations of the [`Network`] trait. This trait has five methods that collectively allow
-//! peers to exchange progress protocol and sync protocol messages.  
-
 use std::{
     collections::{BTreeMap, VecDeque},
     mem,
@@ -19,73 +6,17 @@ use std::{
     time::Instant,
 };
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
-    block_sync::messages::{
-        BlockSyncAdvertiseMessage, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse,
-    },
-    hotstuff::messages::HotStuffMessage,
-    pacemaker::messages::PacemakerMessage,
-    types::{
-        basic::{BufferSize, ChainID, ViewNumber},
-        validators::{ValidatorSet, ValidatorSetUpdates},
-    },
+    block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse},
+    types::basic::{BufferSize, ChainID, ViewNumber},
 };
 
-pub trait Network: Clone + Send {
-    /// Inform the network provider the validator set on wake-up.
-    fn init_validator_set(&mut self, validator_set: ValidatorSet);
-
-    /// Inform the networking provider of updates to the validator set.
-    fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
-
-    /// Send a message to all peers (including listeners) without blocking.
-    fn broadcast(&mut self, message: Message);
-
-    /// Send a message to the specified peer without blocking.
-    fn send(&mut self, peer: VerifyingKey, message: Message);
-
-    /// Receive a message from any peer. Returns immediately with a None if no message is available now.
-    fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
-}
-
-#[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum Message {
-    ProgressMessage(ProgressMessage),
-    BlockSyncMessage(BlockSyncMessage),
-}
-
-impl From<HotStuffMessage> for Message {
-    fn from(value: HotStuffMessage) -> Self {
-        Message::ProgressMessage(ProgressMessage::HotStuffMessage(value))
-    }
-}
-
-impl From<PacemakerMessage> for Message {
-    fn from(value: PacemakerMessage) -> Self {
-        Message::ProgressMessage(ProgressMessage::PacemakerMessage(value))
-    }
-}
-
-impl From<BlockSyncRequest> for Message {
-    fn from(value: BlockSyncRequest) -> Self {
-        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncRequest(value))
-    }
-}
-
-impl From<BlockSyncResponse> for Message {
-    fn from(value: BlockSyncResponse) -> Self {
-        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncResponse(value))
-    }
-}
-
-impl From<BlockSyncAdvertiseMessage> for Message {
-    fn from(value: BlockSyncAdvertiseMessage) -> Self {
-        Message::ProgressMessage(ProgressMessage::BlockSyncAdvertiseMessage(value))
-    }
-}
+use super::{
+    messages::{Message, ProgressMessage},
+    network::Network,
+};
 
 /// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receivers
 /// for:
@@ -139,49 +70,6 @@ pub(crate) fn start_polling<N: Network + 'static>(
         sync_request_receiver,
         sync_response_receiver,
     )
-}
-
-/// Handle for sending and broadcasting messages to the [`Network`]. It can be used to send or broadcast
-/// instances of any type that implement the [`Into<Message>`] trait.
-#[derive(Clone)]
-pub(crate) struct SenderHandle<N: Network> {
-    network: N,
-}
-
-impl<N: Network> SenderHandle<N> {
-    pub(crate) fn new(network: N) -> Self {
-        Self { network }
-    }
-
-    pub(crate) fn send<S: Into<Message>>(&mut self, peer: VerifyingKey, msg: S) {
-        self.network.send(peer, msg.into())
-    }
-
-    pub(crate) fn broadcast<S: Into<Message>>(&mut self, msg: S) {
-        self.network.broadcast(msg.into())
-    }
-}
-
-/// Handle for informing the Network Provider about validator set updates.
-///
-/// It is important for the network provider to know about validator set updates because, for example,
-/// if a validator set update adds new validators into the validator set, the network provider may want
-/// to establish connections to these new validators.
-#[derive(Clone)]
-pub(crate) struct ValidatorSetUpdateHandle<N: Network> {
-    network: N,
-}
-
-impl<N: Network> ValidatorSetUpdateHandle<N> {
-    /// Create a new update handle.
-    pub(crate) fn new(network: N) -> Self {
-        Self { network }
-    }
-
-    /// Inform the network provider of new validator set `updates` that have been committed.
-    pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
-        self.network.update_validator_set(updates)
-    }
 }
 
 /// A receiving end for [`ProgressMessages`](ProgressMessage).
@@ -453,51 +341,6 @@ impl ProgressMessageBuffer {
     }
 }
 
-/// A message that serves to advance the consensus process, which may involve:
-/// 1. Participating in consesus via a [`HotStuffMessage`],
-/// 2. Syncing views with other replicas via a [`PacemakerMessage`] (required for consensus),
-/// 3. Triggering block sync on seeing a [`BlockSyncAdvertiseMessage`], which indicates that
-///    the replica is lagging behind the others (required for consensus).
-#[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub enum ProgressMessage {
-    HotStuffMessage(HotStuffMessage),
-    PacemakerMessage(PacemakerMessage),
-    BlockSyncAdvertiseMessage(BlockSyncAdvertiseMessage),
-}
-
-impl ProgressMessage {
-    pub fn chain_id(&self) -> ChainID {
-        match self {
-            ProgressMessage::HotStuffMessage(msg) => msg.chain_id(),
-            ProgressMessage::PacemakerMessage(msg) => msg.chain_id(),
-            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.chain_id(),
-        }
-    }
-
-    pub fn view(&self) -> Option<ViewNumber> {
-        match self {
-            ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
-            ProgressMessage::PacemakerMessage(msg) => Some(msg.view()),
-            ProgressMessage::BlockSyncAdvertiseMessage(_) => None,
-        }
-    }
-
-    pub fn size(&self) -> u64 {
-        match self {
-            ProgressMessage::HotStuffMessage(msg) => msg.size(),
-            ProgressMessage::PacemakerMessage(msg) => msg.size(),
-            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.size(),
-        }
-    }
-
-    pub fn is_block_sync_trigger_msg(&self) -> bool {
-        match self {
-            ProgressMessage::BlockSyncAdvertiseMessage(_) => true,
-            _ => false,
-        }
-    }
-}
-
 /// A cacheable message can be inserted into the
 /// [progress message buffer](crate::networking::ProgressMessageStub).
 ///
@@ -506,7 +349,6 @@ impl ProgressMessage {
 /// 2. The message size is statically known and depends on a particular enum variant.
 pub(crate) trait Cacheable {
     fn view(&self) -> ViewNumber;
-
     fn size(&self) -> u64;
 }
 

@@ -24,7 +24,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     hotstuff::types::QuorumCertificate,
-    networking::{Cacheable, ProgressMessage},
+    networking::{messages::ProgressMessage, receiving::Cacheable},
     types::{basic::*, keypair::*, signed_messages::SignedMessage},
 };
 

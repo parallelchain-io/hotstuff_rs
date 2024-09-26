@@ -43,7 +43,11 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::{
     events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent},
-    networking::{BlockSyncServerStub, Network, SenderHandle},
+    networking::{
+        network::Network,
+        receiving::BlockSyncServerStub,
+        sending::SenderHandle,
+    },
     state::{block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
         basic::{BlockHeight, ChainID},

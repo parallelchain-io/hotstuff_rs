@@ -128,7 +128,7 @@ use crate::{
     event_bus::*,
     events::*,
     hotstuff::protocol::HotStuffConfiguration,
-    networking::{start_polling, Network},
+    networking::{network::Network, receiving::start_polling},
     pacemaker::protocol::PacemakerConfiguration,
     state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{

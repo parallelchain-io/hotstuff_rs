@@ -23,7 +23,10 @@ use crate::{
         roles::{is_proposer, is_voter, new_view_recipients},
         types::{Phase, VoteCollector},
     },
-    networking::{Network, SenderHandle, ValidatorSetUpdateHandle},
+    networking::{
+        network::{Network, ValidatorSetUpdateHandle},
+        sending::SenderHandle,
+    },
     pacemaker::protocol::ViewInfo,
     state::{
         block_tree::{BlockTree, BlockTreeError},

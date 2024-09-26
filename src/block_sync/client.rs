@@ -83,8 +83,9 @@ use crate::{
     },
     events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent},
     networking::{
-        BlockSyncClientStub, BlockSyncResponseReceiveError, Network, SenderHandle,
-        ValidatorSetUpdateHandle,
+        network::{Network, ValidatorSetUpdateHandle},
+        receiving::{BlockSyncClientStub, BlockSyncResponseReceiveError},
+        sending::SenderHandle,
     },
     state::{
         block_tree::{BlockTree, BlockTreeError},

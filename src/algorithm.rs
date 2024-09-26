@@ -23,7 +23,12 @@ use crate::{
     },
     events::*,
     hotstuff::protocol::{HotStuff, HotStuffConfiguration},
-    networking::*,
+    networking::{
+        messages::ProgressMessage,
+        network::{Network, ValidatorSetUpdateHandle},
+        receiving::{BlockSyncClientStub, ProgressMessageReceiveError, ProgressMessageStub},
+        sending::SenderHandle,
+    },
     pacemaker::protocol::{Pacemaker, PacemakerConfiguration},
     state::*,
     types::basic::{BufferSize, ChainID, ViewNumber},

@@ -56,7 +56,7 @@ use crate::{
         TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
     },
     hotstuff::roles::is_validator,
-    networking::{Message, Network, SenderHandle},
+    networking::{messages::Message, network::Network, sending::SenderHandle},
     pacemaker::{
         messages::{AdvanceView, PacemakerMessage, ProgressCertificate, TimeoutVote},
         types::TimeoutVoteCollector,
