@@ -9,19 +9,23 @@ pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
 use borsh::BorshSerialize;
 use paths::*;
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{
-    AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber,
-};
-use crate::types::block::Block;
-use crate::types::validators::{
-    ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes,
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
+        block::Block,
+        validators::{
+            ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes,
+        },
+    },
 };
 
-use super::block_tree::BlockTreeError;
-use super::kv_store::Key;
-use super::paths::{self, combine};
+use super::{
+    block_tree::BlockTreeError,
+    kv_store::Key,
+    paths::{self, combine},
+};
 
 pub trait WriteBatch {
     fn new() -> Self;

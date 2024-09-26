@@ -292,13 +292,15 @@
 //! and if it finds that it *should* re-propose a block, returns the hash of the block that should
 //! be re-proposed so that the proposer can get it from the block tree.
 
-use crate::hotstuff::{
-    messages::Nudge,
-    types::{Phase, QuorumCertificate},
-};
-use crate::types::{
-    basic::{ChainID, CryptoHash, ViewNumber},
-    block::Block,
+use crate::{
+    hotstuff::{
+        messages::Nudge,
+        types::{Phase, QuorumCertificate},
+    },
+    types::{
+        basic::{ChainID, CryptoHash, ViewNumber},
+        block::Block,
+    },
 };
 
 use super::{

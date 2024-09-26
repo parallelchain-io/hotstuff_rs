@@ -9,8 +9,10 @@ use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
-use crate::types::{basic::*, block::*, keypair::*};
+use crate::{
+    networking::{Cacheable, ProgressMessage},
+    types::{basic::*, block::*, keypair::*, signed_messages::SignedMessage},
+};
 
 use super::types::{Phase, QuorumCertificate};
 

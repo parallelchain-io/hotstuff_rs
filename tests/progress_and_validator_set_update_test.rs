@@ -1,7 +1,9 @@
 use std::{thread, time::Duration};
 
 use common::{logging::log_with_context, number_app::NumberApp};
-use hotstuff_rs::types::{basic::Power, collectors::SigningKey, validators::ValidatorSetUpdates};
+use hotstuff_rs::types::{
+    basic::Power, signed_messages::SigningKey, validators::ValidatorSetUpdates,
+};
 use rand_core::OsRng;
 
 mod common;

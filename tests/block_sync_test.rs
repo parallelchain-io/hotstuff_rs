@@ -2,7 +2,9 @@ use std::{thread, time::Duration};
 
 use rand_core::OsRng;
 
-use hotstuff_rs::types::{basic::Power, collectors::SigningKey, validators::ValidatorSetUpdates};
+use hotstuff_rs::types::{
+    basic::Power, signed_messages::SigningKey, validators::ValidatorSetUpdates,
+};
 
 mod common;
 

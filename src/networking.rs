@@ -11,18 +11,28 @@
 //! through implementations of the [`Network`] trait. This trait has five methods that collectively allow
 //! peers to exchange progress protocol and sync protocol messages.  
 
-use std::collections::{BTreeMap, VecDeque};
-use std::mem;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
-use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    mem,
+    sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+    thread::{self, JoinHandle},
+    time::Instant,
+};
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::VerifyingKey;
 
-use crate::block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse};
-use crate::messages::*;
-use crate::types::basic::{BufferSize, ChainID, ViewNumber};
-use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
+use crate::{
+    block_sync::messages::{
+        BlockSyncAdvertiseMessage, BlockSyncMessage, BlockSyncRequest, BlockSyncResponse,
+    },
+    hotstuff::messages::HotStuffMessage,
+    pacemaker::messages::PacemakerMessage,
+    types::{
+        basic::{BufferSize, ChainID, ViewNumber},
+        validators::{ValidatorSet, ValidatorSetUpdates},
+    },
+};
 
 pub trait Network: Clone + Send {
     /// Inform the network provider the validator set on wake-up.
@@ -39,6 +49,42 @@ pub trait Network: Clone + Send {
 
     /// Receive a message from any peer. Returns immediately with a None if no message is available now.
     fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
+}
+
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
+pub enum Message {
+    ProgressMessage(ProgressMessage),
+    BlockSyncMessage(BlockSyncMessage),
+}
+
+impl From<HotStuffMessage> for Message {
+    fn from(value: HotStuffMessage) -> Self {
+        Message::ProgressMessage(ProgressMessage::HotStuffMessage(value))
+    }
+}
+
+impl From<PacemakerMessage> for Message {
+    fn from(value: PacemakerMessage) -> Self {
+        Message::ProgressMessage(ProgressMessage::PacemakerMessage(value))
+    }
+}
+
+impl From<BlockSyncRequest> for Message {
+    fn from(value: BlockSyncRequest) -> Self {
+        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncRequest(value))
+    }
+}
+
+impl From<BlockSyncResponse> for Message {
+    fn from(value: BlockSyncResponse) -> Self {
+        Message::BlockSyncMessage(BlockSyncMessage::BlockSyncResponse(value))
+    }
+}
+
+impl From<BlockSyncAdvertiseMessage> for Message {
+    fn from(value: BlockSyncAdvertiseMessage) -> Self {
+        Message::ProgressMessage(ProgressMessage::BlockSyncAdvertiseMessage(value))
+    }
 }
 
 /// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receivers
@@ -405,6 +451,63 @@ impl ProgressMessageBuffer {
     fn remove_expired_msgs(&mut self, cur_view: ViewNumber) {
         self.buffer = self.buffer.split_off(&cur_view)
     }
+}
+
+/// A message that serves to advance the consensus process, which may involve:
+/// 1. Participating in consesus via a [`HotStuffMessage`],
+/// 2. Syncing views with other replicas via a [`PacemakerMessage`] (required for consensus),
+/// 3. Triggering block sync on seeing a [`BlockSyncAdvertiseMessage`], which indicates that
+///    the replica is lagging behind the others (required for consensus).
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
+pub enum ProgressMessage {
+    HotStuffMessage(HotStuffMessage),
+    PacemakerMessage(PacemakerMessage),
+    BlockSyncAdvertiseMessage(BlockSyncAdvertiseMessage),
+}
+
+impl ProgressMessage {
+    pub fn chain_id(&self) -> ChainID {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => msg.chain_id(),
+            ProgressMessage::PacemakerMessage(msg) => msg.chain_id(),
+            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.chain_id(),
+        }
+    }
+
+    pub fn view(&self) -> Option<ViewNumber> {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
+            ProgressMessage::PacemakerMessage(msg) => Some(msg.view()),
+            ProgressMessage::BlockSyncAdvertiseMessage(_) => None,
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        match self {
+            ProgressMessage::HotStuffMessage(msg) => msg.size(),
+            ProgressMessage::PacemakerMessage(msg) => msg.size(),
+            ProgressMessage::BlockSyncAdvertiseMessage(msg) => msg.size(),
+        }
+    }
+
+    pub fn is_block_sync_trigger_msg(&self) -> bool {
+        match self {
+            ProgressMessage::BlockSyncAdvertiseMessage(_) => true,
+            _ => false,
+        }
+    }
+}
+
+/// A cacheable message can be inserted into the
+/// [progress message buffer](crate::networking::ProgressMessageStub).
+///
+/// For this, we require that:
+/// 1. The message is associated with a view,
+/// 2. The message size is statically known and depends on a particular enum variant.
+pub(crate) trait Cacheable {
+    fn view(&self) -> ViewNumber;
+
+    fn size(&self) -> u64;
 }
 
 /// A receiving end for sync responses. The [`BlockSyncClientStub::recv_response`] method returns

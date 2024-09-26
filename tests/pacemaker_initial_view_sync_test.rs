@@ -4,7 +4,7 @@ use rand_core::OsRng;
 
 use hotstuff_rs::types::{
     basic::{Power, ViewNumber},
-    collectors::SigningKey,
+    signed_messages::SigningKey,
     validators::ValidatorSetUpdates,
 };
 

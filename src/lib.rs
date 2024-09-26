@@ -56,8 +56,6 @@ pub mod types;
 
 pub mod logging;
 
-pub mod messages;
-
 pub mod pacemaker;
 
 pub mod hotstuff;

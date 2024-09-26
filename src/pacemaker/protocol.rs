@@ -42,30 +42,36 @@
 //! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power
 //!    than any other validator, it will never act as a leader for more than one consecutive view.
 
-use std::time::{Duration, SystemTime};
-use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
+use std::{
+    collections::BTreeMap,
+    sync::mpsc::Sender,
+    time::{Duration, Instant, SystemTime},
+};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::{
-    AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
-    TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
-};
-use crate::hotstuff::roles::is_validator;
-use crate::messages::{Message, SignedMessage};
-use crate::networking::{Network, SenderHandle};
-use crate::pacemaker::messages::ProgressCertificate;
-use crate::pacemaker::messages::{AdvanceView, PacemakerMessage, TimeoutVote};
-use crate::pacemaker::types::TimeoutVoteCollector;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::EpochLength;
-use crate::types::collectors::{ActiveCollectors, Certificate};
-use crate::types::validators::{ValidatorSet, ValidatorSetState};
-use crate::types::{
-    basic::{ChainID, ViewNumber},
-    keypair::Keypair,
+use crate::{
+    events::{
+        AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
+        TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
+    },
+    hotstuff::roles::is_validator,
+    networking::{Message, Network, SenderHandle},
+    pacemaker::{
+        messages::{AdvanceView, PacemakerMessage, ProgressCertificate, TimeoutVote},
+        types::TimeoutVoteCollector,
+    },
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+        write_batch::BlockTreeWriteBatch,
+    },
+    types::{
+        basic::{ChainID, EpochLength, ViewNumber},
+        keypair::Keypair,
+        signed_messages::{ActiveCollectorPair, Certificate, SignedMessage},
+        validators::{ValidatorSet, ValidatorSetState},
+    },
 };
 
 /// A Pacemaker protocol for Byzantine View Synchronization inspired by the Lewis-Pye View
@@ -475,7 +481,7 @@ impl<N: Network> Pacemaker<N> {
         );
 
         // Update the timeout vote collectors.
-        self.state.timeout_vote_collectors = <ActiveCollectors<TimeoutVoteCollector>>::new(
+        self.state.timeout_vote_collectors = <ActiveCollectorPair<TimeoutVoteCollector>>::new(
             self.config.chain_id,
             next_view,
             validator_set_state,
@@ -527,7 +533,7 @@ pub(crate) struct PacemakerConfiguration {
 /// (if any), and the [timeout votes][TimeoutVote] collected for the current view.
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
-    timeout_vote_collectors: ActiveCollectors<TimeoutVoteCollector>,
+    timeout_vote_collectors: ActiveCollectorPair<TimeoutVoteCollector>,
 
     // The view in which this replica last broadcasted an Advance View message.
     last_advance_view: Option<ViewNumber>,
@@ -543,7 +549,7 @@ impl PacemakerState {
     ) -> Self {
         Self {
             timeouts: Self::initial_timeouts(init_view, config),
-            timeout_vote_collectors: <ActiveCollectors<TimeoutVoteCollector>>::new(
+            timeout_vote_collectors: <ActiveCollectorPair<TimeoutVoteCollector>>::new(
                 config.chain_id,
                 init_view,
                 validator_set_state,
@@ -738,8 +744,7 @@ fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
 /// Tests if the number of times each validator is selected as a leader is proportional to its power.
 #[test]
 fn select_leader_fairness_test() {
-    use crate::types::basic::Power;
-    use crate::types::validators::ValidatorSetUpdates;
+    use crate::types::{basic::Power, validators::ValidatorSetUpdates};
     use ed25519_dalek::{SigningKey, VerifyingKey};
     use rand_core::OsRng;
 

@@ -11,4 +11,4 @@ pub mod validators;
 
 pub mod keypair;
 
-pub mod collectors;
+pub mod signed_messages;

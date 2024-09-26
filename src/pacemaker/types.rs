@@ -8,11 +8,18 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use crate::pacemaker::messages::TimeoutVote;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::types::collectors::{Certificate, Collector};
-use crate::types::{basic::*, validators::*};
+use crate::{
+    pacemaker::messages::TimeoutVote,
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+    },
+    types::{
+        basic::*,
+        signed_messages::{Certificate, Collector},
+        validators::*,
+    },
+};
 
 /// Proof that at least a quorum of validators have sent a
 /// [`TimeoutVote`][crate::pacemaker::messages::TimeoutVote] for the same view.
@@ -129,7 +136,8 @@ impl Collector for TimeoutVoteCollector {
     /// not part of its validator set, then this is a no-op.
     ///
     /// # Preconditions
-    /// vote.is_correct(signer)
+    ///
+    /// `vote.is_correct(signer)`
     fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
             return None;

@@ -5,33 +5,39 @@
 
 //! Implementation of a participant in the HotStuff subprotocol.
 
-use std::sync::mpsc::Sender;
-use std::time::SystemTime;
+use std::{sync::mpsc::Sender, time::SystemTime};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::app::{
-    App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
+use crate::{
+    app::{
+        App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
+    },
+    events::{
+        CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent,
+        ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent,
+        StartViewEvent, VoteEvent,
+    },
+    hotstuff::{
+        messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote},
+        roles::{is_proposer, is_voter, new_view_recipients},
+        types::{Phase, VoteCollector},
+    },
+    networking::{Network, SenderHandle, ValidatorSetUpdateHandle},
+    pacemaker::protocol::ViewInfo,
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        invariants::{repropose_block, safe_block, safe_nudge, safe_qc},
+        kv_store::KVStore,
+    },
+    types::{
+        basic::{BlockHeight, ChainID},
+        block::Block,
+        keypair::Keypair,
+        signed_messages::{ActiveCollectorPair, Certificate, SignedMessage},
+        validators::ValidatorSetState,
+    },
 };
-use crate::events::{
-    CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent,
-    ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent, StartViewEvent,
-    VoteEvent,
-};
-use crate::hotstuff::messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote};
-use crate::hotstuff::roles::{is_proposer, is_voter, new_view_recipients};
-use crate::hotstuff::types::{Phase, VoteCollector};
-use crate::messages::SignedMessage;
-use crate::networking::{Network, SenderHandle, ValidatorSetUpdateHandle};
-use crate::pacemaker::protocol::ViewInfo;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::invariants::{repropose_block, safe_block, safe_nudge, safe_qc};
-use crate::state::kv_store::KVStore;
-use crate::types::basic::BlockHeight;
-use crate::types::block::Block;
-use crate::types::collectors::{ActiveCollectors, Certificate};
-use crate::types::validators::ValidatorSetState;
-use crate::types::{basic::ChainID, keypair::Keypair};
 
 use super::roles::vote_recipient;
 
@@ -60,7 +66,7 @@ pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     view_info: ViewInfo,
     proposal_status: ProposalStatus,
-    vote_collectors: ActiveCollectors<VoteCollector>,
+    vote_collectors: ActiveCollectorPair<VoteCollector>,
     sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     event_publisher: Option<Sender<Event>>,
@@ -76,7 +82,7 @@ impl<N: Network> HotStuff<N> {
         init_validator_set_state: ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let vote_collectors = <ActiveCollectors<VoteCollector>>::new(
+        let vote_collectors = <ActiveCollectorPair<VoteCollector>>::new(
             config.chain_id,
             view_info.view,
             &init_validator_set_state,
@@ -157,7 +163,7 @@ impl<N: Network> HotStuff<N> {
         //    votes for the new view.
         self.view_info = new_view_info;
         self.proposal_status = ProposalStatus::WaitingForProposal;
-        self.vote_collectors = <ActiveCollectors<VoteCollector>>::new(
+        self.vote_collectors = <ActiveCollectorPair<VoteCollector>>::new(
             self.config.chain_id,
             self.view_info.view,
             &validator_set_state,

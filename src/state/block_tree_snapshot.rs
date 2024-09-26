@@ -4,16 +4,23 @@
 */
 //! General purpose, read-only interface for querying the Block Tree.
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{
-    AppStateUpdates, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        basic::{
+            AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
+            ViewNumber,
+        },
+        block::Block,
+        validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus},
+    },
 };
-use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus};
-use crate::types::{basic::BlockHeight, block::Block};
 
-use super::block_tree::BlockTreeError;
-use super::kv_store::{KVGet, KVStore};
+use super::{
+    block_tree::BlockTreeError,
+    kv_store::{KVGet, KVStore},
+};
 
 /// A factory for [`BlockTreeSnapshot`]s.
 #[derive(Clone)]

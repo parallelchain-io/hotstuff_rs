@@ -113,31 +113,30 @@
 //!     .build()
 //! ```
 
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::{thread::JoinHandle, time::Duration};
 
 use ed25519_dalek::SigningKey;
 use typed_builder::TypedBuilder;
 
-use crate::algorithm::Algorithm;
-use crate::app::App;
-use crate::block_sync::client::BlockSyncClientConfiguration;
-use crate::block_sync::server::BlockSyncServer;
-use crate::block_sync::server::BlockSyncServerConfiguration;
-use crate::event_bus::*;
-use crate::events::*;
-use crate::hotstuff::protocol::HotStuffConfiguration;
-use crate::networking::{start_polling, Network};
-use crate::pacemaker::protocol::PacemakerConfiguration;
-use crate::state::block_tree::BlockTree;
-use crate::state::block_tree_snapshot::BlockTreeCamera;
-use crate::state::kv_store::KVStore;
-use crate::types::basic::AppStateUpdates;
-use crate::types::basic::BufferSize;
-use crate::types::basic::ChainID;
-use crate::types::basic::EpochLength;
-use crate::types::keypair::Keypair;
-use crate::types::validators::ValidatorSetState;
+use crate::{
+    algorithm::Algorithm,
+    app::App,
+    block_sync::{
+        client::BlockSyncClientConfiguration,
+        server::{BlockSyncServer, BlockSyncServerConfiguration},
+    },
+    event_bus::*,
+    events::*,
+    hotstuff::protocol::HotStuffConfiguration,
+    networking::{start_polling, Network},
+    pacemaker::protocol::PacemakerConfiguration,
+    state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
+    types::{
+        basic::{AppStateUpdates, BufferSize, ChainID, EpochLength},
+        keypair::Keypair,
+        validators::ValidatorSetState,
+    },
+};
 use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:

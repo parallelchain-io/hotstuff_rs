@@ -14,7 +14,7 @@ use hotstuff_rs::{
     state::{block_tree_snapshot::BlockTreeSnapshot, kv_store::KVGet},
     types::{
         basic::{AppStateUpdates, CryptoHash, Data, Datum, Power},
-        collectors::VerifyingKey,
+        signed_messages::VerifyingKey,
         validators::ValidatorSetUpdates,
     },
 };

@@ -41,11 +41,15 @@ use std::{
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent};
-use crate::networking::{BlockSyncServerStub, Network, SenderHandle};
-use crate::state::{block_tree_snapshot::BlockTreeCamera, kv_store::KVStore};
-use crate::types::basic::BlockHeight;
-use crate::types::{basic::ChainID, keypair::Keypair};
+use crate::{
+    events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent},
+    networking::{BlockSyncServerStub, Network, SenderHandle},
+    state::{block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
+    types::{
+        basic::{BlockHeight, ChainID},
+        keypair::Keypair,
+    },
+};
 
 use super::messages::{BlockSyncAdvertiseMessage, BlockSyncRequest, BlockSyncResponse};
 

@@ -88,30 +88,34 @@
 //! |Highest View Entered|0|
 //! |Highest Quorum Certificate|The [Genesis QC](crate::hotstuff::types::QuorumCertificate::genesis_qc)|
 
-use std::cmp::max;
-use std::iter::successors;
-use std::sync::mpsc::Sender;
-use std::time::SystemTime;
+use std::{cmp::max, iter::successors, sync::mpsc::Sender, time::SystemTime};
 
-use crate::events::{
-    CommitBlockEvent, Event, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedQCEvent,
-    UpdateValidatorSetEvent,
-};
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::{
-    basic::{
-        AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+use crate::{
+    events::{
+        CommitBlockEvent, Event, PruneBlockEvent, UpdateHighestQCEvent, UpdateLockedQCEvent,
+        UpdateValidatorSetEvent,
     },
-    block::Block,
-    validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus},
+    hotstuff::types::QuorumCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        basic::{
+            AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
+            ViewNumber,
+        },
+        block::Block,
+        validators::{
+            ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus,
+        },
+    },
 };
 
-use super::app_block_tree_view::AppBlockTreeView;
-use super::block_tree_snapshot::BlockTreeSnapshot;
-use super::invariants;
-use super::kv_store::{KVGetError, KVStore};
-use super::write_batch::{BlockTreeWriteBatch, KVSetError};
+use super::{
+    app_block_tree_view::AppBlockTreeView,
+    block_tree_snapshot::BlockTreeSnapshot,
+    invariants,
+    kv_store::{KVGetError, KVStore},
+    write_batch::{BlockTreeWriteBatch, KVSetError},
+};
 
 /// Read and write handle into the block tree that should be owned exclusively by the algorithm thread.
 ///

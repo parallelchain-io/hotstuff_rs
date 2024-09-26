@@ -23,9 +23,10 @@ use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::SignedMessage;
-use crate::types::{basic::*, block::*, keypair::Keypair};
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    types::{basic::*, block::*, keypair::Keypair, signed_messages::SignedMessage},
+};
 
 /// Messages exchanged between a sync server and a sync client when syncing.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]

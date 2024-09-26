@@ -22,9 +22,11 @@ use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::{Cacheable, ProgressMessage, SignedMessage};
-use crate::types::{basic::*, keypair::*};
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    networking::{Cacheable, ProgressMessage},
+    types::{basic::*, keypair::*, signed_messages::SignedMessage},
+};
 
 use super::types::TimeoutCertificate;
 

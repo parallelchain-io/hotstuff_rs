@@ -8,24 +8,28 @@
 //! 2. [`Pacemaker`]: for synchronizing views among the peers,
 //! 3. [`BlockSyncClient`]: for triggering and handling the block sync procedure when needed.
 
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::thread::{self, JoinHandle};
+use std::{
+    sync::mpsc::{Receiver, Sender, TryRecvError},
+    thread::{self, JoinHandle},
+};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::app::App;
-use crate::block_sync::client::{BlockSyncClient, BlockSyncClientConfiguration};
-use crate::block_sync::messages::BlockSyncResponse;
-use crate::events::*;
-use crate::hotstuff::protocol::{HotStuff, HotStuffConfiguration};
-use crate::messages::ProgressMessage;
-use crate::networking::*;
-use crate::pacemaker::protocol::{Pacemaker, PacemakerConfiguration};
-use crate::state::*;
-use crate::types::basic::{BufferSize, ChainID, ViewNumber};
+use crate::{
+    app::App,
+    block_sync::{
+        client::{BlockSyncClient, BlockSyncClientConfiguration},
+        messages::BlockSyncResponse,
+    },
+    events::*,
+    hotstuff::protocol::{HotStuff, HotStuffConfiguration},
+    networking::*,
+    pacemaker::protocol::{Pacemaker, PacemakerConfiguration},
+    state::*,
+    types::basic::{BufferSize, ChainID, ViewNumber},
+};
 
-use self::block_tree::BlockTree;
-use self::kv_store::KVStore;
+use self::{block_tree::BlockTree, kv_store::KVStore};
 
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,

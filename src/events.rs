@@ -33,18 +33,25 @@
 //! [insert block event](InsertBlockEvent) is only emitted after the insertion has been persisted into
 //! the backing storage of the block tree.
 
-use std::sync::mpsc::Sender;
-use std::time::SystemTime;
+use std::{sync::mpsc::Sender, time::SystemTime};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::messages::{AdvanceView, TimeoutVote};
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{BlockHeight, CryptoHash, ViewNumber};
-use crate::types::block::Block;
-use crate::types::validators::ValidatorSetUpdates;
+use crate::{
+    hotstuff::{
+        messages::{NewView, Nudge, Proposal, Vote},
+        types::QuorumCertificate,
+    },
+    pacemaker::{
+        messages::{AdvanceView, TimeoutVote},
+        types::TimeoutCertificate,
+    },
+    types::{
+        basic::{BlockHeight, CryptoHash, ViewNumber},
+        block::Block,
+        validators::ValidatorSetUpdates,
+    },
+};
 
 /// Enumerates all events defined for HotStuff-rs.
 pub enum Event {

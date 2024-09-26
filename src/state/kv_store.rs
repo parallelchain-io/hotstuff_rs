@@ -12,19 +12,26 @@ use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::validators::{ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
-use crate::types::{
-    basic::{
-        AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        basic::{
+            AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
+            ViewNumber,
+        },
+        block::Block,
+        validators::{
+            ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdatesStatus,
+            ValidatorSetUpdatesStatusBytes,
+        },
     },
-    block::Block,
-    validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState},
 };
 
-use super::paths::{self, combine};
-use super::write_batch::WriteBatch;
+use super::{
+    paths::{self, combine},
+    write_batch::WriteBatch,
+};
 
 pub trait KVStore: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;

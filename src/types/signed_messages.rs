@@ -10,33 +10,55 @@
 //! groups collectors for all active validator sets into a single struct, which can be easily updated
 //! on view or validator set state updates.
 
-pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+pub use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 pub use sha2::Sha256 as CryptoHasher;
 
-use crate::messages::SignedMessage;
 use crate::state::{
     block_tree::{BlockTree, BlockTreeError},
     kv_store::KVStore,
 };
 
 use super::{
-    basic::{ChainID, TotalPower, ViewNumber},
+    basic::{ChainID, SignatureBytes, TotalPower, ViewNumber},
     validators::{ValidatorSet, ValidatorSetState},
 };
 
-/// Evidence that a quorum of validators from a given validator set supports a given decision. The
-/// evidence comes in the form of a set of signatures of the validators.
+/// A signed message must consist of:
+/// 1. Message bytes ([`SignedMessage::message_bytes`]): the values that the signature is over, and
+/// 2. Signature bytes ([`SignedMessage::signature_bytes`]): the signature in bytes.
+/// Given the two values satisfying the above, and a public key of the signer,
+/// the signature can be verified against the message.
+pub(crate) trait SignedMessage: Clone {
+    // The values contained in the message that should be signed (represented as a vector of bytes).
+    // A signed message must have a vector of bytes to sign over.
+    fn message_bytes(&self) -> Vec<u8>;
+
+    // The signature (in bytes) from the vote.
+    // A vote must contain a signature.
+    fn signature_bytes(&self) -> SignatureBytes;
+
+    // Verifies the correctness of the signature given the values that should be signed.
+    fn is_correct(&self, pk: &VerifyingKey) -> bool {
+        let signature = Signature::from_bytes(&self.signature_bytes().bytes());
+        pk.verify(&self.message_bytes(), &signature).is_ok()
+    }
+}
+
+/// Data types that count as evidence that a [`quorum`](Certificate::quorum) of validators in a
+/// particular validator set supports a particular decision. The evidence comes in the form of a
+/// set of signatures by the validators.
 pub trait Certificate {
-    /// Check whether the certificate is "correct", i.e., whether it can serve as evidence that a particular
-    /// decision has been approved by the quorum of validators assigned to collectively make the decision.
+    /// Check whether the certificate is "correct" ( i.e., whether it can serve as evidence that a particular
+    /// decision has been approved by the quorum of validators assigned to collectively make the decision),
+    /// given the current `block_tree`.
     ///
     /// ## Guidelines for implementation
     ///
     /// Implementations of `is_correct` should generally execute the following three steps (in addition to
     /// any specialized steps needed to check the correctness of the specific implementing type):
     /// 1. Get [`ValidatorSetState`] from `block_tree`.
-    /// 2. Decide whether the certificate should be tested against the committed validator set, or the previous
-    ///    validator set, or against both.
+    /// 2. Decide whether the certificate should be tested against the Committed Validator Set, or the Previous
+    ///    Validator Set, or against both.
     /// 3. Call [`is_correctly_signed`](Certificate::is_correctly_signed) on the certificate, passing the
     ///    committed validator set, the previous validator set, or both (in separate calls).
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError>;
@@ -68,12 +90,23 @@ pub trait Certificate {
     }
 }
 
-/// Collects [correct][SignedMessage::is_correct] [signed messages][SignedMessage] into a [`Certificate`].
-/// Otherwise, stores the collected signatures collected from members of a given [validator set](ValidatorSet).
+/// Types that progressively collect [correct][SignedMessage::is_correct] [`SignedMessage`]s into [`Certificate`]s
+///
+/// TODO: matching chain_id and view.
+///
+/// TODO: a single validator set.
 pub(crate) trait Collector: Clone {
+    /// The specific `SignedMessage` type that this `Collector` takes as input.
     type S: SignedMessage;
+
+    /// The specific `Certificate` type that this `Collector` creates and returns as output.
     type C: Certificate;
 
+    /// Create a new instance of the `Collector`, configuring it to collect `SignedMessage`s for the specified
+    /// `chain_id`, and `view`, and signed by a member
+    ///
+    /// TODO: seems like `chain_id`, `view`, `validator_set` are concepts only in `Collector`, not
+    /// `SignedMessage`.
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self;
 
     fn chain_id(&self) -> ChainID;
@@ -82,6 +115,7 @@ pub(crate) trait Collector: Clone {
 
     fn validator_set(&self) -> &ValidatorSet;
 
+    /// Preconditions: does the caller have to check whether `signer` is correct or not?
     fn collect(&mut self, signer: &VerifyingKey, message: Self::S) -> Option<Self::C>;
 }
 
@@ -98,12 +132,12 @@ pub(crate) trait Collector: Clone {
 ///
 /// When the current `View` changes, discard the `ActiveCollectors` and create a new one using the
 /// current view.
-pub(crate) struct ActiveCollectors<CL: Collector> {
+pub(crate) struct ActiveCollectorPair<CL: Collector> {
     committed_validator_set_collector: CL,
     prev_validator_set_collector: Option<CL>,
 }
 
-impl<CL: Collector> ActiveCollectors<CL> {
+impl<CL: Collector> ActiveCollectorPair<CL> {
     /// Create `ActiveCollectors` for `chain_id`, `view`, and `validator_set_state`.
     pub(crate) fn new(
         chain_id: ChainID,
@@ -186,9 +220,9 @@ impl<CL: Collector> ActiveCollectors<CL> {
             } else {
                 unreachable!(
                     "if the validator set update period started, then the latest previous validator set should be equal
-                    to committed validator set currently known by the `ActiveCollectors`. The fact that this invariant
-                    is broken suggests that an internal call to `update_validator_sets` was 'skipped' and therefore the
-                    `ActiveCollectors` missed a validator set update. This is a library bug"
+                    to committed validator set currently known by the `ActiveCollectorPair`. The fact that this 
+                    invariant is broken suggests that an internal call to `update_validator_sets` was 'skipped' and
+                    therefore the `ActiveCollectorPair` missed a validator set update. This is a library bug"
                 )
             }
         }

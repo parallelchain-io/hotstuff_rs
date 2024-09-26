@@ -7,11 +7,15 @@
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::pacemaker::protocol::select_leader;
-use crate::types::{basic::ViewNumber, validators::ValidatorSetState};
+use crate::{
+    pacemaker::protocol::select_leader,
+    types::{basic::ViewNumber, validators::ValidatorSetState},
+};
 
-use super::messages::{NewView, Vote};
-use super::types::{Phase, QuorumCertificate};
+use super::{
+    messages::{NewView, Vote},
+    types::{Phase, QuorumCertificate},
+};
 
 /// Determine whether the `replica` is an "active" validator, given the current `validator_set_state`.
 ///

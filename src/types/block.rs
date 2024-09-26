@@ -9,12 +9,16 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use sha2::Digest;
 pub use sha2::Sha256 as CryptoHasher;
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::types::basic::*;
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+    },
+    types::basic::*,
+};
 
-use super::collectors::Certificate;
+use super::signed_messages::Certificate;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {

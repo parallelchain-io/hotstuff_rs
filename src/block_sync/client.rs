@@ -67,34 +67,36 @@
 //! hashmap of available sync servers, and a queue of blacklisted sync servers together with their
 //! expiry times.
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant, SystemTime};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::mpsc::Sender,
+    time::{Duration, Instant, SystemTime},
+};
 
 use ed25519_dalek::VerifyingKey;
 use rand::seq::IteratorRandom;
 
-use crate::app::{App, ValidateBlockRequest, ValidateBlockResponse};
-use crate::block_sync::messages::{
-    AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest,
-};
-use crate::events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent};
-use crate::messages::SignedMessage;
-use crate::networking::{
-    BlockSyncClientStub, BlockSyncResponseReceiveError, Network, SenderHandle,
-    ValidatorSetUpdateHandle,
-};
-use crate::state::{
-    block_tree::{BlockTree, BlockTreeError},
-    invariants::{safe_block, safe_qc},
-    kv_store::KVStore,
-};
-use crate::types::basic::ViewNumber;
-use crate::types::{
-    basic::{BlockHeight, ChainID},
-    block::Block,
-    collectors::Certificate,
-    validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus},
+use crate::{
+    app::{App, ValidateBlockRequest, ValidateBlockResponse},
+    block_sync::messages::{
+        AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest,
+    },
+    events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent},
+    networking::{
+        BlockSyncClientStub, BlockSyncResponseReceiveError, Network, SenderHandle,
+        ValidatorSetUpdateHandle,
+    },
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        invariants::{safe_block, safe_qc},
+        kv_store::KVStore,
+    },
+    types::{
+        basic::{BlockHeight, ChainID, ViewNumber},
+        block::Block,
+        signed_messages::{Certificate, SignedMessage},
+        validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus},
+    },
 };
 
 pub(crate) struct BlockSyncClient<N: Network> {

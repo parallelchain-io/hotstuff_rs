@@ -10,8 +10,7 @@ use std::{
 
 use ed25519_dalek::VerifyingKey;
 use hotstuff_rs::{
-    messages::Message,
-    networking::Network,
+    networking::{Message, Network},
     types::validators::{ValidatorSet, ValidatorSetUpdates},
 };
 

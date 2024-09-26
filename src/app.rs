@@ -4,8 +4,6 @@
 */
 
 //! The [`App`] trait, HotStuff-rs' interface into the business logic of users' applications.
-//!
-//! TODO: Talk about dependency injection.
 
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
@@ -16,7 +14,7 @@ use crate::{
     },
 };
 
-///
+/// Trait implemented by applications that are to be replicated by HotStuff-rs.
 ///
 /// # Timing
 ///

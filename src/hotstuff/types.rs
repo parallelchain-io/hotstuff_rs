@@ -11,18 +11,20 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
 use super::messages::Vote;
-use crate::state::{
-    block_tree::{BlockTree, BlockTreeError},
-    kv_store::KVStore,
-};
-use crate::types::{
-    basic::*,
-    collectors::{Certificate, Collector},
-    validators::*,
+use crate::{
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+    },
+    types::{
+        basic::*,
+        signed_messages::{Certificate, Collector},
+        validators::*,
+    },
 };
 
-/// Proof that at least a quorum of validators have voted for a specific
-/// [`Proposal`][crate::hotstuff::messages::Proposal] or [`Nudge`][crate::hotstuff::messages::Nudge].
+/// Proof that at least a quorum of validators have voted for a [`Proposal`](super::messages::Proposal)
+/// or [`Nudge`](super::messages::Nudge) with the included `chain_id`, `view`, `block`, and `phase`.
 ///
 /// Required for extending a block in the HotStuff subprotocol, and for optimistic advance to a new
 /// view in the [pacemaker][crate::pacemaker] protocol.
@@ -36,10 +38,10 @@ pub struct QuorumCertificate {
 }
 
 impl Certificate for QuorumCertificate {
-    /// Compute the appropriate validator set that the QC should be checked against, and check if the
+    /// Determine the appropriate validator set that the QC should be checked against, and check if the
     /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
-    /// A special case is if the qc is the Genesis QC, in which case it is automatically correct.
+    /// A special case is if the QC is the Genesis QC, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
         if self.is_genesis_qc() {
             return Ok(true);

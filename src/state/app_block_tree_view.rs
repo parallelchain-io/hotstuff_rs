@@ -5,15 +5,19 @@
 
 //! Special, read-only interface for querying the Block Tree used only by `App`s.
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::types::{
-    basic::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
-    block::Block,
-    validators::ValidatorSet,
+use crate::{
+    hotstuff::types::QuorumCertificate,
+    types::{
+        basic::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
+        block::Block,
+        validators::ValidatorSet,
+    },
 };
 
-use super::block_tree::BlockTreeError;
-use super::{block_tree::BlockTree, kv_store::KVStore};
+use super::{
+    block_tree::{BlockTree, BlockTreeError},
+    kv_store::KVStore,
+};
 
 /// View of the block tree, which may be used by the [`App`](crate::app::App) to produce or validate a
 /// block.
