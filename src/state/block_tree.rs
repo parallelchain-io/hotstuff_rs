@@ -628,7 +628,7 @@ impl<K: KVStore> BlockTree<K> {
         if let Some(locked_pc) = update_locked_pc {
             Event::UpdateLockedPC(UpdateLockedPCEvent {
                 timestamp: SystemTime::now(),
-                highest_pc: locked_pc,
+                locked_pc,
             })
             .publish(event_publisher)
         };

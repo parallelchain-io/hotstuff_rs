@@ -134,7 +134,7 @@ pub struct UpdateHighestPCEvent {
 /// was updated.
 pub struct UpdateLockedPCEvent {
     pub timestamp: SystemTime,
-    pub highest_pc: PhaseCertificate,
+    pub locked_pc: PhaseCertificate,
 }
 
 /// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree),

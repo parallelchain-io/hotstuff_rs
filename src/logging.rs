@@ -143,9 +143,9 @@ impl Logger for UpdateLockedPCEvent {
                 "{}, {}, {}, {}, {:?}",
                 UPDATE_LOCKED_PC,
                 secs_since_unix_epoch(update_locked_pc_event.timestamp),
-                first_seven_base64_chars(&update_locked_pc_event.highest_pc.block.bytes()),
-                update_locked_pc_event.highest_pc.view,
-                update_locked_pc_event.highest_pc.phase
+                first_seven_base64_chars(&update_locked_pc_event.locked_pc.block.bytes()),
+                update_locked_pc_event.locked_pc.view,
+                update_locked_pc_event.locked_pc.phase
             )
         };
         Box::new(logger)
