@@ -3,12 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Generic `SignedMessage` and `Collector` traits.
-//!
-//! Implementations used by the [`Pacemaker`][crate::pacemaker::types] and
-//! [`HotStuff`][crate::hotstuff::types] protocols can be found in the respective modules. [`Collectors`]
-//! groups collectors for all active validator sets into a single struct, which can be easily updated
-//! on view or validator set state updates.
+//! Signed messages, votes and aggregates of votes.
 
 pub use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 pub use sha2::Sha256 as CryptoHasher;
@@ -23,13 +18,14 @@ use super::{
     validators::{ValidatorSet, ValidatorSetState},
 };
 
-/// Data types that contain a message, and a digital signature over said message whose correctness
-/// can be verified against a `VerifyingKey`.
+/// Data types that contain: 1. A message, and 2. A digital signature over said message whose
+/// correctness can be verified against a `VerifyingKey`.
 pub(crate) trait SignedMessage: Clone {
-    /// Get the bytes that are passed as input into the signing function to form the signature.
+    /// Get the bytes that are passed as input into the signing function to form the signature
+    /// of the `SignedMessage`.
     fn message_bytes(&self) -> Vec<u8>;
 
-    /// Get the signature.
+    /// Get the signature of the `SignedMessage`.
     fn signature_bytes(&self) -> SignatureBytes;
 
     /// Verify that `signature_bytes` is a signature created by `verifying_key` over `message_bytes`.
@@ -51,11 +47,11 @@ pub(crate) trait Vote: SignedMessage {
     fn view(&self) -> ViewNumber;
 }
 
-/// Data types that aggregate multiple [`SignedMessage`]s of the same type into evidence that a
+/// Data types that aggregate multiple [`Vote`]s of the same type into evidence that a
 /// [`quorum`](Certificate::quorum) of validators in a particular validator set supports a particular
 /// decision.
 pub(crate) trait Certificate {
-    /// The specific `SignedMessage` type that this `Certificate` aggregates into one value.
+    /// The specific `Vote` type that this `Certificate` aggregates into one value.
     type Vote: Vote;
 
     /// Check whether the certificate is "correct" ( i.e., whether it can serve as evidence that a particular
@@ -100,19 +96,7 @@ pub(crate) trait Certificate {
     }
 }
 
-/// Types that progressively combine [`SignedMessage`]s in order to form [`Certificate`]s
-///
-/// ## `chain_id` and `view`
-///
-/// - `Collector` currently imposes a "hidden" requirement on `SignedMessage` that isn't encoded in the type system: `SignedMessage` must contain
-/// `chain_id` and `view` fields.
-/// - The reason why this requirement isn't imposed on `SignedMessage` directly (e.g., by requiring that `SignedMessage`s implement `chain_id` and
-///   `view` methods) is that `SignedMessage` is implemented by not only `PhaseVote` and `TimeoutVote`, which each contain a `chain_id` and `view`,
-///   but also `AdvertiseBlock`, which does not contain `view`.
-///
-///
-///
-/// TODO: a single validator set.
+/// Types that progressively combine matching `Vote`s to form `Certificate`s.
 pub(crate) trait Collector: Clone {
     /// The specific `SignedMessage` type that this `Collector` takes in as input.
     type Vote: Vote;
@@ -121,48 +105,58 @@ pub(crate) trait Collector: Clone {
     type Certificate: Certificate<Vote = Self::Vote>;
 
     /// Create a new instance of the `Collector`, configuring it to collect `SignedMessage`s for the specified
-    /// `chain_id`, and `view`, and signed by a member
-    ///
-    /// TODO: seems like `chain_id`, `view`, `validator_set` are concepts only in `Collector`, not
-    /// `SignedMessage`.
+    /// `chain_id`, and `view`, and signed by a member of `validator_set`.
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self;
 
+    /// Get the `ChainID` of the chain that this `Collector` is currently configured to collect `Vote`s about.
     fn chain_id(&self) -> ChainID;
 
+    /// Get the `View` that this `Collector` is currently configured to collect `Vote`s about.
     fn view(&self) -> ViewNumber;
 
+    /// Get the `ValidatorSet` that this `Collector` is currently configured to collect `Vote`s from.
     fn validator_set(&self) -> &ValidatorSet;
 
+    /// Collect a `vote` signed by `signer`, returning a `Certificate` if a [`quorum`](Certificate::quorum)
+    /// of matching `Vote`s from the `Collector`'s configured [`validator_set`](Collector::validator_set)
+    /// has been collected.
+    ///
     /// # No-ops
     ///
-    /// This function is a no-op if `message.chain_id`
+    /// Calling this method is a no-op if:
+    /// - `vote.chain_id != self.chain_id()`
+    /// - `vote.view != self.view()`
     ///
     /// # Preconditions
     ///
-    /// `message.is_correct(signer)`
+    /// [`vote.is_correct(signer)`](SignedMessage::is_correct).
     fn collect(&mut self, signer: &VerifyingKey, vote: Self::Vote) -> Option<Self::Certificate>;
 }
 
-/// A struct that combines [`Collector`]s for the two validator sets that could be considered "active"
+/// Struct that combines [`Collector`]s for the two validator sets that could be considered "active"
 /// at any given [`ValidatorSetState`] (the committed validator set and the previous validator set) and
 /// wraps interactions with them behind a single interface.
 ///
-/// ## Usage
+/// # Usage
 ///
-/// Use [`new`](Self::new) to create a `ActiveCollectors` for a specific `ChainID`, `View`, and the
+/// Use [`new`](Self::new) to create a `ActiveCollectorPair` for a specific `ChainID`, `View`, and the
 /// current `ValidatorSetState`. Then, [`collect`](Self::collect) on it to collect any `SignedMessage`s
-/// that arrive. Call [`update_validator_sets`](Self::update_validator_sets) whenever the current
-/// `ValidatorSetState` changes.
+/// that arrive.
 ///
-/// When the current `View` changes, discard the `ActiveCollectors` and create a new one using the
-/// current view.
+/// Call [`update_validator_sets`](Self::update_validator_sets) whenever the current `ValidatorSetState`
+/// changes. When the current `ViewNumber` changes, discard the `ActiveCollectorPair` and create a new one
+/// using the current view.
 pub(crate) struct ActiveCollectorPair<CL: Collector> {
+    /// `Collector` collecting votes from the current Committed Validator Set.
     committed_validator_set_collector: CL,
+
+    /// `Collector` collecting votes from the current Previous Validator Set. `None` if
+    /// `validator_set_state.update_decided()`.
     prev_validator_set_collector: Option<CL>,
 }
 
 impl<CL: Collector> ActiveCollectorPair<CL> {
-    /// Create `ActiveCollectors` for `chain_id`, `view`, and `validator_set_state`.
+    /// Create an `ActiveCollectorPair` for `chain_id`, `view`, and `validator_set_state`.
     pub(crate) fn new(
         chain_id: ChainID,
         view: ViewNumber,
@@ -186,7 +180,7 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         }
     }
 
-    /// Collect `message` with the appropriate collector in this `ActiveCollectors`.
+    /// Collect `message` with the appropriate collector in this `ActiveCollectorPair`.
     pub(crate) fn collect(
         &mut self,
         signer: &VerifyingKey,
@@ -205,7 +199,7 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         None
     }
 
-    /// Inform this `ActiveCollectors` of the latest current `validator_set_state`.  
+    /// Inform this `ActiveCollectorPair` of the latest current `validator_set_state`.  
     ///
     /// If `validator_set_state` is different from the latest `ValidatorSetState` known by the
     /// `ActiveCollectors`, the collectors will be updated and this function will return `true`. Otherwise
