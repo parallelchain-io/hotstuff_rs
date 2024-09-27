@@ -14,7 +14,7 @@ use crate::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
     events::{
-        CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, PhaseVoteEvent,
+        CollectPCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, PhaseVoteEvent,
         ProposeEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceivePhaseVoteEvent,
         ReceiveProposalEvent, StartViewEvent,
     },
@@ -30,7 +30,7 @@ use crate::{
     pacemaker::protocol::ViewInfo,
     state::{
         block_tree::{BlockTree, BlockTreeError},
-        invariants::{repropose_block, safe_block, safe_nudge, safe_qc},
+        invariants::{repropose_block, safe_block, safe_nudge, safe_pc},
         kv_store::KVStore,
     },
     types::{
@@ -141,7 +141,7 @@ impl<N: Network> HotStuff<N> {
         let new_view = NewView {
             chain_id: self.config.chain_id,
             view: self.view_info.view,
-            highest_qc: block_tree.highest_qc()?,
+            highest_pc: block_tree.highest_pc()?,
         };
 
         match new_view_recipients(&new_view, &validator_set_state) {
@@ -211,20 +211,20 @@ impl<N: Network> HotStuff<N> {
                 return Ok(());
             }
 
-            // Otherwise, propose a new block or nudge based on highest_qc.
-            let highest_qc = block_tree.highest_qc()?;
-            match highest_qc.phase {
+            // Otherwise, propose a new block or nudge based on highest_pc.
+            let highest_pc = block_tree.highest_pc()?;
+            match highest_pc.phase {
                 // Produce and broadcast a new Proposal.
                 Phase::Generic | Phase::Decide => {
-                    let (parent_block, child_height) = if highest_qc.is_genesis_qc() {
+                    let (parent_block, child_height) = if highest_pc.is_genesis_pc() {
                         (None, BlockHeight::new(0))
                     } else {
-                        let parent_height = block_tree.block_height(&highest_qc.block)?.ok_or(
+                        let parent_height = block_tree.block_height(&highest_pc.block)?.ok_or(
                             BlockTreeError::BlockExpectedButNotFound {
-                                block: highest_qc.block,
+                                block: highest_pc.block,
                             },
                         )?;
-                        (Some(highest_qc.block), parent_height + 1)
+                        (Some(highest_pc.block), parent_height + 1)
                     };
 
                     let produce_block_request = ProduceBlockRequest::new(
@@ -240,7 +240,7 @@ impl<N: Network> HotStuff<N> {
                         validator_set_updates: _,
                     } = app.produce_block(produce_block_request);
 
-                    let block = Block::new(child_height, highest_qc, data_hash, data);
+                    let block = Block::new(child_height, highest_pc, data_hash, data);
 
                     let proposal = Proposal {
                         chain_id: self.config.chain_id,
@@ -261,7 +261,7 @@ impl<N: Network> HotStuff<N> {
                     let nudge = Nudge {
                         chain_id: self.config.chain_id,
                         view: self.view_info.view,
-                        justify: highest_qc,
+                        justify: highest_pc,
                     };
 
                     self.sender_handle
@@ -369,7 +369,7 @@ impl<N: Network> HotStuff<N> {
         }
 
         // 2. Validate the block using the app, and insert it into the block tree if it is valid.
-        let parent_block = if proposal.block.justify.is_genesis_qc() {
+        let parent_block = if proposal.block.justify.is_genesis_pc() {
             None
         } else {
             Some(&proposal.block.justify.block)
@@ -393,7 +393,7 @@ impl<N: Network> HotStuff<N> {
             })
             .publish(&self.event_publisher);
 
-            // 3. Trigger block tree updates: update highestQC, lock, commit.
+            // 3. Trigger block tree updates: update highestPC, lock, commit.
             let committed_validator_set_updates =
                 block_tree.update(&proposal.block.justify, &self.event_publisher)?;
 
@@ -497,7 +497,7 @@ impl<N: Network> HotStuff<N> {
             return Ok(());
         }
 
-        // 2. Trigger block tree updates: update highestQC, lock, commit.
+        // 2. Trigger block tree updates: update highestPC, lock, commit.
         let committed_validator_set_updates =
             block_tree.update(&nudge.justify, &self.event_publisher)?;
 
@@ -577,23 +577,23 @@ impl<N: Network> HotStuff<N> {
 
         // 1. Collect the vote if correct.
         if phase_vote.is_correct(signer) {
-            if let Some(new_qc) = self.phase_vote_collectors.collect(signer, phase_vote) {
-                Event::CollectQC(CollectQCEvent {
+            if let Some(new_pc) = self.phase_vote_collectors.collect(signer, phase_vote) {
+                Event::CollectPC(CollectPCEvent {
                     timestamp: SystemTime::now(),
-                    quorum_certificate: new_qc.clone(),
+                    phase_certificate: new_pc.clone(),
                 })
                 .publish(&self.event_publisher);
 
-                // If the newly collected QC is not correct or not safe, then ignore it and return.
-                if !new_qc.is_correct(block_tree)?
-                    || !safe_qc(&new_qc, block_tree, self.config.chain_id)?
+                // If the newly collected PC is not correct or not safe, then ignore it and return.
+                if !new_pc.is_correct(block_tree)?
+                    || !safe_pc(&new_pc, block_tree, self.config.chain_id)?
                 {
                     return Ok(());
                 }
 
-                // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
+                // 2. Trigger block tree updates: update highestPC, lock, commit (if new PC collected).
                 let committed_validator_set_updates =
-                    block_tree.update(&new_qc, &self.event_publisher)?;
+                    block_tree.update(&new_pc, &self.event_publisher)?;
 
                 if let Some(vs_updates) = committed_validator_set_updates {
                     self.validator_set_update_handle
@@ -601,7 +601,7 @@ impl<N: Network> HotStuff<N> {
                 }
 
                 // 3. Access the possibly updated validator set state, and update the vote collectors if needed
-                // (if new QC collected).
+                // (if new PC collected).
                 let validator_set_state = block_tree.validator_set_state()?;
 
                 let _ = self
@@ -627,13 +627,13 @@ impl<N: Network> HotStuff<N> {
         })
         .publish(&self.event_publisher);
 
-        // 1. Check if the highest_qc in the NewView message is correct and safe.
-        if new_view.highest_qc.is_correct(block_tree)?
-            && safe_qc(&new_view.highest_qc, block_tree, self.config.chain_id)?
+        // 1. Check if the highest_pc in the NewView message is correct and safe.
+        if new_view.highest_pc.is_correct(block_tree)?
+            && safe_pc(&new_view.highest_pc, block_tree, self.config.chain_id)?
         {
-            // 2. Trigger block tree updates: update highestQC, lock, commit (if new QC collected).
+            // 2. Trigger block tree updates: update highestPC, lock, commit (if new PC collected).
             let committed_validator_set_updates =
-                block_tree.update(&new_view.highest_qc, &self.event_publisher)?;
+                block_tree.update(&new_view.highest_pc, &self.event_publisher)?;
 
             if let Some(vs_updates) = committed_validator_set_updates {
                 self.validator_set_update_handle
@@ -641,7 +641,7 @@ impl<N: Network> HotStuff<N> {
             }
 
             // 3. Access the possibly updated validator set state, and update the phase vote collectors if needed
-            // (if new QC collected).
+            // (if new PC collected).
             let validator_set_state = block_tree.validator_set_state()?;
 
             let _ = self

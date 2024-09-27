@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     messages::{NewView, PhaseVote},
-    types::{Phase, QuorumCertificate},
+    types::{Phase, PhaseCertificate},
 };
 
 /// Determine whether the `replica` is an "active" validator, given the current `validator_set_state`.
@@ -63,7 +63,7 @@ pub(crate) fn is_validator(
 ///
 /// ## `is_phase_voter` Logic
 ///
-/// `replica`'s phase vote can become part of QCs that directly extend `justify` if-and-only-if
+/// `replica`'s phase vote can become part of PCs that directly extend `justify` if-and-only-if
 /// `replica` is part of the appropriate validator set in the `validator_set_state`, which is either the
 /// Committed Validator Set (CVS), or the Previous Validator Set (PVS). In turn, which of CVS and PVS is
 /// the appropriate validator set depends on two factors:
@@ -80,13 +80,13 @@ pub(crate) fn is_validator(
 ///
 /// ## Preconditions
 ///
-/// `justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
+/// `justify` satisfies [`safe_pc`](crate::state::safety::safe_pc) and
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct), and the block tree updates
 /// associated with this `justify` have already been applied.
 pub(crate) fn is_phase_voter(
     replica: &VerifyingKey,
     validator_set_state: &ValidatorSetState,
-    justify: &QuorumCertificate,
+    justify: &PhaseCertificate,
 ) -> bool {
     if validator_set_state.update_decided() {
         validator_set_state

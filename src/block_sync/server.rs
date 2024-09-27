@@ -116,22 +116,22 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                 })
                 .publish(&self.event_publisher);
 
-                // Get, from the block tree, the blocks and the QC that will be used to form the Block Sync Response.
+                // Get, from the block tree, the blocks and the PC that will be used to form the Block Sync Response.
                 let bt_snapshot = self.block_tree_camera.snapshot();
                 let blocks_res = bt_snapshot.blocks_from_height_to_newest(
                     start_height,
                     max(limit, self.config.request_limit),
                 );
-                let highest_qc_res = bt_snapshot.highest_qc();
+                let highest_pc_res = bt_snapshot.highest_pc();
 
-                match (blocks_res, highest_qc_res) {
-                    (Ok(blocks), Ok(highest_qc)) => {
-                        // If there are blocks and a highest QC to return, send a Block Sync Response.
+                match (blocks_res, highest_pc_res) {
+                    (Ok(blocks), Ok(highest_pc)) => {
+                        // If there are blocks and a highest PC to return, send a Block Sync Response.
                         self.sender.send(
                             origin,
                             BlockSyncResponse {
                                 blocks: blocks.clone(),
-                                highest_qc: highest_qc.clone(),
+                                highest_pc: highest_pc.clone(),
                             },
                         );
 
@@ -139,7 +139,7 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                             timestamp: SystemTime::now(),
                             peer: origin,
                             blocks,
-                            highest_qc,
+                            highest_pc: highest_pc,
                         })
                         .publish(&self.event_publisher)
                     }
@@ -150,16 +150,16 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
             }
 
             // 2. If the last advertisement was sent more than `advertise_time` duration ago, broadcast an:
-            // - Advertise QC: to let others know about our local Highest QC, which may trigger them to start
+            // - Advertise PC: to let others know about our local Highest PC, which may trigger them to start
             //   syncing if they find that they are behind.
             // - Advertise Block: to let others know about our local Highest Committed Block height, so that they
             //   can decide whether or not we are a suitable sync server for them.
             if Instant::now() - self.last_advertisement >= self.config.advertise_time {
-                let highest_qc = self
+                let highest_pc = self
                     .block_tree_camera
                     .snapshot()
-                    .highest_qc()
-                    .expect("Could not obtain the highest QC!");
+                    .highest_pc()
+                    .expect("Could not obtain the highest PC!");
 
                 let highest_committed_block_height = match self
                     .block_tree_camera
@@ -171,9 +171,9 @@ impl<N: Network + 'static, K: KVStore> BlockSyncServer<N, K> {
                     None => BlockHeight::new(0),
                 };
 
-                // Broadcast an Advertise QC message.
-                let advertise_qc_msg = BlockSyncAdvertiseMessage::advertise_qc(highest_qc);
-                self.sender.broadcast(advertise_qc_msg);
+                // Broadcast an Advertise PC message.
+                let advertise_pc_msg = BlockSyncAdvertiseMessage::advertise_pc(highest_pc);
+                self.sender.broadcast(advertise_pc_msg);
 
                 // Broadcast an Advertise Block message.
                 let advertise_block_msg = BlockSyncAdvertiseMessage::advertise_block(

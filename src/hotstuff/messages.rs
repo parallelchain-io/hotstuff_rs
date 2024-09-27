@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-use super::types::{Phase, QuorumCertificate};
+use super::types::{Phase, PhaseCertificate};
 
 /// Messages that are sent between replicas as part of the HotStuff subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -125,16 +125,16 @@ pub struct Proposal {
 pub struct Nudge {
     pub chain_id: ChainID,
     pub view: ViewNumber,
-    pub justify: QuorumCertificate,
+    pub justify: PhaseCertificate,
 }
 
 impl Nudge {
-    /// Create a new `Nudge` message containing the given `chain_id`, `view`, and `justify`-ing QC.
+    /// Create a new `Nudge` message containing the given `chain_id`, `view`, and `justify`-ing PC.
     ///
     /// # Panics
     ///
     /// `justify.phase` must be `Prepare` or `Precommit`. This function panics otherwise.
-    pub fn new(chain_id: ChainID, view: ViewNumber, justify: QuorumCertificate) -> Self {
+    pub fn new(chain_id: ChainID, view: ViewNumber, justify: PhaseCertificate) -> Self {
         match justify.phase {
             Phase::Generic | Phase::Decide => {
                 panic!("`justify.phase` should be either Prepare or Precommit")
@@ -205,7 +205,7 @@ impl Vote for PhaseVote {
 }
 
 /// Message sent by a replica to the next leader on view timeout to update the next leader about the
-/// highest QC that replicas know of.
+/// `highest_pc` that the replica knows of.
 ///
 /// ## `NewView` and view synchronization
 ///
@@ -222,5 +222,5 @@ impl Vote for PhaseVote {
 pub struct NewView {
     pub chain_id: ChainID,
     pub view: ViewNumber,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }

@@ -10,7 +10,7 @@ use borsh::BorshSerialize;
 use paths::*;
 
 use crate::{
-    hotstuff::types::QuorumCertificate,
+    hotstuff::types::PhaseCertificate,
     pacemaker::types::TimeoutCertificate,
     types::{
         basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
@@ -286,14 +286,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Locked QC ↓↓↓ */
+    /* ↓↓↓ Locked PC ↓↓↓ */
 
-    pub fn set_locked_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
+    pub fn set_locked_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::LOCKED_QC,
-            &qc.try_to_vec()
+            &paths::LOCKED_PC,
+            &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
-                    key: Key::LockedQC,
+                    key: Key::LockedPC,
                     source: err,
                 })?,
         ))
@@ -313,12 +313,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+    /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
 
-    pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
+    pub fn set_highest_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::HIGHEST_QC,
-            &qc.try_to_vec()
+            &paths::HIGHEST_PC,
+            &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
                     key: Key::HighestTC,
                     source: err,

@@ -80,7 +80,7 @@
 //! - `.on_insert_block(...)`
 //! - `.on_commit_block(...)`
 //! - `.on_prune_block(...)`
-//! - `.on_update_highest_qc(...)`
+//! - `.on_update_highest_pc(...)`
 //! - `.on_update_locked_view(...)`
 //! - `.on_update_validator_set(...)`
 //! - `.on_propose(...)`
@@ -93,7 +93,7 @@
 //! - `.on_receive_new_view(...)`
 //! - `.on_start_view(...)`
 //! - `.on_view_timeout(...)]`
-//! - `.on_collect_qc(...)`
+//! - `.on_collect_pc(...)`
 //! - `.on_start_sync(...)`
 //! - `.on_end_sync(...)`
 //! - `.on_receive_sync_request(...)`
@@ -204,7 +204,7 @@ pub struct Configuration {
     ))]
     pub block_sync_request_limit: u32,
     #[builder(setter(
-        doc = "Set how frequently the sync server should advertise its highest committed block and highestQC. Required."
+        doc = "Set how frequently the sync server should advertise its Highest Committed Block and Highest PC. Required."
     ))]
     pub block_sync_server_advertise_time: Duration,
     #[builder(setter(
@@ -216,11 +216,11 @@ pub struct Configuration {
     ))]
     pub block_sync_blacklist_expiry_time: Duration,
     #[builder(setter(
-        doc = "Set the number of views a QC received by the sync client must be ahead of the current view in order to trigger sync (event-based sync trigger). Required."
+        doc = "Set the number of views a PC received by the sync client must be ahead of the current view in order to trigger sync (event-based sync trigger). Required."
     ))]
     pub block_sync_trigger_min_view_difference: u64,
     #[builder(setter(
-        doc = "Set the time that needs to pass without any progress (i.e., updating the highestQC) or sync attempts in order to trigger sync (timeout-based sync trigger). Required."
+        doc = "Set the time that needs to pass without any progress (i.e., updating the Highest PC) or sync attempts in order to trigger sync (timeout-based sync trigger). Required."
     ))]
     pub block_sync_trigger_timeout: Duration,
     #[builder(setter(
@@ -305,8 +305,8 @@ impl
     - `.on_insert_block(...)`
     - `.on_commit_block(...)`
     - `.on_prune_block(...)`
-    - `.on_update_highest_qc(...)`
-    - `.on_update_locked_qc(...)`
+    - `.on_update_highest_pc(...)`
+    - `.on_update_locked_pc(...)`
     - `.on_update_locked_tc(...)`
     - `.on_update_validator_set(...)`
     - `.on_propose(...)`
@@ -323,7 +323,7 @@ impl
     - `.on_receive_advance_view(...)`
     - `.on_start_view(...)`
     - `.on_view_timeout(...)`
-    - `.on_collect_qc(...)`
+    - `.on_collect_pc(...)`
     - `.on_collect_tc(...)`
     - `.on_start_sync(...)`
     - `.on_end_sync(...)`
@@ -358,12 +358,12 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&PruneBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PruneBlockEvent>),
     doc = "Register a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's [Block Tree](crate::state::BlockTree). Optional."))]
     on_prune_block: Option<HandlerPtr<PruneBlockEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica updates its highest QC. Optional."))]
-    on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica updates its locked QC. Optional."))]
-    on_update_locked_qc: Option<HandlerPtr<UpdateLockedQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its highest PC. Optional."))]
+    on_update_highest_pc: Option<HandlerPtr<UpdateHighestPCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its locked PC. Optional."))]
+    on_update_locked_pc: Option<HandlerPtr<UpdateLockedPCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestTCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest TC. Optional."))]
     on_update_highest_tc: Option<HandlerPtr<UpdateHighestTCEvent>>,
@@ -412,9 +412,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&ViewTimeoutEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ViewTimeoutEvent>),
     doc = "Register a handler closure to be invoked after the replica's view times out. Optional."))]
     on_view_timeout: Option<HandlerPtr<ViewTimeoutEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&CollectQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica collects a new quorum certificate. Optional."))]
-    on_collect_qc: Option<HandlerPtr<CollectQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&CollectPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica collects a new `PhaseCertificate`. Optional."))]
+    on_collect_pc: Option<HandlerPtr<CollectPCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&CollectTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectTCEvent>),
     doc = "Register a handler closure to be invoked after the replica collects a new timeout certificate. Optional."))]
     on_collect_tc: Option<HandlerPtr<CollectTCEvent>>,
@@ -458,8 +458,8 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_insert_block,
             self.on_commit_block,
             self.on_prune_block,
-            self.on_update_highest_qc,
-            self.on_update_locked_qc,
+            self.on_update_highest_pc,
+            self.on_update_locked_pc,
             self.on_update_highest_tc,
             self.on_update_validator_set,
             self.on_propose,
@@ -476,7 +476,7 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_receive_advance_view,
             self.on_start_view,
             self.on_view_timeout,
-            self.on_collect_qc,
+            self.on_collect_pc,
             self.on_collect_tc,
             self.on_start_sync,
             self.on_end_sync,

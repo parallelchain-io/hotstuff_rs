@@ -13,7 +13,7 @@ use std::fmt::Display;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    hotstuff::types::QuorumCertificate,
+    hotstuff::types::PhaseCertificate,
     pacemaker::types::TimeoutCertificate,
     types::{
         basic::{
@@ -100,8 +100,8 @@ pub trait KVGet {
         }
     }
 
-    fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(
+    fn block_justify(&self, block: &CryptoHash) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(
             &mut &*self
                 .get(&combine(
                     &paths::BLOCKS,
@@ -304,16 +304,16 @@ pub trait KVGet {
         })
     }
 
-    /* ↓↓↓ Locked QC ↓↓↓ */
+    /* ↓↓↓ Locked PC ↓↓↓ */
 
-    fn locked_qc(&self) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(
+    fn locked_pc(&self) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(
             &mut &*self
-                .get(&paths::LOCKED_QC)
-                .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedQC })?,
+                .get(&paths::LOCKED_PC)
+                .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedPC })?,
         )
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::LockedQC,
+            key: Key::LockedPC,
             source: err,
         })
     }
@@ -332,16 +332,16 @@ pub trait KVGet {
         })
     }
 
-    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+    /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
 
-    fn highest_qc(&self) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_QC).ok_or(
+    fn highest_pc(&self) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_PC).ok_or(
             KVGetError::ValueExpectedButNotFound {
-                key: Key::HighestQC,
+                key: Key::HighestPC,
             },
         )?)
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::HighestQC,
+            key: Key::HighestPC,
             source: err,
         })
     }
@@ -505,9 +505,9 @@ pub enum Key {
     PendingAppStateUpdates { block: CryptoHash },
     CommittedValidatorSet,
     ValidatorSetUpdatesStatus { block: CryptoHash },
-    LockedQC,
+    LockedPC,
     HighestViewEntered,
-    HighestQC,
+    HighestPC,
     HighestCommittedBlock,
     NewestBlock,
     HighestTC,
@@ -535,9 +535,9 @@ impl Display for Key {
             &Key::ValidatorSetUpdatesStatus { block } => {
                 write!(f, "Validator Set Updates Status for block {}", block)
             }
-            &Key::LockedQC => write!(f, "Locked QC"),
+            &Key::LockedPC => write!(f, "Locked PC"),
             &Key::HighestViewEntered => write!(f, "Highest View Entered"),
-            &Key::HighestQC => write!(f, "Highest Quorum Certificate"),
+            &Key::HighestPC => write!(f, "Highest Phase Certificate"),
             &Key::HighestCommittedBlock => write!(f, "Highest Committed Block"),
             &Key::NewestBlock => write!(f, "Newest Block"),
             &Key::HighestTC => write!(f, "Highest Timeout Certificate"),

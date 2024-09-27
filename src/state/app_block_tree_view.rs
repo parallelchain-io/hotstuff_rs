@@ -6,7 +6,7 @@
 //! Special, read-only interface for querying the Block Tree used only by `App`s.
 
 use crate::{
-    hotstuff::types::QuorumCertificate,
+    hotstuff::types::PhaseCertificate,
     types::{
         basic::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
         block::Block,
@@ -40,7 +40,7 @@ impl<'a, K: KVStore> AppBlockTreeView<'a, K> {
         self.block_tree.block_height(block)
     }
 
-    pub fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, BlockTreeError> {
+    pub fn block_justify(&self, block: &CryptoHash) -> Result<PhaseCertificate, BlockTreeError> {
         self.block_tree.block_justify(block)
     }
 

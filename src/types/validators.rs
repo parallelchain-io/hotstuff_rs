@@ -318,7 +318,7 @@ impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
 /// set history.
 ///
 /// It is a protocol invariant that a Hotstuff-rs replica only needs to know the previous validator set
-/// to validate QCs and TCs, hence we only store the previous validator set in the history.
+/// to validate PCs and TCs, hence we only store the previous validator set in the history.
 #[derive(Clone)]
 pub struct ValidatorSetState {
     committed_validator_set: ValidatorSet,

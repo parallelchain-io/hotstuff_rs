@@ -57,7 +57,7 @@ use crate::{
 /// |3|`+produce_block_duration`|<ul><li>Proposer enters view.</li></ul>|
 /// |4|`+EWNL`|<ul><li>Replicas receive `Proposal`.</li></ul>|
 /// |5|`+validate_block_duration`|<ul><li>Replicas send `PhaseVote`s.</li></ul>|
-/// |6|`+EWNL`|<ul><li>Next Leader collects QC.</li><li>Next Leader leaves view.</li><li>Next Leader broadcasts `AdvanceView`.</li><li>Next Leader broadcasts `Proposal`</li></ul>|
+/// |6|`+EWNL`|<ul><li>Next Leader collects `PhaseCertificate`.</li><li>Next Leader leaves view.</li><li>Next Leader broadcasts `AdvanceView`.</li><li>Next Leader broadcasts `Proposal`</li></ul>|
 /// |7|`+EWNL`|<ul><li>Replicas receive `AdvanceView`.</li><li>Replicas leave view.</li></ul>|
 ///
 /// In the view above (and indeed in any view), there are two possible cases about the identities of

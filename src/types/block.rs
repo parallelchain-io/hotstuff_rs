@@ -10,7 +10,7 @@ use sha2::Digest;
 pub use sha2::Sha256 as CryptoHasher;
 
 use crate::{
-    hotstuff::types::QuorumCertificate,
+    hotstuff::types::PhaseCertificate,
     state::{
         block_tree::{BlockTree, BlockTreeError},
         kv_store::KVStore,
@@ -24,7 +24,7 @@ use super::signed_messages::Certificate;
 pub struct Block {
     pub height: BlockHeight,
     pub hash: CryptoHash,
-    pub justify: QuorumCertificate,
+    pub justify: PhaseCertificate,
     pub data_hash: CryptoHash,
     pub data: Data,
 }
@@ -32,7 +32,7 @@ pub struct Block {
 impl Block {
     pub fn new(
         height: BlockHeight,
-        justify: QuorumCertificate,
+        justify: PhaseCertificate,
         data_hash: CryptoHash,
         data: Data,
     ) -> Block {
@@ -47,7 +47,7 @@ impl Block {
 
     pub fn hash(
         height: BlockHeight,
-        justify: &QuorumCertificate,
+        justify: &PhaseCertificate,
         data_hash: &CryptoHash,
     ) -> CryptoHash {
         let mut hasher = CryptoHasher::new();

@@ -13,7 +13,7 @@
 //!    out.
 //! 2. [`AdvanceView`], which a replica sends to prove to others that it is safe to move to the next
 //!    view. The proof consists of either:
-//!     - a `QuorumCertificate`, which serves as evidence that progress has been made in the current
+//!     - a `PhaseCertificate`, which serves as evidence that progress has been made in the current
 //!       view, or
 //!     - a `TimeoutCertificate`, which serves as evidence that a quorum of replicas have timed out in
 //!       the current view.
@@ -23,7 +23,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    hotstuff::types::QuorumCertificate,
+    hotstuff::types::PhaseCertificate,
     networking::{messages::ProgressMessage, receiving::Cacheable},
     types::{
         basic::*,
@@ -137,19 +137,19 @@ impl Vote for TimeoutVote {
 }
 
 /// A message containing a proof that the view can be advanced. The proof can be either a
-/// [`QuorumCertificate`] or a [`TimeoutCertificate`] for the view.
+/// [`PhaseCertificate`] or a [`TimeoutCertificate`] for the view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvanceView {
     pub progress_certificate: ProgressCertificate,
 }
 
 /// Proof that either:
-/// 1. A quorum made a decision in the current view ([`QuorumCertificate`]), or
+/// 1. A quorum made a decision in the current view ([`PhaseCertificate`]), or
 /// 2. A quorum voted for terminating the current view on timing out ([`TimeoutCertificate`]).
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressCertificate {
     TimeoutCertificate(TimeoutCertificate),
-    QuorumCertificate(QuorumCertificate),
+    PhaseCertificate(PhaseCertificate),
 }
 
 impl ProgressCertificate {
@@ -158,21 +158,21 @@ impl ProgressCertificate {
             ProgressCertificate::TimeoutCertificate(TimeoutCertificate { chain_id, .. }) => {
                 *chain_id
             }
-            ProgressCertificate::QuorumCertificate(QuorumCertificate { chain_id, .. }) => *chain_id,
+            ProgressCertificate::PhaseCertificate(PhaseCertificate { chain_id, .. }) => *chain_id,
         }
     }
 
     pub fn view(&self) -> ViewNumber {
         match self {
             ProgressCertificate::TimeoutCertificate(TimeoutCertificate { view, .. }) => *view,
-            ProgressCertificate::QuorumCertificate(QuorumCertificate { view, .. }) => *view,
+            ProgressCertificate::PhaseCertificate(PhaseCertificate { view, .. }) => *view,
         }
     }
 }
 
-impl From<QuorumCertificate> for ProgressCertificate {
-    fn from(value: QuorumCertificate) -> Self {
-        ProgressCertificate::QuorumCertificate(value)
+impl From<PhaseCertificate> for ProgressCertificate {
+    fn from(value: PhaseCertificate) -> Self {
+        ProgressCertificate::PhaseCertificate(value)
     }
 }
 

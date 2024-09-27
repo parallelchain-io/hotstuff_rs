@@ -29,7 +29,7 @@ use crate::{
 /// Required for extending a block in the HotStuff subprotocol, and for optimistic advance to a new
 /// view in the [pacemaker][crate::pacemaker] protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
-pub struct QuorumCertificate {
+pub struct PhaseCertificate {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: CryptoHash,
@@ -37,15 +37,15 @@ pub struct QuorumCertificate {
     pub signatures: SignatureSet,
 }
 
-impl Certificate for QuorumCertificate {
+impl Certificate for PhaseCertificate {
     type Vote = PhaseVote;
 
-    /// Determine the appropriate validator set that the QC should be checked against, and check if the
+    /// Determine the appropriate validator set that the PC should be checked against, and check if the
     /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
-    /// A special case is if the QC is the Genesis QC, in which case it is automatically correct.
+    /// A special case is if the PC is the Genesis PC, in which case it is automatically correct.
     fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
-        if self.is_genesis_qc() {
+        if self.is_genesis_pc() {
             return Ok(true);
         };
 
@@ -54,22 +54,22 @@ impl Certificate for QuorumCertificate {
         let validator_set_state = block_tree.validator_set_state()?;
 
         let result = match (block_height, validator_set_state.update_height()) {
-            // If the Block that the QC certifies is not in the block tree, **or** else if the validator set has
-            // never been updated in the history of the blockchain, validate the QC according to the current
+            // If the Block that the PC certifies is not in the block tree, **or** else if the validator set has
+            // never been updated in the history of the blockchain, validate the PC according to the current
             // committed validator set.
             (None, _) | (Some(_), &None) => {
                 self.is_correctly_signed(validator_set_state.committed_validator_set())
             }
 
-            // If the Block that the QC certifies is in the block tree at `height` **and** the validator set was
+            // If the Block that the PC certifies is in the block tree at `height` **and** the validator set was
             // last updated at height `update_height`:
             (Some(height), &Some(update_height)) => {
-                // If the Block comes in the block tree before the latest validator set updating block, validate the QC
+                // If the Block comes in the block tree before the latest validator set updating block, validate the PC
                 // according to the previous validator set.
                 if height < update_height {
                     self.is_correctly_signed(validator_set_state.previous_validator_set())
 
-                // Else if the Block comes after the latest validator set updating block, validate the QC according to
+                // Else if the Block comes after the latest validator set updating block, validate the PC according to
                 // the committed validator set.
                 } else if height > update_height {
                     self.is_correctly_signed(validator_set_state.committed_validator_set())
@@ -77,19 +77,19 @@ impl Certificate for QuorumCertificate {
                 // Else if the Block **is** the latest validator set updating block:
                 } else {
                     match self.phase {
-                        // If the QC is a Decide QC:
+                        // If the PC is a Decide PC:
                         Phase::Decide => {
                             match block_tree.validator_set_updates_status(&self.block)? {
-                                // If the block's validator set updates have been committed, then validate the QC according to the
+                                // If the block's validator set updates have been committed, then validate the PC according to the
                                 // committed validator set.
                                 ValidatorSetUpdatesStatus::Committed => self.is_correctly_signed(
                                     validator_set_state.committed_validator_set(),
                                 ),
 
                                 // If the block's validator set updates have not been committed, then apply the validator set updates
-                                // to the committed validator set and validate the QC according to the resulting validator set.
+                                // to the committed validator set and validate the PC according to the resulting validator set.
                                 //
-                                // Note (from Karolina): this may be the case if the block justified by this QC is received via sync
+                                // Note (from Karolina): this may be the case if the block justified by this PC is received via sync
                                 // hence the updates have not been applied yet. In this case we need to compute the validator set
                                 // expected to have voted "Decide" for the block.
                                 ValidatorSetUpdatesStatus::Pending(vs_updates) => {
@@ -99,15 +99,15 @@ impl Certificate for QuorumCertificate {
                                     self.is_correctly_signed(&new_validator_set)
                                 }
 
-                                // If the block does not have validator set updates, then it should be justified by a Generic QC, not
-                                // a phased mode QC like a Decide QC. Therefore, the QC is invalid.
+                                // If the block does not have validator set updates, then it should be justified by a Generic PC, not
+                                // a phased mode PC like a Decide PC. Therefore, the PC is invalid.
                                 //
                                 // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
                                 ValidatorSetUpdatesStatus::None => false,
                             }
                         }
 
-                        // Else if the QC is a phased mode QC that is not a Decide QC:
+                        // Else if the PC is a phased mode PC that is not a Decide PC:
                         Phase::Prepare | Phase::Precommit | Phase::Commit => {
                             match block_tree.validator_set_updates_status(&self.block)? {
                                 // If the latest validator set update has been committed
@@ -118,19 +118,19 @@ impl Certificate for QuorumCertificate {
                                     validator_set_state.committed_validator_set(),
                                 ),
 
-                                // If the block does not have validator set updates, then it should be justified by a Generic QC, not
-                                // a phased mode QC like a Prepare QC, Precommit QC, or Commit QC. Therefore, the QC is invalid.
+                                // If the block does not have validator set updates, then it should be justified by a Generic PC, not
+                                // a phased mode PC like a Prepare PC, Precommit PC, or Commit PC. Therefore, the PC is invalid.
                                 //
                                 // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
                                 ValidatorSetUpdatesStatus::None => false,
                             }
                         }
 
-                        // If the block has validator set updates, then it should be justified by a phased mode QC, not a
-                        // Generic QC. Therefore, the QC is invalid.
+                        // If the block has validator set updates, then it should be justified by a phased mode PC, not a
+                        // Generic PC. Therefore, the PC is invalid.
                         //
                         // Issue: https://github.com/parallelchain-io/hotstuff_rs/issues/46
-                        // Note (from Karolina): cannot panic here, since safe_qc has not been checked yet.
+                        // Note (from Karolina): cannot panic here, since safe_pc has not been checked yet.
                         _ => false,
                     }
                 }
@@ -168,11 +168,11 @@ impl Certificate for QuorumCertificate {
                     {
                         total_power += power;
                     } else {
-                        // qc contains incorrect signature.
+                        // pc contains incorrect signature.
                         return false;
                     }
                 } else {
-                    // qc contains incorrect signature.
+                    // pc contains incorrect signature.
                     return false;
                 }
             }
@@ -183,9 +183,9 @@ impl Certificate for QuorumCertificate {
     }
 }
 
-impl QuorumCertificate {
-    pub const fn genesis_qc() -> QuorumCertificate {
-        QuorumCertificate {
+impl PhaseCertificate {
+    pub const fn genesis_pc() -> PhaseCertificate {
+        PhaseCertificate {
             chain_id: ChainID::new(0),
             view: ViewNumber::init(),
             block: CryptoHash::new([0u8; 32]),
@@ -194,8 +194,8 @@ impl QuorumCertificate {
         }
     }
 
-    pub fn is_genesis_qc(&self) -> bool {
-        *self == Self::genesis_qc()
+    pub fn is_genesis_pc(&self) -> bool {
+        *self == Self::genesis_pc()
     }
 
     pub fn is_block_justify(&self) -> bool {
@@ -245,7 +245,7 @@ impl Phase {
     }
 }
 
-/// A struct that incrementally forms [`QuorumCertificate`]s by combining [`PhaseVote`]s with the same
+/// A struct that incrementally forms [`PhaseCertificate`]s by combining [`PhaseVote`]s with the same
 /// specific `chain_id` and `view` and from the same specific `validator_set` into [`SignatureSet`]s.
 ///
 /// ## Usage
@@ -261,7 +261,7 @@ impl Phase {
 ///
 /// If after storing `signature` in the internal buffer it is found that a
 /// [`quorum`](Certificate::quorum) of `PhaseVote`s have been collected for a particular Block Hash and
-/// `Phase` pair, `collect` will form a `QuorumCertificate` using the collected votes and return it from
+/// `Phase` pair, `collect` will form a `PhaseCertificate` using the collected votes and return it from
 /// `collect`.
 #[derive(Clone)]
 pub(crate) struct PhaseVoteCollector {
@@ -279,7 +279,7 @@ pub(crate) struct PhaseVoteCollector {
 impl Collector for PhaseVoteCollector {
     type Vote = PhaseVote;
 
-    type Certificate = QuorumCertificate;
+    type Certificate = PhaseCertificate;
 
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         Self {
@@ -302,7 +302,7 @@ impl Collector for PhaseVoteCollector {
         &self.validator_set
     }
 
-    /// Collect `phase_vote` using this collector. Return a Quorum Certificate if collecting this
+    /// Collect `phase_vote` using this collector. Return a Phase Certificate if collecting this
     /// `PhaseVote` allows for one to be created.
     ///
     /// If the `PhaseVote` is not signed correctly, not signed by `signer`, or has a `chain_id` or `view`
@@ -316,7 +316,7 @@ impl Collector for PhaseVoteCollector {
         &mut self,
         signer: &VerifyingKey,
         phase_vote: PhaseVote,
-    ) -> Option<QuorumCertificate> {
+    ) -> Option<PhaseCertificate> {
         if self.chain_id != phase_vote.chain_id || self.view != phase_vote.view {
             return None;
         }
@@ -345,13 +345,13 @@ impl Collector for PhaseVoteCollector {
                 signature_set.set(pos, Some(phase_vote.signature));
                 *signature_set_power += *self.validator_set.power(signer).unwrap();
 
-                // If inserting the vote makes the signature set form a quorum, then create a Quorum Certificate.
+                // If inserting the vote makes the signature set form a quorum, then create a Phase Certificate.
                 if *signature_set_power >= self.validator_set.quorum() {
                     let (signatures, _) = self
                         .signature_sets
                         .remove(&(phase_vote.block, phase_vote.phase))
                         .unwrap();
-                    let collected_qc = QuorumCertificate {
+                    let collected_pc = PhaseCertificate {
                         chain_id: self.chain_id,
                         view: self.view,
                         block: phase_vote.block,
@@ -359,7 +359,7 @@ impl Collector for PhaseVoteCollector {
                         signatures,
                     };
 
-                    return Some(collected_qc);
+                    return Some(collected_pc);
                 }
             }
         }

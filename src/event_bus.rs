@@ -66,8 +66,8 @@ pub(crate) struct EventHandlers {
     pub(crate) insert_block_handlers: HandlerPair<InsertBlockEvent>,
     pub(crate) commit_block_handlers: HandlerPair<CommitBlockEvent>,
     pub(crate) prune_block_handlers: HandlerPair<PruneBlockEvent>,
-    pub(crate) update_highest_qc_handlers: HandlerPair<UpdateHighestQCEvent>,
-    pub(crate) update_locked_qc_handlers: HandlerPair<UpdateLockedQCEvent>,
+    pub(crate) update_highest_pc_handlers: HandlerPair<UpdateHighestPCEvent>,
+    pub(crate) update_locked_pc_handlers: HandlerPair<UpdateLockedPCEvent>,
     pub(crate) update_highest_tc_handlers: HandlerPair<UpdateHighestTCEvent>,
     pub(crate) update_validator_set_handlers: HandlerPair<UpdateValidatorSetEvent>,
 
@@ -87,7 +87,7 @@ pub(crate) struct EventHandlers {
 
     pub(crate) start_view_handlers: HandlerPair<StartViewEvent>,
     pub(crate) view_timeout_handlers: HandlerPair<ViewTimeoutEvent>,
-    pub(crate) collect_qc_handlers: HandlerPair<CollectQCEvent>,
+    pub(crate) collect_pc_handlers: HandlerPair<CollectPCEvent>,
     pub(crate) collect_tc_handlers: HandlerPair<CollectTCEvent>,
 
     pub(crate) start_sync_handlers: HandlerPair<StartSyncEvent>,
@@ -105,8 +105,8 @@ impl EventHandlers {
         insert_block_handler: Option<HandlerPtr<InsertBlockEvent>>,
         commit_block_handler: Option<HandlerPtr<CommitBlockEvent>>,
         prune_block_handler: Option<HandlerPtr<PruneBlockEvent>>,
-        update_highest_qc_handler: Option<HandlerPtr<UpdateHighestQCEvent>>,
-        update_locked_qc_handler: Option<HandlerPtr<UpdateLockedQCEvent>>,
+        update_highest_pc_handler: Option<HandlerPtr<UpdateHighestPCEvent>>,
+        update_locked_pc_handler: Option<HandlerPtr<UpdateLockedPCEvent>>,
         update_highest_tc_handler: Option<HandlerPtr<UpdateHighestTCEvent>>,
         update_validator_set_handler: Option<HandlerPtr<UpdateValidatorSetEvent>>,
         propose_handler: Option<HandlerPtr<ProposeEvent>>,
@@ -123,7 +123,7 @@ impl EventHandlers {
         receive_advance_view_handler: Option<HandlerPtr<ReceiveAdvanceViewEvent>>,
         start_view_handler: Option<HandlerPtr<StartViewEvent>>,
         view_timeout_handler: Option<HandlerPtr<ViewTimeoutEvent>>,
-        collect_qc_handler: Option<HandlerPtr<CollectQCEvent>>,
+        collect_pc_handler: Option<HandlerPtr<CollectPCEvent>>,
         collect_tc_handler: Option<HandlerPtr<CollectTCEvent>>,
         start_sync_handler: Option<HandlerPtr<StartSyncEvent>>,
         end_sync_handler: Option<HandlerPtr<EndSyncEvent>>,
@@ -134,8 +134,8 @@ impl EventHandlers {
             insert_block_handlers: HandlerPair::new(log, insert_block_handler),
             commit_block_handlers: HandlerPair::new(log, commit_block_handler),
             prune_block_handlers: HandlerPair::new(log, prune_block_handler),
-            update_highest_qc_handlers: HandlerPair::new(log, update_highest_qc_handler),
-            update_locked_qc_handlers: HandlerPair::new(log, update_locked_qc_handler),
+            update_highest_pc_handlers: HandlerPair::new(log, update_highest_pc_handler),
+            update_locked_pc_handlers: HandlerPair::new(log, update_locked_pc_handler),
             update_highest_tc_handlers: HandlerPair::new(log, update_highest_tc_handler),
             update_validator_set_handlers: HandlerPair::new(log, update_validator_set_handler),
             propose_handlers: HandlerPair::new(log, propose_handler),
@@ -152,7 +152,7 @@ impl EventHandlers {
             receive_advance_view_handlers: HandlerPair::new(log, receive_advance_view_handler),
             start_view_handlers: HandlerPair::new(log, start_view_handler),
             view_timeout_handlers: HandlerPair::new(log, view_timeout_handler),
-            collect_qc_handlers: HandlerPair::new(log, collect_qc_handler),
+            collect_pc_handlers: HandlerPair::new(log, collect_pc_handler),
             collect_tc_handlers: HandlerPair::new(log, collect_tc_handler),
             start_sync_handlers: HandlerPair::new(log, start_sync_handler),
             end_sync_handlers: HandlerPair::new(log, end_sync_handler),
@@ -167,8 +167,8 @@ impl EventHandlers {
         self.insert_block_handlers.is_empty()
             && self.commit_block_handlers.is_empty()
             && self.prune_block_handlers.is_empty()
-            && self.update_highest_qc_handlers.is_empty()
-            && self.update_locked_qc_handlers.is_empty()
+            && self.update_highest_pc_handlers.is_empty()
+            && self.update_locked_pc_handlers.is_empty()
             && self.update_highest_tc_handlers.is_empty()
             && self.update_validator_set_handlers.is_empty()
             && self.propose_handlers.is_empty()
@@ -185,7 +185,7 @@ impl EventHandlers {
             && self.receive_advance_view_handlers.is_empty()
             && self.start_view_handlers.is_empty()
             && self.view_timeout_handlers.is_empty()
-            && self.collect_qc_handlers.is_empty()
+            && self.collect_pc_handlers.is_empty()
             && self.collect_tc_handlers.is_empty()
             && self.start_sync_handlers.is_empty()
             && self.end_sync_handlers.is_empty()
@@ -227,25 +227,25 @@ impl EventHandlers {
                     .iter()
                     .for_each(|handler| handler(&prune_block_event));
             }
-            Event::UpdateHighestQC(update_highest_qc_event) => {
-                self.update_highest_qc_handlers
+            Event::UpdateHighestPC(update_highest_pc_event) => {
+                self.update_highest_pc_handlers
                     .user_defined_handler
                     .iter()
-                    .for_each(|handler| handler(&update_highest_qc_event));
-                self.update_highest_qc_handlers
+                    .for_each(|handler| handler(&update_highest_pc_event));
+                self.update_highest_pc_handlers
                     .logging_handler
                     .iter()
-                    .for_each(|handler| handler(&update_highest_qc_event));
+                    .for_each(|handler| handler(&update_highest_pc_event));
             }
-            Event::UpdateLockedQC(update_locked_qc_event) => {
-                self.update_locked_qc_handlers
+            Event::UpdateLockedPC(update_locked_pc_event) => {
+                self.update_locked_pc_handlers
                     .user_defined_handler
                     .iter()
-                    .for_each(|handler| handler(&update_locked_qc_event));
-                self.update_locked_qc_handlers
+                    .for_each(|handler| handler(&update_locked_pc_event));
+                self.update_locked_pc_handlers
                     .logging_handler
                     .iter()
-                    .for_each(|handler| handler(&update_locked_qc_event));
+                    .for_each(|handler| handler(&update_locked_pc_event));
             }
             Event::UpdateHighestTC(update_highest_tc_event) => {
                 self.update_highest_tc_handlers
@@ -407,15 +407,15 @@ impl EventHandlers {
                     .iter()
                     .for_each(|handler| handler(&view_timeout_event));
             }
-            Event::CollectQC(collect_qc_event) => {
-                self.collect_qc_handlers
+            Event::CollectPC(collect_pc_event) => {
+                self.collect_pc_handlers
                     .user_defined_handler
                     .iter()
-                    .for_each(|handler| handler(&collect_qc_event));
-                self.collect_qc_handlers
+                    .for_each(|handler| handler(&collect_pc_event));
+                self.collect_pc_handlers
                     .logging_handler
                     .iter()
-                    .for_each(|handler| handler(&collect_qc_event));
+                    .for_each(|handler| handler(&collect_pc_event));
             }
             Event::CollectTC(collect_tc_event) => {
                 self.collect_tc_handlers

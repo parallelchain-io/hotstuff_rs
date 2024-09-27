@@ -12,8 +12,8 @@ TODO: this is besides the core data structure described above. I think have to w
 
 |Field|Description|
 |---|---|
-|Locked QC|The currently locked QC. [Read more](#locking)|
-|Highest QC|Among the quorum certificates this validator has seen and verified, the one with the highest view number.|
+|Locked PC|The currently locked PC. [Read more](#locking)|
+|Highest PC|Among the phase certificates this validator has seen and verified, the one with the highest view number.|
 |Validator Sets State|TODO|
 
 ### Updaters
@@ -35,10 +35,10 @@ flowchart LR
     safe_block--->insert[Insert]--->update[Update]
 
     receive_nudge["Receive Nudge"]--->safe_nudge["Safe Nudge"]----->update[Update]
-    receive_new_view["Receive New View"]--->safe_qc["Safe QC"]
-    collect_qc["Collect QC (Receive Vote)"]--->safe_qc
+    receive_new_view["Receive New View"]--->safe_pc["Safe PC"]
+    collect_pc["Collect PC (Receive Vote)"]--->safe_pc
 
-    safe_qc----->update
+    safe_pc----->update
 
 %% TODO: missing Set Highest TC, Set Highest View Entered, and Set Highest View Voted
 ```
@@ -70,12 +70,12 @@ or a [`Block`].
 
 Depending on the specific Quorum Certificate received and the state of the Block Tree, the updates
 that this function performs will include:
-1. Updating the Highest QC if `justify.view > highest_qc.view`.
-2. Updating the Locked QC if appropriate, as determined by the [`qc_to_lock`](invariants::qc_to_lock)
+1. Updating the Highest PC if `justify.view > highest_pc.view`.
+2. Updating the Locked PC if appropriate, as determined by the [`pc_to_lock`](invariants::pc_to_lock)
 helper.
 3. Committing a block and all of its ancestors if appropriate, as determined by the
 [`block_to_commit`](invariants::block_to_commit) helper.
-4. Marking the latest validator set updates as decided if `justify` is a Decide QC.
+4. Marking the latest validator set updates as decided if `justify` is a Decide PC.
 
 ##### Preconditions
 
@@ -140,8 +140,8 @@ Block tree invariants can be grouped into two categories depending on their scop
   local invariant is the invariant enforced by `safe_nudge` that `nudge.justify.phase` must be either
   `Prepare`, `Precommit`, or `Commit`.
 - **Global Invariants**: invariants that relate different parts of the block tree. An example of a
-  global invariant is the invariant enforced by `safe_qc` that either: (i). `qc.block` extends from
-  `block_tree.locked_qc()?.block`, or (ii). `qc.view` is greater than `block_tree.locked_qc()?.view`.
+  global invariant is the invariant enforced by `safe_pc` that either: (i). `pc.block` extends from
+  `block_tree.locked_pc()?.block`, or (ii). `pc.view` is greater than `block_tree.locked_pc()?.view`.
 
 Some simple local invariants can be enforced by the type system at compile-time and therefore
 do not need to be checked at runtime. For example, the typedef of `Phase` automatically guarantees
@@ -149,7 +149,7 @@ the invariant `nudge.justify.phase` could only be one of five values--`Generic`,
 `Commit` and `Decide`.
 
 More complicated invariants, however (including both global invariants and also more complicated local
-invariants, as illustrated by the `safe_nudge` and `safe_qc` examples above), can only be enforced by
+invariants, as illustrated by the `safe_nudge` and `safe_pc` examples above), can only be enforced by
 runtime logic. This is where the methods in this module come in.
  
 #### Methods
@@ -162,7 +162,7 @@ terms as: a block tree that satisfies invariants + a invariant-preserving update
 tree that also satisfies invariants.
 
 Each method works to ensure that every update is invariant-preserving in one of two different ways:
-1. By checking **whether** an event (like receiving a `Proposal` or collecting a `QuorumCertificate`)
+1. By checking **whether** an event (like receiving a `Proposal` or collecting a `PhaseCertificate`)
    can trigger an invariant-preserving update, or
 2. By determining **what** invariant-preserving updates should be made in response to an event.
 
@@ -179,9 +179,9 @@ state mutators.
 
 ##### Category 1: "whether"
 
-Methods in this category: [`safe_qc`], [`safe_block`], [`safe_nudge`], (outlier) [`repropose_block`].
+Methods in this category: [`safe_pc`], [`safe_block`], [`safe_nudge`], (outlier) [`repropose_block`].
 
-These methods check **whether** a `QuorumCertificate`, `Block`, or `Nudge` (respectively) can
+These methods check **whether** a `PhaseCertificate`, `Block`, or `Nudge` (respectively) can
 trigger invariant-preserving state updates. Methods in this category feature in the *preconditions*
 of the `insert` and `update`.
 
@@ -192,10 +192,10 @@ requirement that `safe_nudge` checks.
 
 ##### Category 2: "what"
 
-Methods in this category: [`qc_to_lock`], [`block_to_commit`].
+Methods in this category: [`pc_to_lock`], [`block_to_commit`].
 
 These methods help determine **what** invariant-preserving state updates should be triggered in
-`update` in response to obtaining a `QuorumCertificate`, whether through receiving a `Proposal`,
+`update` in response to obtaining a `PhaseCertificate`, whether through receiving a `Proposal`,
 `Nudge`, or `NewView` message, or by collecting enough `Vote`s. Methods in this category are called
 *inside* [`update`](BlockTree::update).
 
@@ -233,49 +233,49 @@ conditions hold:
 1. All other honest replicas have also committed the block, in which case the commit is trivially
    consistent, or
 2. If not all honest replicas have committed the block, then a quorum of replicas is currently
-   *locked* on the block, which makes it impossible for a QC for a conflicting block to be formed.
+   *locked* on the block, which makes it impossible for a PC for a conflicting block to be formed.
 
 The consequence of condition 2 is that condition 1 will *eventually* hold, making the block safe to
 commit.
 
 Locking entails keeping track of a block tree variable called
-["Locked QC"](super::block_tree#safety) and doing two things with it:
-1. **Updating** the Locked QC whenever it is appropriate, according to the logic implemented by
-   `qc_to_lock`, and
-2. **Checking** every QC received or collected against the Locked QC. Only QCs that pass this check
+["Locked PC"](super::block_tree#safety) and doing two things with it:
+1. **Updating** the Locked PC whenever it is appropriate, according to the logic implemented by
+   `pc_to_lock`, and
+2. **Checking** every PC received or collected against the Locked PC. Only PCs that pass this check
    and therefore "satisfy the lock" are allowed to cause state updates.
 
-Updating the locked QC and checking the locked QC is discussed in turn in the following two
+Updating the locked PC and checking the locked PC is discussed in turn in the following two
 subsections:
 
 ##### Locking on a Block
 
-Any time `update` is called, the `locked_qc` should potentially be updated. The [`qc_to_lock`]
-method in this module decides what locked QC should be *updated to*.
+Any time `update` is called, the `locked_pc` should potentially be updated. The [`pc_to_lock`]
+method in this module decides what locked PC should be *updated to*.
 
-The precise logic used by `qc_to_lock` to decide which QC to lock on is documented in
-[the doc for `qc_to_lock`](qc_to_lock#qc_to_lock-logic). In short, the basic logic for choosing
-which QC to lock in HotStuff-rs is the same as the basic logic for choosing which QC to lock in the
+The precise logic used by `pc_to_lock` to decide which PC to lock on is documented in
+[the doc for `pc_to_lock`](pc_to_lock#pc_to_lock-logic). In short, the basic logic for choosing
+which PC to lock in HotStuff-rs is the same as the basic logic for choosing which PC to lock in the
 PODC'19 HotStuff paper, that is, "lock on seeing a 2-Chain".
 
 The basic logic is already well-documented in the PODC '19 paper, so for brevity, we do not
 re-describe it here. Instead, in the rest of this subsection, we describe a small but nuanced
 difference in the precise logic, and then explain the rationale behind this difference:
 
-In both HotStuff-rs and PODC '19 HotStuff, which QC `qc_to_lock` decides to lock on upon receiving
+In both HotStuff-rs and PODC '19 HotStuff, which PC `pc_to_lock` decides to lock on upon receiving
 `justify` depends on what `justify.phase` is:
-- If `justify.phase` is `Generic`, `Prepare`, or `Precommit`, `qc_to_lock`'s
+- If `justify.phase` is `Generic`, `Prepare`, or `Precommit`, `pc_to_lock`'s
   decision rule is exactly the same as the decision rule used in the algorithm in the original (PODC'
   19) HotStuff paper that corresponds to the [operating mode](crate::hotstuff#operating-mode) that the
   `Phase` is part of (recall that the Pipelined Mode corresponds to Algorithm 1, while the Phased Mode
   corresponds to Algorithm 3).
-- On the other hand, if `justify.phase` is `Commit` or `Decide`, `qc_to_lock` will decide to lock on
-  `justify` (as long as the current `locked_qc.block` is different from `justify.block`). This is
+- On the other hand, if `justify.phase` is `Commit` or `Decide`, `pc_to_lock` will decide to lock on
+  `justify` (as long as the current `locked_pc.block` is different from `justify.block`). This is
   **different** from the logic used in Algorithm 1 in the original HotStuff paper, which does not
-  update `locked_qc` upon receiving a `Commit` QC (there is no phase called `Decide` in the original
+  update `locked_pc` upon receiving a `Commit` PC (there is no phase called `Decide` in the original
   HotStuff paper).
 
-The reason why the PODC '19 HotStuff does not lock upon receiving a `Commit` or `Decide` QC while
+The reason why the PODC '19 HotStuff does not lock upon receiving a `Commit` or `Decide` PC while
 HotStuff-rs does becomes clearer when we consider that the original HotStuff makes the simplifying
 assumption that receiving any proposal implies that we have received every proposal in the chain
 that precedes the proposal. E.g., receiving a proposal for a block at height 10 means that we (the
@@ -286,47 +286,47 @@ This assumption simplifies the specification of the algorithm, and is one that i
 publications. However, this assumption is difficult to uphold in a production setting, where
 messages are often dropped. HotStuff-rs' [Block Sync](crate::block_sync) goes some way toward making
 this assumption hold, but is not perfect: in particular, Sync Servers only send their singular
-current [`highest_qc`](crate::block_sync::messages::BlockSyncResponse::highest_qc) in their
-`SyncResponse`s, which could be a QC of any phase: `Generic` up to `Decide`.
+current [`highest_pc`](crate::block_sync::messages::BlockSyncResponse::highest_pc) in their
+`SyncResponse`s, which could be a PC of any phase: `Generic` up to `Decide`.
 
-This means that if we use the same logic as used in Algorithm 1 to decide on which QC to lock on
-upon receiving a [phased mode](crate::hotstuff#phased-mode) QC, i.e., to lock only if
+This means that if we use the same logic as used in Algorithm 1 to decide on which PC to lock on
+upon receiving a [phased mode](crate::hotstuff#phased-mode) PC, i.e., to lock only if
 `justify.phase == Precommit`, then we will fail to lock on `justify.block` if `justify.phase` is
 `Commit` or `Decide`, which can lead to safety violations because the next block may then extend
 a conflicting branch.
 
-Because extending the Block Sync protocol to return multiple QCs in a `SyncResponse` could be
+Because extending the Block Sync protocol to return multiple PCs in a `SyncResponse` could be
 complicated (in particular, it would probably require replicas to store extra state), we instead
 solve this issue by deviating from PODC '19 HotStuff slightly by locking upon receiving a
-`Commit` or `Decide` QC.
+`Commit` or `Decide` PC.
 
 ##### Checking against the Lock
 
-The [3rd predicate of `safe_qc`](safe_qc#conditional-checks) checks whether any received or
-collected QC satisfies the lock and therefore is allowed to trigger state updates. This predicate
+The [3rd predicate of `safe_pc`](safe_pc#conditional-checks) checks whether any received or
+collected PC satisfies the lock and therefore is allowed to trigger state updates. This predicate
 is exactly the same as the corresponding predicate in the PODC '19 HotStuff paper, but is simple
 enough that we describe it and the rationale behind it fully in the rest of this subsection.
 
 The 3rd predicate comprises of two clauses, joined by an "or":
-1. **Safety clause**: `qc.block` extends from `locked_qc.block`, *or*
-2. **Liveness clause**: `qc.view` is greater than `locked_qc.view`.
+1. **Safety clause**: `pc.block` extends from `locked_pc.block`, *or*
+2. **Liveness clause**: `pc.view` is greater than `locked_pc.view`.
 
-In stable cases--i.e., where in every view, either 1/3rd of replicas lock on the same `locked_qc`,
-or none lock--the safety clause will always be satisfied. This ensures that the `qc` extends the
+In stable cases--i.e., where in every view, either 1/3rd of replicas lock on the same `locked_pc`,
+or none lock--the safety clause will always be satisfied. This ensures that the `pc` extends the
 branch headed by the locked block.
 
 In unstable cases, however, where e.g., messages are dropped or a proposer is faulty, less than
-1/3rd but more than zero replicas may lock on the same `locked_qc`. If, in this scenario, `safe_qc`
-only comprises of the safety clause and a `Block` or `Nudge` that conflicts with `locked_qc` is
-proposed in the next view, only replicas that didn't lock on `locked_qc` in the previous view will
+1/3rd but more than zero replicas may lock on the same `locked_pc`. If, in this scenario, `safe_pc`
+only comprises of the safety clause and a `Block` or `Nudge` that conflicts with `locked_pc` is
+proposed in the next view, only replicas that didn't lock on `locked_pc` in the previous view will
 be able to accept the new `Block` or `Nudge` and make progress, while the replicas that did lock
 will be stuck, unable to grow their blockchain further.
 
 This is where the liveness clause comes in. This clause enables the replicas that did lock on the
-now "abandoned" QC to eventually accept new `Block`s and `Nudge`s, and does so by relaxing the
+now "abandoned" PC to eventually accept new `Block`s and `Nudge`s, and does so by relaxing the
 third predicate to allow `Block`s and `Nudge`s that build on a different branch than the current
-`locked_qc.block` to cause state updates as long as the QC they contain has a higher view than
-`locked_qc.view`.
+`locked_pc.block` to cause state updates as long as the PC they contain has a higher view than
+`locked_pc.view`.
 
 #### Committing
 
@@ -344,7 +344,7 @@ turn:
 Any time `update` is called, blocks should potentially be committed. The [`block_to_commit`] method
 in this module decides what blocks should be committed.
 
-Like with `qc_to_lock`, the precise logic used by `block_to_commit` is documented in
+Like with `pc_to_lock`, the precise logic used by `block_to_commit` is documented in
 [the doc for `block_to_commit`](block_to_commit#block_to_commit-logic). Again, the logic used for
 choosing which block to commit in HotStuff-rs is broadly similar as the logic used for choosing
 which block to commit in the PODC '19 HotStuff paper.
@@ -352,17 +352,17 @@ which block to commit in the PODC '19 HotStuff paper.
 In particular, the logic used in HotStuff-rs' Pipelined Mode is the same as the logic used in
 Algorithm 3 in PODC '19 HotStuff; that is, a block should be committed in the Pipelined Mode when it
 meets two requirements:
-1. **3-Chain**: the block must head a sequence of 3 QCs.
-2. **Consecutive views**: the 3 QCs that follow the block must each have *consecutively increasing*
+1. **3-Chain**: the block must head a sequence of 3 PCs.
+2. **Consecutive views**: the 3 PCs that follow the block must each have *consecutively increasing*
    views, i.e., `justify3.view == justify2.view + 1 == justify1.view + 2` where
    `justify3.block.justify == justify2`, `justify2.block.justify == justify1`, and `justify1.block
    = block`.
 
 The nuanced difference between HotStuff-rs and PODC '19 HotStuff with regards to `block_to_commit`
 logic has to do with the *Phased Mode*. Specifically, the difference is that PODC '19's Algorithm 1
-requires that `Prepare`, `Precommit`, and `Commit` QCs that follow a block have the **same view**
-number in order for this sequence of QCs to commit the block, whereas on the other hand,
-HotStuff-rs' Phased Mode requires *only* that these QCs have **consecutive view** numbers, just
+requires that `Prepare`, `Precommit`, and `Commit` PCs that follow a block have the **same view**
+number in order for this sequence of PCs to commit the block, whereas on the other hand,
+HotStuff-rs' Phased Mode requires *only* that these PCs have **consecutive view** numbers, just
 like Pipelined Mode and Algorithm 3.
 
 The underlying reason why the same view requirement is used in PODC '19's Algorithm 1 but the
@@ -371,7 +371,7 @@ difference between these two algorithms:
 - In Algorithm 1, each view is comprised of *3 phases*.
 - In Phased Mode, each view is comprised of only *1 phase*.
 
-The result is that in Phased Mode, `Prepare`, `Precommit`, and `Commit` QCs can *never* have the
+The result is that in Phased Mode, `Prepare`, `Precommit`, and `Commit` PCs can *never* have the
 same view number, so if "same view" is a requirement to commit a block in Phased Mode, no block can
 ever be committed.
 
@@ -381,29 +381,29 @@ by locking.
 
 Consider what could happen if we had instead, for example, relaxed the requirement further to just
 "increasing views", and a replica commits a block upon receiving `Prepare`, `Precommit`, and
-`Commit` QCs for the block with views 4, 5 and 7. Because 5 and 7 are not contiguous, it could be
+`Commit` PCs for the block with views 4, 5 and 7. Because 5 and 7 are not contiguous, it could be
 the case that in view 6, a quorum of replicas have locked on a conflicting block, so it would be
 incorrect to assume that a quorum of replicas is currently locked on the block, and therefore it is
 unsafe in this situation to commit the block.
 
 ##### Ensuring Immediacy
 
-Recall that Immediacy requires validator set updating blocks to be committed by a `Commit` QC
+Recall that Immediacy requires validator set updating blocks to be committed by a `Commit` PC
 before a direct child can be inserted. This requirement, combined with the consecutive views
 requirement, creates a challenge for proposers.
 
-Normally, proposers query the `highest_qc` and broadcast a `Proposal` or `Nudge` containing it
+Normally, proposers query the `highest_pc` and broadcast a `Proposal` or `Nudge` containing it
 to all replicas. When views fail to make progress, however, the `current_view` of live replicas may
-grow to significantly greater than `highest_qc.view`. If in this situation, more than 1/3rd of
+grow to significantly greater than `highest_pc.view`. If in this situation, more than 1/3rd of
 replicas have locked on a validator set updating block, proposers must not propose a `Nudge`
-containing the highest QC, since the [4th predicate of `safe_nudge`](safe_nudge#conditional-checks)
+containing the highest PC, since the [4th predicate of `safe_nudge`](safe_nudge#conditional-checks)
 wil prevent honest replicas from voting on it, and hence prevent a quorum for the `Nudge` from being
 formed.
 
 To make progress in this situation, a proposer must re-propose either the locked block, or a
 (possibly new) sibling of the locked block. The implementation in HotStuff-rs chooses to do the
 former: the [`repropose_block`] method in this module helps determine whether a proposer should
-re-propose a block by considering its `current_view` and the local block tree's `highest_view.qc`,
+re-propose a block by considering its `current_view` and the local block tree's `highest_view.pc`,
 and if it finds that it *should* re-propose a block, returns the hash of the block that should
 be re-proposed so that the proposer can get it from the block tree.
 
@@ -416,24 +416,24 @@ Check whether `block` can safely cause updates to `block_tree`, given the replic
 ##### Conditional checks
 
 `safe_block` returns `true` in case all of the following predicates are `true`:
-1. `safe_qc(&block.justify, block_tree, chain_id)`.
-2. `block.qc.phase` is either `Generic` or `Decide`.
+1. `safe_pc(&block.justify, block_tree, chain_id)`.
+2. `block.pc.phase` is either `Generic` or `Decide`.
 
 ##### Precondition
 
 [`is_correct`](Block::is_correct) is `true` for `block`.
 
-#### Safe QC
+#### Safe PC
 
-> Source: `hotstuff_rs::state::invariants::safe_qc`
+> Source: `hotstuff_rs::state::invariants::safe_pc`
 
 Check whether `block` can safely cause updates to `block_tree`, given the replica's `chain_id`.
 
 ##### Conditional checks
 
 `safe_block` returns `true` in case all of the following predicates are `true`:
-1. `safe_qc(&block.justify, block_tree, chain_id)`.
-2. `block.qc.phase` is either `Generic` or `Decide`.
+1. `safe_pc(&block.justify, block_tree, chain_id)`.
+2. `block.pc.phase` is either `Generic` or `Decide`.
 
 ##### Precondition
 
@@ -449,7 +449,7 @@ and `chain_id`.
 ##### Conditional checks
 
 `safe_nudge` returns `true` in case all of the following predicates are `true`:
-1. `safe_qc(&nudge.justify, block_tree, chain_id)`.
+1. `safe_pc(&nudge.justify, block_tree, chain_id)`.
 2. `nudge.justify.phase` is `Prepare`, `Precommit`, or `Commit`.
 3. `nudge.chain_id` equals `chain_id`.
 4. `nudge.justify.phase` is either `Commit`, or `nudge.justify.view = current_view - 1`.
@@ -471,41 +471,41 @@ If `Ok(Some(block_hash))` is returned, then the leader should re-propose the blo
 `block_hash`.
 
 Else if `Ok(None)` is returned, then the leader should either propose a new block, or
-nudge using the highest qc.
+nudge using the highest pc.
 
 ##### Rationale
 
 The Consecutive Views Rule and the purpose of `repropose_block` is explained in the
 ["Committing"](super::invariants#committing) section of `safety`'s module-level docs.
 
-#### QC to Lock 
+#### PC to Lock 
 
-> Source: `hotstuff_rs::state::invariants::qc_to_lock`
+> Source: `hotstuff_rs::state::invariants::pc_to_lock`
 
-Get the QC (if any) that should be set as the Locked QC after the replica sees the given `justify`.
+Get the PC (if any) that should be set as the Locked PC after the replica sees the given `justify`.
 
 ##### Precondition
 
 The block or nudge containing this justify must satisfy [`safe_block`] or [`safe_nudge`]
 respectively.
 
-##### `qc_to_lock` logic
+##### `pc_to_lock` logic
 
-`qc_to_lock`'s return value depends on `justify`'s phase and whether or not it is the Genesis QC.
-What `qc_to_lock` returns in every case is summarized in the below table:
+`pc_to_lock`'s return value depends on `justify`'s phase and whether or not it is the Genesis PC.
+What `pc_to_lock` returns in every case is summarized in the below table:
 
-|`justify` is the/a|QC to lock if not already the current locked QC|
+|`justify` is the/a|PC to lock if not already the current locked PC|
 |---|---|
-|Genesis QC|`None`|
-|`Generic` QC|`justify.block.justify`|
-|`Prepare` QC|`None`|
-|`Precommit` QC|`justify`|
-|`Commit` QC|`justify`|
-|`Decide` QC|`justify`|
+|Genesis PC|`None`|
+|`Generic` PC|`justify.block.justify`|
+|`Prepare` PC|`None`|
+|`Precommit` PC|`justify`|
+|`Commit` PC|`justify`|
+|`Decide` PC|`justify`|
 
 ##### Rationale
 
-The rationale behind `qc_to_lock`'s logic is explained in the ["Locking"](super::invariants#locking)
+The rationale behind `pc_to_lock`'s logic is explained in the ["Locking"](super::invariants#locking)
 module-level docs.
 
 #### Block to Commit
@@ -523,15 +523,15 @@ respectively.
 ##### `block_to_commit` logic
 
 `block_to_commit`'s return value depends on `justify`'s phase and whether or not it is the Genesis
-QC. What `block_to_commit` returns in every case is summarized in the below table:
+PC. What `block_to_commit` returns in every case is summarized in the below table:
 
 |`justify.phase` is a|Block to commit if it satisfies the consecutive views rule *and* is not already committed yet|
 |---|---|
-|`Generic` QC|`justify.block.justify.block.justify.block`|
-|`Prepare` QC|`None`|
-|`Precommit` QC|`None`|
-|`Commit` QC|`justify.block`|
-|`Decide` QC|`justify.block`|
+|`Generic` PC|`justify.block.justify.block.justify.block`|
+|`Prepare` PC|`None`|
+|`Precommit` PC|`None`|
+|`Commit` PC|`justify.block`|
+|`Decide` PC|`justify.block`|
 
 ##### Rationale
 
@@ -596,7 +596,7 @@ a [`Proposal`] or [`Nudge`].
 > Source: `hotstuff_rs::hotstuff::messages::NewView`
 
 Message sent by a replica to the next leader on view timeout to update the next leader about the
-highest QC that replicas know of.
+highest PC that replicas know of.
 
 ##### `NewView` and view synchronization
 
@@ -641,7 +641,7 @@ fn enter_view(view: ViewNum) {
     let new_view = NewView {
         chain_id,
         view: current_view,
-        highest_qc: block_tree.highest_qc(),
+        highest_pc: block_tree.highest_pc(),
     }
 
     for leader in new_view_recipients(&new_view, block_tree.validator_sets_state()) {
@@ -672,13 +672,13 @@ fn enter_view(view: ViewNum) {
             network.broadcast(proposal);
         }
 
-        // 4.2. Otherwise, decide whether to broadcast a new proposal, or a new nudge, according to phase of the highest QC.
+        // 4.2. Otherwise, decide whether to broadcast a new proposal, or a new nudge, according to phase of the highest PC.
         else {
-            match block_tree.highest_qc().phase {
+            match block_tree.highest_pc().phase {
 
-                // 4.2.1. If the phase of the highest QC is Generic or Decide, create a new Proposal and broadcast it.
+                // 4.2.1. If the phase of the highest PC is Generic or Decide, create a new Proposal and broadcast it.
                 Phase::Generic | Phase::Decide => {
-                    let block = app.produce_block(&block_tree, block_tree.highest_qc());
+                    let block = app.produce_block(&block_tree, block_tree.highest_pc());
                     let proposal = Proposal {
                         chain_id,
                         view,
@@ -688,12 +688,12 @@ fn enter_view(view: ViewNum) {
                     network.broadcast(proposal);
                 },
 
-                // 4.2.2. If the phase of the highest QC is Prepare, Precommit, or Commit, create a new Nudge and broadcast it.
+                // 4.2.2. If the phase of the highest PC is Prepare, Precommit, or Commit, create a new Nudge and broadcast it.
                 Phase::Prepare | Phase::Precommit | Phase::Commit => {
                     let nudge = Nudge {
                         chain_id,
                         view,
-                        justify: block_tree.highest_qc(),
+                        justify: block_tree.highest_pc(),
                     }
 
                     network.broadcast(nudge);
@@ -738,7 +738,7 @@ fn on_receive_proposal(proposal: Proposal, origin: VerifyingKey) {
                 // may or may not have been changed in the block tree update in the previous step).
                 vote_collectors.update_validator_sets(block_tree.validator_sets_state());
 
-                // 7. If the local replica's votes can become part of QCs that directly extend `proposal.block.justify`,
+                // 7. If the local replica's votes can become part of PCs that directly extend `proposal.block.justify`,
                 //    vote for `proposal`.
                 if is_voter(
                     keypair.public(),
@@ -795,7 +795,7 @@ fn on_receive_nudge(nudge: Nudge, origin: VerifyingKey) {
             // may or may not have been changed in the block tree update in the previous step).
             vote_collectors.update_validator_sets(block_tree.validator_sets_state());
 
-            // 5. If the local replica's votes can become part of QCs that directly extend `nudge.justify`, vote for
+            // 5. If the local replica's votes can become part of PCs that directly extend `nudge.justify`, vote for
             //    `nudge`.
             if is_voter(
                 keypair.public(),
@@ -836,22 +836,22 @@ fn on_receive_vote(vote: Vote, origin: VerifyingKey) {
     if vote.is_correct(origin) {
 
         // 2. Collect `vote` using the vote collectors.
-        let new_qc = vote_collectors.collect(vote, origin);
+        let new_pc = vote_collectors.collect(vote, origin);
 
-        // 3. If sufficient votes were collected to form a `new_qc`, use `new_qc` to update the block tree. 
-        if let Some(new_qc) = new_qc {
-            // 3.1. Confirm that `new_qc` is safe according to the rules of the block tree. 
+        // 3. If sufficient votes were collected to form a `new_pc`, use `new_pc` to update the block tree. 
+        if let Some(new_pc) = new_pc {
+            // 3.1. Confirm that `new_pc` is safe according to the rules of the block tree. 
             // 
             // Note (TODO): I can think of at least three ways this check can fail:
-            // 1. A quorum of replicas are byzantine and form a QC with an illegal phase, that is:
-            //     1. A Generic QC that justifies a VSU-block.
-            //     2. A non-Generic QC that justifies a non-VSU-block.
+            // 1. A quorum of replicas are byzantine and form a PC with an illegal phase, that is:
+            //     1. A Generic PC that justifies a VSU-block.
+            //     2. A non-Generic PC that justifies a non-VSU-block.
             // 2. We forgot to create a new vote collector with a higher view in `enter_view` (library bug). 
-            // 3. We collected a QC for a block that isn't in the block tree yet (block sync may help).
-            if block_tree.safe_qc(new_qc) {
+            // 3. We collected a PC for a block that isn't in the block tree yet (block sync may help).
+            if block_tree.safe_pc(new_pc) {
 
-                // 3.2. Update the block tree using `new_qc`.
-                block_tree.update(new_qc);
+                // 3.2. Update the block tree using `new_pc`.
+                block_tree.update(new_pc);
 
                 // 3.3. Tell the vote collectors to start collecting votes according to the new validator sets state (which
                 // may or may not have been changed in the block tree update in the previous step). 
@@ -866,11 +866,11 @@ fn on_receive_vote(vote: Vote, origin: VerifyingKey) {
 
 ```rust
 fn on_receive_new_view(new_view: NewView, origin: VerifyingKey) {
-    // 1. Confirm that `new_qc` is safe according to the rules of the block tree. 
-    if block_tree.safe_qc(&new_view.highest_qc) {
+    // 1. Confirm that `new_pc` is safe according to the rules of the block tree. 
+    if block_tree.safe_pc(&new_view.highest_pc) {
 
-        // 2. Update the block tree using `new_view.highest_qc`.
-        block_tree.update(new_view.highest_qc);
+        // 2. Update the block tree using `new_view.highest_pc`.
+        block_tree.update(new_view.highest_pc);
 
         // 3. Tell the vote collectors to start collecting votes according to the new validator sets state (which
         // may or may not have been changed in the block tree update in the previous step). 
@@ -939,7 +939,7 @@ of the two factors:
 > Source: `hotstuff_rs::hotstuff::roles::is_voter`
 
 Determine whether or not `replica` should vote for the `Proposal` or `Nudge` that `justify` was taken
-from. This depends on whether `replica`'s votes can become part of quorum certificates that directly
+from. This depends on whether `replica`'s votes can become part of phase certificates that directly
 extend `justify`.
 
 If this predicate evaluates to `false`, then it is fruitless to vote for the `Proposal` or `Nudge`
@@ -948,7 +948,7 @@ replica's votes anyway.
 
 ##### `is_voter` Logic
 
-`replica`'s vote can become part of QCs that directly extend `justify` if-and-only-if `replica` is
+`replica`'s vote can become part of PCs that directly extend `justify` if-and-only-if `replica` is
 part of the appropriate validator set in the `validator_set_state`, which is either the committed
 validator set (CVS), or the previous validator set (PVS). In turn, which of CVS and PVS is the
 appropriate validator set depends on two factors:
@@ -965,7 +965,7 @@ possible combination of the two factors:
 
 ##### Preconditions
 
-`justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
+`justify` satisfies [`safe_pc`](crate::state::safety::safe_pc) and
 [`is_correct`](crate::types::collectors::Certificate::is_correct), and the block tree updates
 associated with this `justify` have already been applied.
 

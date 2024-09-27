@@ -40,7 +40,7 @@ use ed25519_dalek::VerifyingKey;
 use crate::{
     hotstuff::{
         messages::{NewView, Nudge, PhaseVote, Proposal},
-        types::QuorumCertificate,
+        types::PhaseCertificate,
     },
     pacemaker::{
         messages::{AdvanceView, TimeoutVote},
@@ -59,8 +59,8 @@ pub enum Event {
     InsertBlock(InsertBlockEvent),
     CommitBlock(CommitBlockEvent),
     PruneBlock(PruneBlockEvent),
-    UpdateHighestQC(UpdateHighestQCEvent),
-    UpdateLockedQC(UpdateLockedQCEvent),
+    UpdateHighestPC(UpdateHighestPCEvent),
+    UpdateLockedPC(UpdateLockedPCEvent),
     UpdateHighestTC(UpdateHighestTCEvent),
     UpdateValidatorSet(UpdateValidatorSetEvent),
 
@@ -83,7 +83,7 @@ pub enum Event {
     // Other progress mode events.
     StartView(StartViewEvent),
     ViewTimeout(ViewTimeoutEvent),
-    CollectQC(CollectQCEvent),
+    CollectPC(CollectPCEvent),
     CollectTC(CollectTCEvent),
 
     // Sync mode events.
@@ -123,18 +123,18 @@ pub struct PruneBlockEvent {
     pub block: CryptoHash,
 }
 
-/// The Highest Quroum Certificate, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
-/// was updated. Includes the new Highest [`Quroum Certificate`](crate::hotstuff::types::QuorumCertificate).
-pub struct UpdateHighestQCEvent {
+/// The Highest `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
+/// was updated.
+pub struct UpdateHighestPCEvent {
     pub timestamp: SystemTime,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }
 
-/// The Locked QC stored in the [`Block Tree`](crate::state::block_tree::BlockTree) was updated.
-/// Includes the new locked [quorum certificate](crate::hotstuff::types::QuorumCertificate).
-pub struct UpdateLockedQCEvent {
+/// The Locked `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
+/// was updated.
+pub struct UpdateLockedPCEvent {
     pub timestamp: SystemTime,
-    pub locked_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }
 
 /// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree),
@@ -256,11 +256,11 @@ pub struct ViewTimeoutEvent {
     pub view: ViewNumber,
 }
 
-/// The replica collected a new `quorum_certificate` from the votes it received from the validators in
+/// The replica collected a new `phase_certificate` from the votes it received from the validators in
 /// the current view.
-pub struct CollectQCEvent {
+pub struct CollectPCEvent {
     pub timestamp: SystemTime,
-    pub quorum_certificate: QuorumCertificate,
+    pub phase_certificate: PhaseCertificate,
 }
 
 /// The replica collected a new `timeout_certificate` from the votes it received from the validators in
@@ -302,10 +302,10 @@ pub struct ReceiveSyncRequestEvent {
 /// [sync response](crate::block_sync::messages::BlockSyncResponse) to a peer identifiable by its
 /// [public key](ed25519_dalek::VerifyingKey). Includes information about the vector of
 /// [blocks](crate::types::block::Block) and the Highest
-/// [Quroum Certificate](crate::hotstuff::types::QuorumCertificate) sent to the peer.
+/// [Quroum Certificate](crate::hotstuff::types::PhaseCertificate) sent to the peer.
 pub struct SendSyncResponseEvent {
     pub timestamp: SystemTime,
     pub peer: VerifyingKey,
     pub blocks: Vec<Block>,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }

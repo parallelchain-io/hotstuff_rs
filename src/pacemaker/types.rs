@@ -153,7 +153,7 @@ impl Collector for TimeoutVoteCollector {
                 self.signature_set.set(pos, Some(vote.signature));
                 self.signature_set_power += *self.validator_set.power(signer).unwrap();
 
-                // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
+                // If inserting the vote makes the signature set form a quorum, then create a TimeoutCertificate.
                 if self.signature_set_power >= self.validator_set.quorum() {
                     let collected_tc = TimeoutCertificate {
                         chain_id: self.chain_id,
