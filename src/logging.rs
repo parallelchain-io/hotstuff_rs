@@ -265,7 +265,7 @@ impl Logger for AdvanceViewEvent {
                 "{}, {}, {}",
                 ADVANCE_VIEW,
                 secs_since_unix_epoch(advance_view_event.timestamp),
-                certificate_info(&advance_view_event.advance_view.progress_certificate),
+                progress_certificate_info(&advance_view_event.advance_view.progress_certificate),
             )
         };
         Box::new(logger)
@@ -360,7 +360,9 @@ impl Logger for ReceiveAdvanceViewEvent {
                 RECEIVE_ADVANCE_VIEW,
                 secs_since_unix_epoch(receive_advance_view_event.timestamp),
                 first_seven_base64_chars(&receive_advance_view_event.origin.to_bytes()),
-                certificate_info(&receive_advance_view_event.advance_view.progress_certificate),
+                progress_certificate_info(
+                    &receive_advance_view_event.advance_view.progress_certificate
+                ),
             )
         };
         Box::new(logger)
@@ -503,7 +505,7 @@ fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
         .as_secs()
 }
 
-fn certificate_info(certificate: &ProgressCertificate) -> String {
+fn progress_certificate_info(certificate: &ProgressCertificate) -> String {
     match certificate {
         ProgressCertificate::PhaseCertificate(pc) => String::from(format!(
             "Phase Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}",
