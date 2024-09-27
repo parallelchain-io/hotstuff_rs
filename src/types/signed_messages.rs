@@ -23,31 +23,31 @@ use super::{
     validators::{ValidatorSet, ValidatorSetState},
 };
 
-/// A signed message must consist of:
-/// 1. Message bytes ([`SignedMessage::message_bytes`]): the values that the signature is over, and
-/// 2. Signature bytes ([`SignedMessage::signature_bytes`]): the signature in bytes.
-/// Given the two values satisfying the above, and a public key of the signer,
-/// the signature can be verified against the message.
+/// Data types that contain a message, and a digital signature over said message whose correctness
+/// can be verified against a `VerifyingKey`.
 pub(crate) trait SignedMessage: Clone {
-    // The values contained in the message that should be signed (represented as a vector of bytes).
-    // A signed message must have a vector of bytes to sign over.
+    /// Get the bytes that are passed as input into the signing function to form the signature.
     fn message_bytes(&self) -> Vec<u8>;
 
-    // The signature (in bytes) from the vote.
-    // A vote must contain a signature.
+    /// Get the signature.
     fn signature_bytes(&self) -> SignatureBytes;
 
-    // Verifies the correctness of the signature given the values that should be signed.
-    fn is_correct(&self, pk: &VerifyingKey) -> bool {
+    /// Verify that `signature_bytes` is a signature created by `verifying_key` over `message_bytes`.
+    fn is_correct(&self, verifying_key: &VerifyingKey) -> bool {
         let signature = Signature::from_bytes(&self.signature_bytes().bytes());
-        pk.verify(&self.message_bytes(), &signature).is_ok()
+        verifying_key
+            .verify(&self.message_bytes(), &signature)
+            .is_ok()
     }
 }
 
-/// Data types that count as evidence that a [`quorum`](Certificate::quorum) of validators in a
-/// particular validator set supports a particular decision. The evidence comes in the form of a
-/// set of signatures by the validators.
-pub trait Certificate {
+/// Data types that aggregate multiple [`SignedMessage`]s of the same type into evidence that a
+/// [`quorum`](Certificate::quorum) of validators in a particular validator set supports a particular
+/// decision.
+pub(crate) trait Certificate {
+    /// The specific `SignedMessage` type that this `Certificate` aggregates into one value.
+    type SignedMessage: SignedMessage;
+
     /// Check whether the certificate is "correct" ( i.e., whether it can serve as evidence that a particular
     /// decision has been approved by the quorum of validators assigned to collectively make the decision),
     /// given the current `block_tree`.
@@ -90,17 +90,17 @@ pub trait Certificate {
     }
 }
 
-/// Types that progressively collect [correct][SignedMessage::is_correct] [`SignedMessage`]s into [`Certificate`]s
+/// Types that progressively combine [`SignedMessage`]s in order to form [`Certificate`]s
 ///
 /// TODO: matching chain_id and view.
 ///
 /// TODO: a single validator set.
 pub(crate) trait Collector: Clone {
-    /// The specific `SignedMessage` type that this `Collector` takes as input.
-    type S: SignedMessage;
+    /// The specific `SignedMessage` type that this `Collector` takes in as input.
+    type SignedMessage: SignedMessage;
 
-    /// The specific `Certificate` type that this `Collector` creates and returns as output.
-    type C: Certificate;
+    /// The specific `Certificate` type that this `Collector` returns as output.
+    type Certificate: Certificate<SignedMessage = Self::SignedMessage>;
 
     /// Create a new instance of the `Collector`, configuring it to collect `SignedMessage`s for the specified
     /// `chain_id`, and `view`, and signed by a member
@@ -115,8 +115,18 @@ pub(crate) trait Collector: Clone {
 
     fn validator_set(&self) -> &ValidatorSet;
 
-    /// Preconditions: does the caller have to check whether `signer` is correct or not?
-    fn collect(&mut self, signer: &VerifyingKey, message: Self::S) -> Option<Self::C>;
+    /// # No-ops
+    ///
+    /// This function is a no-op if `message.chain_id`
+    ///
+    /// # Preconditions
+    ///
+    /// `message.is_correct(signer)`
+    fn collect(
+        &mut self,
+        signer: &VerifyingKey,
+        message: Self::SignedMessage,
+    ) -> Option<Self::Certificate>;
 }
 
 /// A struct that combines [`Collector`]s for the two validator sets that could be considered "active"
@@ -163,7 +173,11 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
     }
 
     /// Collect `message` with the appropriate collector in this `ActiveCollectors`.
-    pub(crate) fn collect(&mut self, signer: &VerifyingKey, message: CL::S) -> Option<CL::C> {
+    pub(crate) fn collect(
+        &mut self,
+        signer: &VerifyingKey,
+        message: <CL::Certificate as Certificate>::SignedMessage,
+    ) -> Option<CL::Certificate> {
         if let Some(certificate) = self
             .committed_validator_set_collector
             .collect(signer, message.clone())

@@ -38,6 +38,8 @@ pub struct QuorumCertificate {
 }
 
 impl Certificate for QuorumCertificate {
+    type SignedMessage = Vote;
+
     /// Determine the appropriate validator set that the QC should be checked against, and check if the
     /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
@@ -272,8 +274,9 @@ pub(crate) struct VoteCollector {
 }
 
 impl Collector for VoteCollector {
-    type C = QuorumCertificate;
-    type S = Vote;
+    type SignedMessage = Vote;
+
+    type Certificate = QuorumCertificate;
 
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         Self {

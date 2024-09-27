@@ -10,10 +10,7 @@ use std::mem;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    networking::{
-        messages::ProgressMessage,
-        receiving::Cacheable,
-    },
+    networking::{messages::ProgressMessage, receiving::Cacheable},
     types::{basic::*, block::*, keypair::*, signed_messages::SignedMessage},
 };
 

@@ -33,6 +33,8 @@ pub struct TimeoutCertificate {
 }
 
 impl Certificate for TimeoutCertificate {
+    type SignedMessage = TimeoutVote;
+
     /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
     ///
     /// During the speculation phase, i.e., when the new validator set has been committed, but the old
@@ -103,8 +105,9 @@ pub(crate) struct TimeoutVoteCollector {
 }
 
 impl Collector for TimeoutVoteCollector {
-    type S = TimeoutVote;
-    type C = TimeoutCertificate;
+    type SignedMessage = TimeoutVote;
+
+    type Certificate = TimeoutCertificate;
 
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         let n = validator_set.len();
