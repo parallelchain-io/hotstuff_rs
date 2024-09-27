@@ -33,7 +33,7 @@ pub struct TimeoutCertificate {
 }
 
 impl Certificate for TimeoutCertificate {
-    type SignedMessage = TimeoutVote;
+    type Vote = TimeoutVote;
 
     /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
     ///
@@ -105,7 +105,7 @@ pub(crate) struct TimeoutVoteCollector {
 }
 
 impl Collector for TimeoutVoteCollector {
-    type SignedMessage = TimeoutVote;
+    type Vote = TimeoutVote;
 
     type Certificate = TimeoutCertificate;
 

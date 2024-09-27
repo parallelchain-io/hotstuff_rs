@@ -49,14 +49,14 @@ pub const UPDATE_VALIDATOR_SET: &str = "UpdateValidatorSet";
 
 pub const PROPOSE: &str = "Propose";
 pub const NUDGE: &str = "Nudge";
-pub const VOTE: &str = "Vote";
+pub const PHASE_VOTE: &str = "PhaseVote";
 pub const NEW_VIEW: &str = "NewView";
 pub const TIMEOUT_VOTE: &str = "TimeoutVote";
 pub const ADVANCE_VIEW: &str = "AdvanceView";
 
 pub const RECEIVE_PROPOSAL: &str = "ReceiveProposal";
 pub const RECEIVE_NUDGE: &str = "ReceiveNudge";
-pub const RECEIVE_VOTE: &str = "ReceiveVote";
+pub const RECEIVE_PHASE_VOTE: &str = "ReceivePhaseVote";
 pub const RECEIVE_NEW_VIEW: &str = "ReceiveNewView";
 pub const RECEIVE_TIMEOUT_VOTE: &str = "ReceiveTimeoutVote";
 pub const RECEIVE_ADVANCE_VIEW: &str = "ReceiveAdvanceView";
@@ -212,16 +212,16 @@ impl Logger for NudgeEvent {
     }
 }
 
-impl Logger for VoteEvent {
+impl Logger for PhaseVoteEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |vote_event: &VoteEvent| {
+        let logger = |phase_vote_event: &PhaseVoteEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                VOTE,
-                secs_since_unix_epoch(vote_event.timestamp),
-                first_seven_base64_chars(&vote_event.vote.block.bytes()),
-                vote_event.vote.view,
-                vote_event.vote.phase
+                PHASE_VOTE,
+                secs_since_unix_epoch(phase_vote_event.timestamp),
+                first_seven_base64_chars(&phase_vote_event.vote.block.bytes()),
+                phase_vote_event.vote.view,
+                phase_vote_event.vote.phase
             )
         };
         Box::new(logger)
@@ -304,16 +304,16 @@ impl Logger for ReceiveNudgeEvent {
     }
 }
 
-impl Logger for ReceiveVoteEvent {
+impl Logger for ReceivePhaseVoteEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |receive_vote_event: &ReceiveVoteEvent| {
+        let logger = |receive_vote_event: &ReceivePhaseVoteEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                RECEIVE_VOTE,
+                RECEIVE_PHASE_VOTE,
                 secs_since_unix_epoch(receive_vote_event.timestamp),
                 first_seven_base64_chars(&receive_vote_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_vote_event.vote.block.bytes()),
-                receive_vote_event.vote.phase
+                first_seven_base64_chars(&receive_vote_event.phase_vote.block.bytes()),
+                receive_vote_event.phase_vote.phase
             )
         };
         Box::new(logger)

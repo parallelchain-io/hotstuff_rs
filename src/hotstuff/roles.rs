@@ -13,14 +13,14 @@ use crate::{
 };
 
 use super::{
-    messages::{NewView, Vote},
+    messages::{NewView, PhaseVote},
     types::{Phase, QuorumCertificate},
 };
 
 /// Determine whether the `replica` is an "active" validator, given the current `validator_set_state`.
 ///
 /// An active validator can:
-/// - Propose/nudge and vote in the HotStuff protocol under certain circumstances described above,
+/// - Propose/Nudge and phase vote in the HotStuff protocol,
 /// - Contribute [timeout votes](crate::pacemaker::messages::TimeoutVote) and
 ///    [advance view messages](crate::pacemaker::messages::AdvanceView).
 ///
@@ -53,20 +53,20 @@ pub(crate) fn is_validator(
                 .contains(replica))
 }
 
-/// Determine whether or not `replica` should vote for the `Proposal` or `Nudge` that `justify` was taken
-/// from. This depends on whether `replica`'s votes can become part of quorum certificates that directly
-/// extend `justify`.
+/// Determine whether or not `replica` should phase-vote for the `Proposal` or `Nudge` that `justify`
+/// was taken from. This depends on whether `replica`'s `PhaseVote`s can become part of quorum
+/// certificates that directly extend `justify`.
 ///
 /// If this predicate evaluates to `false`, then it is fruitless to vote for the `Proposal` or `Nudge`
 /// that `justify` was taken from, since according to the protocol, the next leader will ignore the
-/// replica's votes anyway.
+/// replica's phase votes anyway.
 ///
-/// ## `is_voter` Logic
+/// ## `is_phase_voter` Logic
 ///
-/// `replica`'s vote can become part of QCs that directly extend `justify` if-and-only-if `replica` is
-/// part of the appropriate validator set in the `validator_set_state`, which is either the committed
-/// validator set (CVS), or the previous validator set (PVS). In turn, which of CVS and PVS is the
-/// appropriate validator set depends on two factors:
+/// `replica`'s phase vote can become part of QCs that directly extend `justify` if-and-only-if
+/// `replica` is part of the appropriate validator set in the `validator_set_state`, which is either the
+/// Committed Validator Set (CVS), or the Previous Validator Set (PVS). In turn, which of CVS and PVS is
+/// the appropriate validator set depends on two factors:
 /// 1. Whether or not `validator_set_update.update_decided()`, and
 /// 2. What `justify.phase` is:
 ///
@@ -83,7 +83,7 @@ pub(crate) fn is_validator(
 /// `justify` satisfies [`safe_qc`](crate::state::safety::safe_qc) and
 /// [`is_correct`](crate::types::collectors::Certificate::is_correct), and the block tree updates
 /// associated with this `justify` have already been applied.
-pub(crate) fn is_voter(
+pub(crate) fn is_phase_voter(
     replica: &VerifyingKey,
     validator_set_state: &ValidatorSetState,
     justify: &QuorumCertificate,
@@ -134,12 +134,12 @@ pub(crate) fn is_proposer(
             && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
-/// Identify the leader that `vote` should be sent to, given the current `validator_set_state`.
+/// Identify the leader that `phase_vote` should be sent to, given the current `validator_set_state`.
 ///
-/// ## `vote_recipient` Logic
+/// ## `phase_vote_recipient` Logic
 ///
-/// The leader that `vote` should be sent to is the leader of `vote.view + 1` in the appropriate
-/// validator set in the `validator_set_state`, which is either the committed validator set (CVS) or the
+/// The leader that `phase_vote` should be sent to is the leader of `phase_vote.view + 1` in the appropriate
+/// validator set in `validator_set_state`, which is either the committed validator set (CVS) or the
 /// previous validator set (PVS). Which of the CVS and the PVS is the appropriate validator set depends
 /// on two factors: 1. Whether or not `validator_set_update.update_decided`, and 2. What `justify.phase`
 /// is:
@@ -148,17 +148,25 @@ pub(crate) fn is_proposer(
 /// |---|---|---|
 /// |Phase == `Generic`, `Prepare`, `Precommit`, or `Commit`|CVS|PVS|
 /// |Phase == `Decide`|CVS|CVS|
-pub(crate) fn vote_recipient(vote: &Vote, validator_set_state: &ValidatorSetState) -> VerifyingKey {
+pub(crate) fn phase_vote_recipient(
+    phase_vote: &PhaseVote,
+    validator_set_state: &ValidatorSetState,
+) -> VerifyingKey {
     if validator_set_state.update_decided() {
-        select_leader(vote.view + 1, validator_set_state.committed_validator_set())
+        select_leader(
+            phase_vote.view + 1,
+            validator_set_state.committed_validator_set(),
+        )
     } else {
-        match vote.phase {
-            Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Commit => {
-                select_leader(vote.view + 1, validator_set_state.previous_validator_set())
-            }
-            Phase::Decide => {
-                select_leader(vote.view + 1, validator_set_state.committed_validator_set())
-            }
+        match phase_vote.phase {
+            Phase::Generic | Phase::Prepare | Phase::Precommit | Phase::Commit => select_leader(
+                phase_vote.view + 1,
+                validator_set_state.previous_validator_set(),
+            ),
+            Phase::Decide => select_leader(
+                phase_vote.view + 1,
+                validator_set_state.committed_validator_set(),
+            ),
         }
     }
 }

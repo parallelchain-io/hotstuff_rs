@@ -11,7 +11,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     networking::{messages::ProgressMessage, receiving::Cacheable},
-    types::{basic::*, block::*, keypair::*, signed_messages::SignedMessage},
+    types::{
+        basic::*,
+        block::*,
+        keypair::*,
+        signed_messages::{SignedMessage, Vote},
+    },
 };
 
 use super::types::{Phase, QuorumCertificate};
@@ -25,8 +30,8 @@ pub enum HotStuffMessage {
     /// See [`Nudge`].
     Nudge(Nudge),
 
-    /// See [`Vote`].
-    Vote(Vote),
+    /// See [`PhaseVote`].
+    PhaseVote(PhaseVote),
 
     /// See [`NewView`].
     NewView(NewView),
@@ -38,7 +43,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(Proposal { chain_id, .. }) => *chain_id,
             HotStuffMessage::Nudge(Nudge { chain_id, .. }) => *chain_id,
-            HotStuffMessage::Vote(Vote { chain_id, .. }) => *chain_id,
+            HotStuffMessage::PhaseVote(PhaseVote { chain_id, .. }) => *chain_id,
             HotStuffMessage::NewView(NewView { chain_id, .. }) => *chain_id,
         }
     }
@@ -48,7 +53,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(Proposal { view, .. }) => *view,
             HotStuffMessage::Nudge(Nudge { view, .. }) => *view,
-            HotStuffMessage::Vote(Vote { view, .. }) => *view,
+            HotStuffMessage::PhaseVote(PhaseVote { view, .. }) => *view,
             HotStuffMessage::NewView(NewView { view, .. }) => *view,
         }
     }
@@ -58,7 +63,7 @@ impl HotStuffMessage {
         match self {
             HotStuffMessage::Proposal(_) => mem::size_of::<Proposal>() as u64,
             HotStuffMessage::Nudge(_) => mem::size_of::<Nudge>() as u64,
-            HotStuffMessage::Vote(_) => mem::size_of::<Vote>() as u64,
+            HotStuffMessage::PhaseVote(_) => mem::size_of::<PhaseVote>() as u64,
             HotStuffMessage::NewView(_) => mem::size_of::<NewView>() as u64,
         }
     }
@@ -86,9 +91,9 @@ impl From<Nudge> for HotStuffMessage {
     }
 }
 
-impl From<Vote> for HotStuffMessage {
-    fn from(vote: Vote) -> Self {
-        HotStuffMessage::Vote(vote)
+impl From<PhaseVote> for HotStuffMessage {
+    fn from(vote: PhaseVote) -> Self {
+        HotStuffMessage::PhaseVote(vote)
     }
 }
 
@@ -143,10 +148,10 @@ impl Nudge {
     }
 }
 
-/// Message sent by a validator to [a leader of `view + 1`](super::voting::vote_recipient) to vote for
-/// a [`Proposal`] or [`Nudge`].
+/// Message sent by a validator to [a leader of `view + 1`](super::roles::phase_vote_recipient) to vote
+/// for a [`Proposal`] or [`Nudge`].
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub struct Vote {
+pub struct PhaseVote {
     pub chain_id: ChainID,
     pub view: ViewNumber,
     pub block: CryptoHash,
@@ -154,8 +159,8 @@ pub struct Vote {
     pub signature: SignatureBytes,
 }
 
-impl Vote {
-    /// Create a `Vote` for the given `chain_id`, `view`, `block`, and `phase` by signing over the values
+impl PhaseVote {
+    /// Create a `PhaseVote` for the given `chain_id`, `view`, `block`, and `phase` by signing over the values
     /// with the provided `keypair`.
     pub fn new(
         keypair: &Keypair,
@@ -177,7 +182,7 @@ impl Vote {
     }
 }
 
-impl SignedMessage for Vote {
+impl SignedMessage for PhaseVote {
     fn message_bytes(&self) -> Vec<u8> {
         (self.chain_id, self.view, self.block, self.phase)
             .try_to_vec()
@@ -186,6 +191,16 @@ impl SignedMessage for Vote {
 
     fn signature_bytes(&self) -> SignatureBytes {
         self.signature
+    }
+}
+
+impl Vote for PhaseVote {
+    fn chain_id(&self) -> ChainID {
+        self.chain_id
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view
     }
 }
 

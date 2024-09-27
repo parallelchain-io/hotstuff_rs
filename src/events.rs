@@ -39,7 +39,7 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::{
     hotstuff::{
-        messages::{NewView, Nudge, Proposal, Vote},
+        messages::{NewView, Nudge, PhaseVote, Proposal},
         types::QuorumCertificate,
     },
     pacemaker::{
@@ -67,7 +67,7 @@ pub enum Event {
     // Events that involve broadcasting or sending a Progress Message.
     Propose(ProposeEvent),
     Nudge(NudgeEvent),
-    Vote(VoteEvent),
+    PhaseVote(PhaseVoteEvent),
     NewView(NewViewEvent),
     TimeoutVote(TimeoutVoteEvent),
     AdvanceView(AdvanceViewEvent),
@@ -75,7 +75,7 @@ pub enum Event {
     // Events that involve receiving a Progress Message.
     ReceiveProposal(ReceiveProposalEvent),
     ReceiveNudge(ReceiveNudgeEvent),
-    ReceiveVote(ReceiveVoteEvent),
+    ReceivePhaseVote(ReceivePhaseVoteEvent),
     ReceiveNewView(ReceiveNewViewEvent),
     ReceiveTimeoutVote(ReceiveTimeoutVoteEvent),
     ReceiveAdvanceView(ReceiveAdvanceViewEvent),
@@ -169,11 +169,10 @@ pub struct NudgeEvent {
     pub nudge: Nudge,
 }
 
-/// The replica voted for a block by sending a [vote](crate::hotstuff::messages::Vote) to the leader of
-/// the next view.
-pub struct VoteEvent {
+/// The replica voted for a phase of a block by sending `phase_vote` to a leader of the next view.
+pub struct PhaseVoteEvent {
     pub timestamp: SystemTime,
-    pub vote: Vote,
+    pub vote: PhaseVote,
 }
 
 /// The replica sent a [new view](crate::hotstuff::messages::NewView) message for its current view
@@ -213,12 +212,12 @@ pub struct ReceiveNudgeEvent {
     pub nudge: Nudge,
 }
 
-/// The replica received a `vote` for the replica's current view from another replica, identified by its
-/// [`VerifyingKey`].
-pub struct ReceiveVoteEvent {
+/// The replica received a `phase_vote` for the replica's current view from the replica identified by
+/// `origin`.
+pub struct ReceivePhaseVoteEvent {
     pub timestamp: SystemTime,
     pub origin: VerifyingKey,
-    pub vote: Vote,
+    pub phase_vote: PhaseVote,
 }
 
 /// The replica received a [new view](crate::hotstuff::messages::NewView) message for the current view from

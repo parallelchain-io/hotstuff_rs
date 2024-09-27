@@ -9,7 +9,8 @@ use borsh::BorshDeserialize;
 use ed25519_dalek::SigningKey;
 use hotstuff_rs::{
     events::{
-        CommitBlockEvent, InsertBlockEvent, ReceiveProposalEvent, UpdateHighestQCEvent, VoteEvent,
+        CommitBlockEvent, InsertBlockEvent, PhaseVoteEvent, ReceiveProposalEvent,
+        UpdateHighestQCEvent,
     },
     replica::{Configuration, Replica, ReplicaSpec},
     types::{
@@ -89,7 +90,7 @@ impl Node {
             .on_receive_proposal(receive_proposal_handler(verifying_key))
             .on_commit_block(commit_block_handler(verifying_key))
             .on_update_highest_qc(update_highest_qc_handler(verifying_key))
-            .on_vote(vote_handler(verifying_key))
+            .on_phase_vote(phase_vote_handler(verifying_key))
             .build()
             .start();
 
@@ -227,15 +228,17 @@ fn update_highest_qc_handler(
 }
 
 /// Return a closure that logs out an `VoteEvent` in a human-readable way.
-fn vote_handler(verifying_key: VerifyingKeyBytes) -> impl Fn(&VoteEvent) + Send + 'static {
-    move |vote_event: &VoteEvent| {
+fn phase_vote_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&PhaseVoteEvent) + Send + 'static {
+    move |phase_vote_event: &PhaseVoteEvent| {
         log_with_context(
             Some(verifying_key),
             &format!(
-                "Voted, block hash: {}, view: {}, phase: {:?}",
-                first_seven_base64_chars(&vote_event.vote.block.bytes()),
-                vote_event.vote.view,
-                vote_event.vote.phase,
+                "Phase Voted, block hash: {}, view: {}, phase: {:?}",
+                first_seven_base64_chars(&phase_vote_event.vote.block.bytes()),
+                phase_vote_event.vote.view,
+                phase_vote_event.vote.phase,
             ),
         );
     }

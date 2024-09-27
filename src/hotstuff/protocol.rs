@@ -14,14 +14,14 @@ use crate::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
     events::{
-        CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, ProposeEvent,
-        ReceiveNewViewEvent, ReceiveNudgeEvent, ReceiveProposalEvent, ReceiveVoteEvent,
-        StartViewEvent, VoteEvent,
+        CollectQCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, PhaseVoteEvent,
+        ProposeEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceivePhaseVoteEvent,
+        ReceiveProposalEvent, StartViewEvent,
     },
     hotstuff::{
-        messages::{HotStuffMessage, NewView, Nudge, Proposal, Vote},
-        roles::{is_proposer, is_voter, new_view_recipients},
-        types::{Phase, VoteCollector},
+        messages::{HotStuffMessage, NewView, Nudge, PhaseVote, Proposal},
+        roles::{is_phase_voter, is_proposer, new_view_recipients},
+        types::{Phase, PhaseVoteCollector},
     },
     networking::{
         network::{Network, ValidatorSetUpdateHandle},
@@ -42,7 +42,7 @@ use crate::{
     },
 };
 
-use super::roles::vote_recipient;
+use super::roles::phase_vote_recipient;
 
 /// A participant in the HotStuff subprotocol.
 ///
@@ -69,7 +69,7 @@ pub(crate) struct HotStuff<N: Network> {
     config: HotStuffConfiguration,
     view_info: ViewInfo,
     proposal_status: ProposalStatus,
-    vote_collectors: ActiveCollectorPair<VoteCollector>,
+    phase_vote_collectors: ActiveCollectorPair<PhaseVoteCollector>,
     sender_handle: SenderHandle<N>,
     validator_set_update_handle: ValidatorSetUpdateHandle<N>,
     event_publisher: Option<Sender<Event>>,
@@ -85,7 +85,7 @@ impl<N: Network> HotStuff<N> {
         init_validator_set_state: ValidatorSetState,
         event_publisher: Option<Sender<Event>>,
     ) -> Self {
-        let vote_collectors = <ActiveCollectorPair<VoteCollector>>::new(
+        let phase_vote_collectors = <ActiveCollectorPair<PhaseVoteCollector>>::new(
             config.chain_id,
             view_info.view,
             &init_validator_set_state,
@@ -95,7 +95,7 @@ impl<N: Network> HotStuff<N> {
             config,
             view_info,
             proposal_status,
-            vote_collectors,
+            phase_vote_collectors,
             sender_handle,
             validator_set_update_handle,
             event_publisher,
@@ -166,7 +166,7 @@ impl<N: Network> HotStuff<N> {
         //    votes for the new view.
         self.view_info = new_view_info;
         self.proposal_status = ProposalStatus::WaitingForProposal;
-        self.vote_collectors = <ActiveCollectorPair<VoteCollector>>::new(
+        self.phase_vote_collectors = <ActiveCollectorPair<PhaseVoteCollector>>::new(
             self.config.chain_id,
             self.view_info.view,
             &validator_set_state,
@@ -291,7 +291,7 @@ impl<N: Network> HotStuff<N> {
     ///    of the received message:
     ///     - [`on_receive_proposal`](Self::on_receive_proposal).
     ///     - [`on_receive_nudge`](Self::on_receive_nudge).
-    ///     - [`on_receive_vote`](Self::on_receive_vote).
+    ///     - [`on_receive_phase_vote`](Self::on_receive_phase_vote).
     ///     - [`on_receive_new_view`](Self::on_receive_new_view).
     pub(crate) fn on_receive_msg<K: KVStore>(
         &mut self,
@@ -323,7 +323,9 @@ impl<N: Network> HotStuff<N> {
                 self.on_receive_proposal(proposal, origin, block_tree, app)
             }
             HotStuffMessage::Nudge(nudge) => self.on_receive_nudge(nudge, origin, block_tree),
-            HotStuffMessage::Vote(vote) => self.on_receive_vote(vote, origin, block_tree),
+            HotStuffMessage::PhaseVote(vote) => {
+                self.on_receive_phase_vote(vote, origin, block_tree)
+            }
             HotStuffMessage::NewView(new_view) => {
                 self.on_receive_new_view(new_view, origin, block_tree)
             }
@@ -404,11 +406,11 @@ impl<N: Network> HotStuff<N> {
             let validator_set_state = block_tree.validator_set_state()?;
 
             let _ = self
-                .vote_collectors
+                .phase_vote_collectors
                 .update_validator_sets(&validator_set_state);
 
             // 5. Vote, if I am allowed to vote and if I haven't voted in this view yet.
-            if is_voter(
+            if is_phase_voter(
                 &self.config.keypair.public(),
                 &validator_set_state,
                 &proposal.block.justify,
@@ -421,21 +423,21 @@ impl<N: Network> HotStuff<N> {
                     Phase::Generic
                 };
 
-                let vote = Vote::new(
+                let phase_vote = PhaseVote::new(
                     &self.config.keypair,
                     self.config.chain_id,
                     self.view_info.view,
                     proposal.block.hash,
                     vote_phase,
                 );
-                let vote_recipient = vote_recipient(&vote, &validator_set_state);
+                let vote_recipient = phase_vote_recipient(&phase_vote, &validator_set_state);
                 self.sender_handle
-                    .send::<HotStuffMessage>(vote_recipient, vote.clone().into());
+                    .send::<HotStuffMessage>(vote_recipient, phase_vote.clone().into());
 
-                block_tree.set_highest_view_voted(self.view_info.view)?;
-                Event::Vote(VoteEvent {
+                block_tree.set_highest_view_phase_voted(self.view_info.view)?;
+                Event::PhaseVote(PhaseVoteEvent {
                     timestamp: SystemTime::now(),
-                    vote: vote.clone(),
+                    vote: phase_vote.clone(),
                 })
                 .publish(&self.event_publisher)
             }
@@ -508,11 +510,11 @@ impl<N: Network> HotStuff<N> {
         let validator_set_state = block_tree.validator_set_state()?;
 
         let _ = self
-            .vote_collectors
+            .phase_vote_collectors
             .update_validator_sets(&validator_set_state);
 
         // 4. Vote, if I am allowed to vote and if I haven't voted in this view yet.
-        if is_voter(
+        if is_phase_voter(
             &self.config.keypair.public(),
             &validator_set_state,
             &nudge.justify,
@@ -526,19 +528,19 @@ impl<N: Network> HotStuff<N> {
                 _ => unreachable!("if `safe_nudge` check passed then `vote_phase` should be either `Precommit`, `Commit`, or `Decide`"),
             };
 
-            let vote = Vote::new(
+            let vote = PhaseVote::new(
                 &self.config.keypair,
                 self.config.chain_id,
                 self.view_info.view,
                 nudge.justify.block,
                 vote_phase,
             );
-            let vote_recipient = vote_recipient(&vote, &validator_set_state);
+            let vote_recipient = phase_vote_recipient(&vote, &validator_set_state);
             self.sender_handle
                 .send::<HotStuffMessage>(vote_recipient, vote.clone().into());
 
-            block_tree.set_highest_view_voted(self.view_info.view)?;
-            Event::Vote(VoteEvent {
+            block_tree.set_highest_view_phase_voted(self.view_info.view)?;
+            Event::PhaseVote(PhaseVoteEvent {
                 timestamp: SystemTime::now(),
                 vote: vote.clone(),
             })
@@ -559,23 +561,23 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
-    /// Process the received vote.
-    fn on_receive_vote<K: KVStore>(
+    /// Process a received `phased_vote`.
+    fn on_receive_phase_vote<K: KVStore>(
         &mut self,
-        vote: Vote,
+        phase_vote: PhaseVote,
         signer: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
     ) -> Result<(), HotStuffError> {
-        Event::ReceiveVote(ReceiveVoteEvent {
+        Event::ReceivePhaseVote(ReceivePhaseVoteEvent {
             timestamp: SystemTime::now(),
             origin: *signer,
-            vote: vote.clone(),
+            phase_vote: phase_vote.clone(),
         })
         .publish(&self.event_publisher);
 
         // 1. Collect the vote if correct.
-        if vote.is_correct(signer) {
-            if let Some(new_qc) = self.vote_collectors.collect(signer, vote) {
+        if phase_vote.is_correct(signer) {
+            if let Some(new_qc) = self.phase_vote_collectors.collect(signer, phase_vote) {
                 Event::CollectQC(CollectQCEvent {
                     timestamp: SystemTime::now(),
                     quorum_certificate: new_qc.clone(),
@@ -603,7 +605,7 @@ impl<N: Network> HotStuff<N> {
                 let validator_set_state = block_tree.validator_set_state()?;
 
                 let _ = self
-                    .vote_collectors
+                    .phase_vote_collectors
                     .update_validator_sets(&validator_set_state);
             }
         }
@@ -638,12 +640,12 @@ impl<N: Network> HotStuff<N> {
                     .update_validator_set(vs_updates)
             }
 
-            // 3. Access the possibly updated validator set state, and update the vote collectors if needed
+            // 3. Access the possibly updated validator set state, and update the phase vote collectors if needed
             // (if new QC collected).
             let validator_set_state = block_tree.validator_set_state()?;
 
             let _ = self
-                .vote_collectors
+                .phase_vote_collectors
                 .update_validator_sets(&validator_set_state);
         }
 
@@ -681,7 +683,7 @@ impl From<BlockTreeError> for HotStuffError {
 ///
 /// Note that a variable of this type is stored in memory allocated to the program at runtime, rather
 /// than persistent storage. This is because losing the information stored in `ProposalStatus`, unlike
-/// losing the information about the highest view the replica has voted in, does lead to safety
+/// losing the information about the highest view the replica has phase-voted in, does lead to safety
 /// violations. In the worst case, it can only enable temporary liveness violations.
 pub enum ProposalStatus {
     /// No proposal or nudge was seen in this view so far. Proposals and nudges from a valid leader

@@ -13,8 +13,8 @@
 //! To commit blocks that do not update the validator set, HotStuff-rs uses the pipelined version of
 //! HotStuff, whereby when a replica votes for a block, it effectively votes for its ancestors too. The
 //! pipelined version of HotStuff consists of exchanging [`Proposal`](messages::Proposal),
-//! [`Vote`](messages::Vote), and [`NewView`](messages::NewView) messages, where the votes are from the
-//! [`Generic`](types::Phase::Generic) phase.
+//! [`PhaseVote`](messages::PhaseVote), and [`NewView`](messages::NewView) messages, where the votes are
+//! from the [`Generic`](types::Phase::Generic) phase.
 //!
 //! A view in the pipelined mode generally proceeds as follows:
 //! 1. The leader of the view proposes a block with its highestQC as the justify of the block.

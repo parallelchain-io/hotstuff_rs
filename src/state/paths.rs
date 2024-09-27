@@ -110,7 +110,7 @@ pub const HIGHEST_TC: [u8; 1] = [12];
 pub const PREVIOUS_VALIDATOR_SET: [u8; 1] = [13];
 pub const VALIDATOR_SET_UPDATE_BLOCK_HEIGHT: [u8; 1] = [14];
 pub const VALIDATOR_SET_UPDATE_DECIDED: [u8; 1] = [15];
-pub const HIGHEST_VIEW_VOTED: [u8; 1] = [16];
+pub const HIGHEST_VIEW_PHASE_VOTED: [u8; 1] = [16];
 
 // Fields of Block
 pub const BLOCK_HEIGHT: [u8; 1] = [0];

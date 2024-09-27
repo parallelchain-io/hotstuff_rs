@@ -238,6 +238,6 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
     }
 
     pub fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
-        Ok(self.0.highest_view_voted()?)
+        Ok(self.0.highest_view_phase_voted()?)
     }
 }

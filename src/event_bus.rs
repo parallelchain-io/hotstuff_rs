@@ -73,14 +73,14 @@ pub(crate) struct EventHandlers {
 
     pub(crate) propose_handlers: HandlerPair<ProposeEvent>,
     pub(crate) nudge_handlers: HandlerPair<NudgeEvent>,
-    pub(crate) vote_handlers: HandlerPair<VoteEvent>,
+    pub(crate) phase_vote_handlers: HandlerPair<PhaseVoteEvent>,
     pub(crate) new_view_handlers: HandlerPair<NewViewEvent>,
     pub(crate) timeout_vote_handlers: HandlerPair<TimeoutVoteEvent>,
     pub(crate) advance_view_handlers: HandlerPair<AdvanceViewEvent>,
 
     pub(crate) receive_proposal_handlers: HandlerPair<ReceiveProposalEvent>,
     pub(crate) receive_nudge_handlers: HandlerPair<ReceiveNudgeEvent>,
-    pub(crate) receive_vote_handlers: HandlerPair<ReceiveVoteEvent>,
+    pub(crate) receive_phase_vote_handlers: HandlerPair<ReceivePhaseVoteEvent>,
     pub(crate) receive_new_view_handlers: HandlerPair<ReceiveNewViewEvent>,
     pub(crate) receive_timeout_vote_handlers: HandlerPair<ReceiveTimeoutVoteEvent>,
     pub(crate) receive_advance_view_handlers: HandlerPair<ReceiveAdvanceViewEvent>,
@@ -111,13 +111,13 @@ impl EventHandlers {
         update_validator_set_handler: Option<HandlerPtr<UpdateValidatorSetEvent>>,
         propose_handler: Option<HandlerPtr<ProposeEvent>>,
         nudge_handler: Option<HandlerPtr<NudgeEvent>>,
-        vote_handler: Option<HandlerPtr<VoteEvent>>,
+        phase_vote_handler: Option<HandlerPtr<PhaseVoteEvent>>,
         new_view_handler: Option<HandlerPtr<NewViewEvent>>,
         timeout_vote_handler: Option<HandlerPtr<TimeoutVoteEvent>>,
         advance_view_handler: Option<HandlerPtr<AdvanceViewEvent>>,
         receive_proposal_handler: Option<HandlerPtr<ReceiveProposalEvent>>,
         receive_nudge_handler: Option<HandlerPtr<ReceiveNudgeEvent>>,
-        receive_vote_handler: Option<HandlerPtr<ReceiveVoteEvent>>,
+        receive_phase_vote_handler: Option<HandlerPtr<ReceivePhaseVoteEvent>>,
         receive_new_view_handler: Option<HandlerPtr<ReceiveNewViewEvent>>,
         receive_timeout_vote_handler: Option<HandlerPtr<ReceiveTimeoutVoteEvent>>,
         receive_advance_view_handler: Option<HandlerPtr<ReceiveAdvanceViewEvent>>,
@@ -140,13 +140,13 @@ impl EventHandlers {
             update_validator_set_handlers: HandlerPair::new(log, update_validator_set_handler),
             propose_handlers: HandlerPair::new(log, propose_handler),
             nudge_handlers: HandlerPair::new(log, nudge_handler),
-            vote_handlers: HandlerPair::new(log, vote_handler),
+            phase_vote_handlers: HandlerPair::new(log, phase_vote_handler),
             new_view_handlers: HandlerPair::new(log, new_view_handler),
             timeout_vote_handlers: HandlerPair::new(log, timeout_vote_handler),
             advance_view_handlers: HandlerPair::new(log, advance_view_handler),
             receive_proposal_handlers: HandlerPair::new(log, receive_proposal_handler),
             receive_nudge_handlers: HandlerPair::new(log, receive_nudge_handler),
-            receive_vote_handlers: HandlerPair::new(log, receive_vote_handler),
+            receive_phase_vote_handlers: HandlerPair::new(log, receive_phase_vote_handler),
             receive_new_view_handlers: HandlerPair::new(log, receive_new_view_handler),
             receive_timeout_vote_handlers: HandlerPair::new(log, receive_timeout_vote_handler),
             receive_advance_view_handlers: HandlerPair::new(log, receive_advance_view_handler),
@@ -173,13 +173,13 @@ impl EventHandlers {
             && self.update_validator_set_handlers.is_empty()
             && self.propose_handlers.is_empty()
             && self.nudge_handlers.is_empty()
-            && self.vote_handlers.is_empty()
+            && self.phase_vote_handlers.is_empty()
             && self.new_view_handlers.is_empty()
             && self.timeout_vote_handlers.is_empty()
             && self.advance_view_handlers.is_empty()
             && self.receive_proposal_handlers.is_empty()
             && self.receive_nudge_handlers.is_empty()
-            && self.receive_vote_handlers.is_empty()
+            && self.receive_phase_vote_handlers.is_empty()
             && self.receive_new_view_handlers.is_empty()
             && self.receive_timeout_vote_handlers.is_empty()
             && self.receive_advance_view_handlers.is_empty()
@@ -287,15 +287,15 @@ impl EventHandlers {
                     .iter()
                     .for_each(|handler| handler(&nudge_event));
             }
-            Event::Vote(vote_event) => {
-                self.vote_handlers
+            Event::PhaseVote(phase_vote_event) => {
+                self.phase_vote_handlers
                     .user_defined_handler
                     .iter()
-                    .for_each(|handler| handler(&vote_event));
-                self.vote_handlers
+                    .for_each(|handler| handler(&phase_vote_event));
+                self.phase_vote_handlers
                     .logging_handler
                     .iter()
-                    .for_each(|handler| handler(&vote_event));
+                    .for_each(|handler| handler(&phase_vote_event));
             }
             Event::NewView(new_view_event) => {
                 self.new_view_handlers
@@ -347,12 +347,12 @@ impl EventHandlers {
                     .iter()
                     .for_each(|handler| handler(&receive_nudge_event));
             }
-            Event::ReceiveVote(receive_vote_event) => {
-                self.receive_vote_handlers
+            Event::ReceivePhaseVote(receive_vote_event) => {
+                self.receive_phase_vote_handlers
                     .user_defined_handler
                     .iter()
                     .for_each(|handler| handler(&receive_vote_event));
-                self.receive_vote_handlers
+                self.receive_phase_vote_handlers
                     .logging_handler
                     .iter()
                     .for_each(|handler| handler(&receive_vote_event));

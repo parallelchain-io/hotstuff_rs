@@ -57,7 +57,7 @@
 //! |Variable|Type|Description|
 //! |---|---|---|
 //! |Locked Quorum Certificate|[`QuorumCertificate`]|The currently locked QC. [Read more](invariants#locking)|
-//! |Highest Voted View|[`ViewNumber`]|The highest view that this validator has voted in.|
+//! |Highest View Phase-Voted|[`ViewNumber`]|The highest view that this validator has phase-voted in.|
 //! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
 //! |Highest Quorum Certificate|[`QuorumCertificate`]|Among the quorum certificates this validator has seen and verified, the one with the highest view number.|
 //! |Highest Timeout Certificate|[`TimeoutCertificate`]|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
@@ -417,14 +417,14 @@ impl<K: KVStore> BlockTree<K> {
         Ok(())
     }
 
-    /// Set the highest view voted to be `view`.
+    /// Set the highest view phase-voted to be `view`.
     ///
     /// ## Preconditions
     ///
     /// `view >= self.highest_view_voted()`.
-    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+    pub fn set_highest_view_phase_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         let mut wb = BlockTreeWriteBatch::new();
-        wb.set_highest_view_voted(view)?;
+        wb.set_highest_view_phase_voted(view)?;
         self.write(wb);
         Ok(())
     }
@@ -754,7 +754,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 
     pub fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
-        Ok(self.0.highest_view_voted()?)
+        Ok(self.0.highest_view_phase_voted()?)
     }
 }
 

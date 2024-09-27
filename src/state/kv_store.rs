@@ -455,13 +455,13 @@ pub trait KVGet {
         ))
     }
 
-    /* ↓↓↓ Highest View Voted ↓↓↓ */
+    /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
 
-    fn highest_view_voted(&self) -> Result<Option<ViewNumber>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::HIGHEST_VIEW_VOTED) {
+    fn highest_view_phase_voted(&self) -> Result<Option<ViewNumber>, KVGetError> {
+        if let Some(bytes) = self.get(&paths::HIGHEST_VIEW_PHASE_VOTED) {
             let view_number = ViewNumber::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
-                    key: Key::HighestViewVoted,
+                    key: Key::HighestViewPhaseVoted,
                     source: err,
                 }
             })?;
@@ -514,7 +514,7 @@ pub enum Key {
     PreviousValidatorSet,
     ValidatorSetUpdateHeight,
     ValidatorSetUpdateDecided,
-    HighestViewVoted,
+    HighestViewPhaseVoted,
 }
 
 impl Display for Key {
@@ -544,7 +544,7 @@ impl Display for Key {
             &Key::PreviousValidatorSet => write!(f, "Previous Validator Set"),
             &Key::ValidatorSetUpdateHeight => write!(f, "Validator Set Update Block Height"),
             &Key::ValidatorSetUpdateDecided => write!(f, "Validator Set Update Decided"),
-            &Key::HighestViewVoted => write!(f, "Highest View Voted"),
+            &Key::HighestViewPhaseVoted => write!(f, "Highest View Phase-Voted"),
         }
     }
 }

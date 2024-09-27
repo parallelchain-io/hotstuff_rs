@@ -81,8 +81,8 @@
 //!
 //! These methods help determine **what** invariant-preserving state updates should be triggered in
 //! `update` in response to obtaining a `QuorumCertificate`, whether through receiving a `Proposal`,
-//! `Nudge`, or `NewView` message, or by collecting enough `Vote`s. Methods in this category are called
-//! *inside* [`update`](BlockTree::update).
+//! `Nudge`, or `NewView` message, or by collecting enough `PhaseVote`s. Methods in this category are
+//! called *inside* [`update`](BlockTree::update).
 //!
 //! # Blockchain Consistency
 //!

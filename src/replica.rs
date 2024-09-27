@@ -85,11 +85,11 @@
 //! - `.on_update_validator_set(...)`
 //! - `.on_propose(...)`
 //! - `.on_nudge(...)`
-//! - `.on_vote(...)`
+//! - `.on_phase_vote(...)`
 //! - `.on_new_view(...)`
 //! - `.on_receive_proposal(...)`
 //! - `.on_receive_nudge(...)`
-//! - `.on_receive_vote(...)`
+//! - `.on_receive_phase_vote(...)`
 //! - `.on_receive_new_view(...)`
 //! - `.on_start_view(...)`
 //! - `.on_view_timeout(...)]`
@@ -311,13 +311,13 @@ impl
     - `.on_update_validator_set(...)`
     - `.on_propose(...)`
     - `.on_nudge(...)`
-    - `.on_vote(...)`
+    - `.on_phase_vote(...)`
     - `.on_new_view(...)`
     - `.on_timeout_vote(...)`
     - `.on_advance_view(...)`
     - `.on_receive_proposal(...)`
     - `.on_receive_nudge(...)`
-    - `.on_receive_vote(...)`
+    - `.on_receive_phase_vote(...)`
     - `.on_receive_new_view(...)`
     - `.on_receive_timeout_vote(...)`
     - `.on_receive_advance_view(...)`
@@ -376,14 +376,14 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&NudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NudgeEvent>),
     doc = "Register a handler closure to be invoked after the replica broadcasts a nudge for a block. Optional."))]
     on_nudge: Option<HandlerPtr<NudgeEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&VoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<VoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica sends a vote. Optional."))]
-    on_vote: Option<HandlerPtr<VoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&PhaseVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PhaseVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica sends a `PhaseVote`. Optional."))]
+    on_phase_vote: Option<HandlerPtr<PhaseVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&NewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica sends a new view message to the next leader. Optional."))]
     on_new_view: Option<HandlerPtr<NewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&TimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<TimeoutVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica sends a timeout vote. Optional."))]
+    doc = "Register a handler closure to be invoked after the replica sends a `TimeoutVote`. Optional."))]
     on_timeout_vote: Option<HandlerPtr<TimeoutVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&AdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<AdvanceViewEvent>),
     doc = "Register a handler closure to be invoked after the replica sends an advance view message. Optional."))]
@@ -394,14 +394,14 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNudgeEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a nudge for a block. Optional."))]
     on_receive_nudge: Option<HandlerPtr<ReceiveNudgeEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica receives a vote. Optional."))]
-    on_receive_vote: Option<HandlerPtr<ReceiveVoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceivePhaseVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceivePhaseVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica receives a `PhaseVote`. Optional."))]
+    on_receive_phase_vote: Option<HandlerPtr<ReceivePhaseVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a new view message. Optional."))]
     on_receive_new_view: Option<HandlerPtr<ReceiveNewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveTimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveTimeoutVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica receives a timeout vote. Optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a `TimeoutVote`. Optional."))]
     on_receive_timeout_vote: Option<HandlerPtr<ReceiveTimeoutVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveAdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveAdvanceViewEvent>),
     doc = "Register a handler closure to be invoked after the replica receives an advance view message. Optional."))]
@@ -464,13 +464,13 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_update_validator_set,
             self.on_propose,
             self.on_nudge,
-            self.on_vote,
+            self.on_phase_vote,
             self.on_new_view,
             self.on_timeout_vote,
             self.on_advance_view,
             self.on_receive_proposal,
             self.on_receive_nudge,
-            self.on_receive_vote,
+            self.on_receive_phase_vote,
             self.on_receive_new_view,
             self.on_receive_timeout_vote,
             self.on_receive_advance_view,

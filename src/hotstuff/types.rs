@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use super::messages::Vote;
+use super::messages::PhaseVote;
 use crate::{
     state::{
         block_tree::{BlockTree, BlockTreeError},
@@ -38,7 +38,7 @@ pub struct QuorumCertificate {
 }
 
 impl Certificate for QuorumCertificate {
-    type SignedMessage = Vote;
+    type Vote = PhaseVote;
 
     /// Determine the appropriate validator set that the QC should be checked against, and check if the
     /// signatures in the certificate are correct and form a quorum given this validator set.
@@ -245,23 +245,26 @@ impl Phase {
     }
 }
 
-/// A struct that incrementally forms [`QuorumCertificate`]s by combining [`Vote`]s into [`SignatureSet`]s.
+/// A struct that incrementally forms [`QuorumCertificate`]s by combining [`PhaseVote`]s with the same
+/// specific `chain_id` and `view` and from the same specific `validator_set` into [`SignatureSet`]s.
 ///
 /// ## Usage
 ///
-/// Every `VoteCollector` is created around a fixed `(ChainID, ViewNumber, ValidatorSet)` triple using
-/// [`new`](Self::new). This triple is constant through the lifetime of the `VoteCollector`.
+/// Every `PhaseVoteCollector` is created around a fixed `(ChainID, ViewNumber, ValidatorSet)` triple
+/// using [`new`](Self::new). This triple is constant through the lifetime of the `PhaseVoteCollector`.
 ///
-/// The user can then hold on to the `VoteCollector`, calling [`collect`](Self::collect) every time it
-/// receives a `Vote`. If the vote's `chain_id` and `view` matches the vote collector's `chain_id` and
-/// `view`, and in addition its `signature` comes from a validator in the collector's `validator_set`,
-/// the collector will store the vote's `signature` in its internal buffer of signature sets.
+/// The user can then hold on to the `PhaseVoteCollector`, calling [`collect`](Self::collect) every time
+/// it receives a `PhaseVote`. If the vote's `chain_id` and `view` matches the vote collector's
+/// `chain_id` and `view`, and in addition its `signature` comes from a validator in the collector's
+/// `validator_set`, the collector will store the vote's `signature` in its internal buffer of signature
+/// sets.
 ///
 /// If after storing `signature` in the internal buffer it is found that a
-/// [`quorum`](Certificate::quorum) of votes have been collected for a particular Block Hash and `Phase`
-/// pair, `collect` will form a `QuorumCertificate` using the collected votes and return it from `collect`.
+/// [`quorum`](Certificate::quorum) of `PhaseVote`s have been collected for a particular Block Hash and
+/// `Phase` pair, `collect` will form a `QuorumCertificate` using the collected votes and return it from
+/// `collect`.
 #[derive(Clone)]
-pub(crate) struct VoteCollector {
+pub(crate) struct PhaseVoteCollector {
     chain_id: ChainID,
     view: ViewNumber,
     validator_set: ValidatorSet,
@@ -273,8 +276,8 @@ pub(crate) struct VoteCollector {
     signature_sets: HashMap<(CryptoHash, Phase), (SignatureSet, TotalPower)>,
 }
 
-impl Collector for VoteCollector {
-    type SignedMessage = Vote;
+impl Collector for PhaseVoteCollector {
+    type Vote = PhaseVote;
 
     type Certificate = QuorumCertificate;
 
@@ -299,25 +302,31 @@ impl Collector for VoteCollector {
         &self.validator_set
     }
 
-    /// Collect a `vote` using this collector. Return a Quorum Certificate if collecting this vote allows
-    /// for one to be created.
+    /// Collect `phase_vote` using this collector. Return a Quorum Certificate if collecting this
+    /// `PhaseVote` allows for one to be created.
     ///
-    /// If the vote is not signed correctly, not signed by `signer`, or has a `chain_id` or `view` that does
-    /// not match this `VoteCollector`'s `chain_id` or `view`, then this function is a `no-op`.
+    /// If the `PhaseVote` is not signed correctly, not signed by `signer`, or has a `chain_id` or `view`
+    /// that does not match this `PhaseVoteCollector`'s `chain_id` or `view`, then calling this method is a
+    /// no-op.
     ///
     /// ## Preconditions
     ///
-    /// `vote.is_correct(signer)`
-    fn collect(&mut self, signer: &VerifyingKey, vote: Vote) -> Option<QuorumCertificate> {
-        if self.chain_id != vote.chain_id || self.view != vote.view {
+    /// `phase_vote.is_correct(signer)`
+    fn collect(
+        &mut self,
+        signer: &VerifyingKey,
+        phase_vote: PhaseVote,
+    ) -> Option<QuorumCertificate> {
+        if self.chain_id != phase_vote.chain_id || self.view != phase_vote.view {
             return None;
         }
 
         // Check if the signer is actually in the validator set.
         if let Some(pos) = self.validator_set.position(signer) {
             // If the vote is for a new (block, phase) pair, prepare an empty signature set.
-            if let std::collections::hash_map::Entry::Vacant(e) =
-                self.signature_sets.entry((vote.block, vote.phase))
+            if let std::collections::hash_map::Entry::Vacant(e) = self
+                .signature_sets
+                .entry((phase_vote.block, phase_vote.phase))
             {
                 e.insert((
                     SignatureSet::new(self.validator_set.len()),
@@ -327,26 +336,26 @@ impl Collector for VoteCollector {
 
             let (signature_set, signature_set_power) = self
                 .signature_sets
-                .get_mut(&(vote.block, vote.phase))
+                .get_mut(&(phase_vote.block, phase_vote.phase))
                 .unwrap();
 
             // If a vote for the (block, phase) from the signer hasn't been collected before, insert it into the
             // signature set.
             if signature_set.get(pos).is_none() {
-                signature_set.set(pos, Some(vote.signature));
+                signature_set.set(pos, Some(phase_vote.signature));
                 *signature_set_power += *self.validator_set.power(signer).unwrap();
 
                 // If inserting the vote makes the signature set form a quorum, then create a Quorum Certificate.
                 if *signature_set_power >= self.validator_set.quorum() {
                     let (signatures, _) = self
                         .signature_sets
-                        .remove(&(vote.block, vote.phase))
+                        .remove(&(phase_vote.block, phase_vote.phase))
                         .unwrap();
                     let collected_qc = QuorumCertificate {
                         chain_id: self.chain_id,
                         view: self.view,
-                        block: vote.block,
-                        phase: vote.phase,
+                        block: phase_vote.block,
+                        phase: phase_vote.phase,
                         signatures,
                     };
 

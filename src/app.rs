@@ -56,7 +56,7 @@ use crate::{
 /// |2|`+EWNL`|<ul><li>Replicas receive `AdvanceView`.</li><li>Replicas enter view.</li></ul>|
 /// |3|`+produce_block_duration`|<ul><li>Proposer enters view.</li></ul>|
 /// |4|`+EWNL`|<ul><li>Replicas receive `Proposal`.</li></ul>|
-/// |5|`+validate_block_duration`|<ul><li>Replicas send `Vote`.</li></ul>|
+/// |5|`+validate_block_duration`|<ul><li>Replicas send `PhaseVote`s.</li></ul>|
 /// |6|`+EWNL`|<ul><li>Next Leader collects QC.</li><li>Next Leader leaves view.</li><li>Next Leader broadcasts `AdvanceView`.</li><li>Next Leader broadcasts `Proposal`</li></ul>|
 /// |7|`+EWNL`|<ul><li>Replicas receive `AdvanceView`.</li><li>Replicas leave view.</li></ul>|
 ///
@@ -102,7 +102,7 @@ pub trait App<K: KVStore>: Send {
     ///
     /// Such a thread sleep solution works to slow down consensus decisions by, among other things, causing
     /// replicas to block for the amount of time when receiving a block through a `Proposal`, delaying
-    /// the sending of a `Vote` to the next leader.
+    /// the sending of a `PhaseVote` to the next leader.
     ///
     /// However, such a solution will not only slow down consensus decisions, it will *also* slow down
     /// Block Sync. In general, implementors will want `validate_block` to take at least a minimum amount of

@@ -25,7 +25,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use crate::{
     hotstuff::types::QuorumCertificate,
     networking::{messages::ProgressMessage, receiving::Cacheable},
-    types::{basic::*, keypair::*, signed_messages::SignedMessage},
+    types::{
+        basic::*,
+        keypair::*,
+        signed_messages::{SignedMessage, Vote},
+    },
 };
 
 use super::types::TimeoutCertificate;
@@ -119,6 +123,16 @@ impl SignedMessage for TimeoutVote {
 
     fn signature_bytes(&self) -> SignatureBytes {
         self.signature
+    }
+}
+
+impl Vote for TimeoutVote {
+    fn chain_id(&self) -> ChainID {
+        self.chain_id
+    }
+
+    fn view(&self) -> ViewNumber {
+        self.view
     }
 }
 

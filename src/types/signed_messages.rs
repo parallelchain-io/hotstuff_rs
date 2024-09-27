@@ -41,12 +41,22 @@ pub(crate) trait SignedMessage: Clone {
     }
 }
 
+/// Data types that indicate that a validator supports a particular **decision** about a particular
+/// `chain_id` and `view`.
+pub(crate) trait Vote: SignedMessage {
+    /// Get the `chain_id` of the chain that the `Vote` is about.
+    fn chain_id(&self) -> ChainID;
+
+    /// Get the `view` that the `Vote` is about.
+    fn view(&self) -> ViewNumber;
+}
+
 /// Data types that aggregate multiple [`SignedMessage`]s of the same type into evidence that a
 /// [`quorum`](Certificate::quorum) of validators in a particular validator set supports a particular
 /// decision.
 pub(crate) trait Certificate {
     /// The specific `SignedMessage` type that this `Certificate` aggregates into one value.
-    type SignedMessage: SignedMessage;
+    type Vote: Vote;
 
     /// Check whether the certificate is "correct" ( i.e., whether it can serve as evidence that a particular
     /// decision has been approved by the quorum of validators assigned to collectively make the decision),
@@ -92,15 +102,23 @@ pub(crate) trait Certificate {
 
 /// Types that progressively combine [`SignedMessage`]s in order to form [`Certificate`]s
 ///
-/// TODO: matching chain_id and view.
+/// ## `chain_id` and `view`
+///
+/// - `Collector` currently imposes a "hidden" requirement on `SignedMessage` that isn't encoded in the type system: `SignedMessage` must contain
+/// `chain_id` and `view` fields.
+/// - The reason why this requirement isn't imposed on `SignedMessage` directly (e.g., by requiring that `SignedMessage`s implement `chain_id` and
+///   `view` methods) is that `SignedMessage` is implemented by not only `PhaseVote` and `TimeoutVote`, which each contain a `chain_id` and `view`,
+///   but also `AdvertiseBlock`, which does not contain `view`.
+///
+///
 ///
 /// TODO: a single validator set.
 pub(crate) trait Collector: Clone {
     /// The specific `SignedMessage` type that this `Collector` takes in as input.
-    type SignedMessage: SignedMessage;
+    type Vote: Vote;
 
     /// The specific `Certificate` type that this `Collector` returns as output.
-    type Certificate: Certificate<SignedMessage = Self::SignedMessage>;
+    type Certificate: Certificate<Vote = Self::Vote>;
 
     /// Create a new instance of the `Collector`, configuring it to collect `SignedMessage`s for the specified
     /// `chain_id`, and `view`, and signed by a member
@@ -122,11 +140,7 @@ pub(crate) trait Collector: Clone {
     /// # Preconditions
     ///
     /// `message.is_correct(signer)`
-    fn collect(
-        &mut self,
-        signer: &VerifyingKey,
-        message: Self::SignedMessage,
-    ) -> Option<Self::Certificate>;
+    fn collect(&mut self, signer: &VerifyingKey, vote: Self::Vote) -> Option<Self::Certificate>;
 }
 
 /// A struct that combines [`Collector`]s for the two validator sets that could be considered "active"
@@ -176,7 +190,7 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
     pub(crate) fn collect(
         &mut self,
         signer: &VerifyingKey,
-        message: <CL::Certificate as Certificate>::SignedMessage,
+        message: CL::Vote,
     ) -> Option<CL::Certificate> {
         if let Some(certificate) = self
             .committed_validator_set_collector

@@ -420,15 +420,15 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Highest View Voted ↓↓↓ */
+    /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
 
-    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+    pub fn set_highest_view_phase_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::HIGHEST_VIEW_VOTED,
+            &paths::HIGHEST_VIEW_PHASE_VOTED,
             &view
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
-                    key: Key::HighestViewVoted,
+                    key: Key::HighestViewPhaseVoted,
                     source: err,
                 })?,
         ))
