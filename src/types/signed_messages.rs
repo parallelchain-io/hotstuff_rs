@@ -4,6 +4,8 @@
 */
 
 //! Signed messages, votes and aggregates of votes.
+//!
+//!
 
 pub use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 pub use sha2::Sha256 as CryptoHasher;
@@ -96,7 +98,8 @@ pub(crate) trait Certificate {
     }
 }
 
-/// Types that progressively combine matching `Vote`s to form `Certificate`s.
+/// Types that progressively combine `Vote`s with the same `chain_id`, `view`, and `validator_set` to form
+/// `Certificate`s.
 pub(crate) trait Collector: Clone {
     /// The specific `SignedMessage` type that this `Collector` takes in as input.
     type Vote: Vote;
@@ -107,15 +110,6 @@ pub(crate) trait Collector: Clone {
     /// Create a new instance of the `Collector`, configuring it to collect `SignedMessage`s for the specified
     /// `chain_id`, and `view`, and signed by a member of `validator_set`.
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self;
-
-    /// Get the `ChainID` of the chain that this `Collector` is currently configured to collect `Vote`s about.
-    fn chain_id(&self) -> ChainID;
-
-    /// Get the `View` that this `Collector` is currently configured to collect `Vote`s about.
-    fn view(&self) -> ViewNumber;
-
-    /// Get the `ValidatorSet` that this `Collector` is currently configured to collect `Vote`s from.
-    fn validator_set(&self) -> &ValidatorSet;
 
     /// Collect a `vote` signed by `signer`, returning a `Certificate` if a [`quorum`](Certificate::quorum)
     /// of matching `Vote`s from the `Collector`'s configured [`validator_set`](Collector::validator_set)
@@ -131,11 +125,32 @@ pub(crate) trait Collector: Clone {
     ///
     /// [`vote.is_correct(signer)`](SignedMessage::is_correct).
     fn collect(&mut self, signer: &VerifyingKey, vote: Self::Vote) -> Option<Self::Certificate>;
+
+    /// Get the `ChainID` of the chain that this `Collector` is currently configured to collect `Vote`s about.
+    fn chain_id(&self) -> ChainID;
+
+    /// Get the `View` that this `Collector` is currently configured to collect `Vote`s about.
+    fn view(&self) -> ViewNumber;
+
+    /// Get the `ValidatorSet` that this `Collector` is currently configured to collect `Vote`s from.
+    fn validator_set(&self) -> &ValidatorSet;
 }
 
-/// Struct that combines [`Collector`]s for the two validator sets that could be considered "active"
-/// at any given [`ValidatorSetState`] (the committed validator set and the previous validator set) and
-/// wraps interactions with them behind a single interface.
+/// Struct that combines [`Collector`]s for the two validator sets that could be considered
+/// ["active"](Self#active-validator-sets) at any given [`ValidatorSetState`] and wraps interactions
+/// with them behind a single interface.
+///
+/// # Active Validator Sets
+///
+/// - The two validator sets that could be active are the committed validator set and the previous
+///   validator set.
+/// - The `ActiveCollectorPair` collects votes from **all** active validator sets.
+/// - (Since votes can arrive from either when the network is in the middle of a validator set update).
+/// - To decide which validator sets are active at any given `validator_set_state`, the [`new`](Self::new)
+///   and [`update_validator_sets`](Self::update_validator_sets) methods queries
+///   `validator_set_state.update_decided()`:
+///      - If it is `true`, then only the CVS will be considered active.
+///      - If it is `false`, then both the CVS and the PVS will be considered active.
 ///
 /// # Usage
 ///
@@ -147,12 +162,12 @@ pub(crate) trait Collector: Clone {
 /// changes. When the current `ViewNumber` changes, discard the `ActiveCollectorPair` and create a new one
 /// using the current view.
 pub(crate) struct ActiveCollectorPair<CL: Collector> {
-    /// `Collector` collecting votes from the current Committed Validator Set.
-    committed_validator_set_collector: CL,
+    /// `Collector` collecting votes from the current Committed Validator Set (CVS).
+    cvs_collector: CL,
 
-    /// `Collector` collecting votes from the current Previous Validator Set. `None` if
+    /// `Collector` collecting votes from the current Previous Validator Set (PVS). Is set to `None` if
     /// `validator_set_state.update_decided()`.
-    prev_validator_set_collector: Option<CL>,
+    pvs_collector: Option<CL>,
 }
 
 impl<CL: Collector> ActiveCollectorPair<CL> {
@@ -163,12 +178,12 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         validator_set_state: &ValidatorSetState,
     ) -> Self {
         Self {
-            committed_validator_set_collector: CL::new(
+            cvs_collector: CL::new(
                 chain_id,
                 view,
                 validator_set_state.committed_validator_set().clone(),
             ),
-            prev_validator_set_collector: if validator_set_state.update_decided() {
+            pvs_collector: if validator_set_state.update_decided() {
                 None
             } else {
                 Some(CL::new(
@@ -186,12 +201,9 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         signer: &VerifyingKey,
         message: CL::Vote,
     ) -> Option<CL::Certificate> {
-        if let Some(certificate) = self
-            .committed_validator_set_collector
-            .collect(signer, message.clone())
-        {
+        if let Some(certificate) = self.cvs_collector.collect(signer, message.clone()) {
             return Some(certificate);
-        } else if let Some(ref mut collector) = self.prev_validator_set_collector {
+        } else if let Some(ref mut collector) = self.pvs_collector {
             if let Some(certificate) = collector.collect(signer, message) {
                 return Some(certificate);
             }
@@ -199,74 +211,58 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         None
     }
 
-    /// Inform this `ActiveCollectorPair` of the latest current `validator_set_state`.  
+    /// Update the `ActiveCollectorPair`'s active validator sets given the latest current
+    /// `validator_set_state`.
     ///
     /// If `validator_set_state` is different from the latest `ValidatorSetState` known by the
-    /// `ActiveCollectors`, the collectors will be updated and this function will return `true`. Otherwise
-    /// this function returns `false`.
-    pub(crate) fn update_validator_sets(
-        &mut self,
-        validator_set_state: &ValidatorSetState,
-    ) -> bool {
-        let chain_id = self.committed_validator_set_collector.chain_id();
-        let view = self.committed_validator_set_collector.view();
+    /// `ActiveCollectorPair`, the collectors will be updated and this method will return `true`. Otherwise
+    /// calling this method is a no-op and returns `false`.
+    pub(crate) fn update_validator_sets(&mut self, latest_vss: &ValidatorSetState) -> bool {
+        let mut is_updated = false;
 
-        // If the PVS collector is currently `None`, but now that latest validator set update is not decided,
-        // this implies that between the last `update_validator_sets` call and this call, the validator set
-        // update period **started**.
-        let validator_set_update_period_started =
-            self.prev_validator_set_collector.is_none() && !validator_set_state.update_decided();
+        // If the latest VSS's CVS is different from the current **CVS** collector's validator set, replace the
+        // current CVS collector with a new collector.
+        if latest_vss.committed_validator_set() != self.cvs_collector.validator_set() {
+            self.cvs_collector = CL::new(
+                self.cvs_collector.chain_id(),
+                self.cvs_collector.view(),
+                latest_vss.committed_validator_set().clone(),
+            );
 
-        // If the current committed validator set is not the same as the latest committed validator set, then
-        // the committed validator set was updated.
-        let committed_validator_set_was_updated =
-            self.committed_validator_set_collector.validator_set()
-                != validator_set_state.committed_validator_set();
+            is_updated = true;
+        }
 
-        // If the PVS collector is currently `Some`, but now the latest validator set update is decided, this
-        // implies that between the last `update_validator_sets` call and this call, the validator set update
-        // period **ended**.
-        let validator_set_update_period_ended =
-            self.prev_validator_set_collector.is_some() && validator_set_state.update_decided();
+        // If the latest validator set update **has** been decided, and the current **PVS** collector is
+        //`Some`, then set the PVS collector to `None`.
+        if latest_vss.update_decided() && self.pvs_collector.is_some() {
+            self.pvs_collector = None;
 
-        // If a validator set update has been initiated but no vote collector has been assigned for the
-        // previous validator set, the latest previous validator set must be equal to the
-        // current committed validator set...
-        if validator_set_update_period_started {
-            if validator_set_state.previous_validator_set()
-                == self.committed_validator_set_collector.validator_set()
-            {
-                // ...so we replace the current previous validator set with the current committed validator set.
-                self.prev_validator_set_collector =
-                    Some(self.committed_validator_set_collector.clone())
-            } else {
-                unreachable!(
-                    "if the validator set update period started, then the latest previous validator set should be equal
-                    to committed validator set currently known by the `ActiveCollectorPair`. The fact that this 
-                    invariant is broken suggests that an internal call to `update_validator_sets` was 'skipped' and
-                    therefore the `ActiveCollectorPair` missed a validator set update. This is a library bug"
-                )
+            is_updated = true;
+        }
+
+        // Else, if the latest validator set update has **not** been decided, and the latest VSS' **PVS** is
+        // different from the current PVS collector's validator set, decide what to replace the collector 
+        // pair's PVS collector with:
+        else if self.pvs_collector.is_none() ||
+            latest_vss.previous_validator_set() != self.pvs_collector.as_ref().expect("if `pvs_collector` is `None`, execution should have short-circuited before reaching here").validator_set() {
+
+            // If the latest VSS' PVS is the same as the current CVS collector's validator set, then replace
+            // the current PVS collector with the current CVS collector.
+            self.pvs_collector = Some(if latest_vss.previous_validator_set() == self.cvs_collector.validator_set() {
+                self.cvs_collector.clone()
             }
+            // Else, if it is not the same, then replace the current PVS collector with a new collector.
+            else {
+                CL::new(
+                    self.cvs_collector.chain_id(),
+                    self.cvs_collector.view(),
+                    latest_vss.previous_validator_set().clone(),
+                )
+            });
+
+            is_updated = true;
         }
 
-        // If the latest committed validator set was updated, create a new collector and set it as the CVS
-        // collector.
-        if committed_validator_set_was_updated {
-            self.committed_validator_set_collector = CL::new(
-                chain_id,
-                view,
-                validator_set_state.committed_validator_set().clone(),
-            )
-        }
-
-        // If the validator set update period has ended, set the PVS collector to `None`. It is not needed
-        // anymore.
-        if validator_set_update_period_ended {
-            self.prev_validator_set_collector = None
-        }
-
-        validator_set_update_period_started
-            || committed_validator_set_was_updated
-            || validator_set_update_period_ended
+        is_updated
     }
 }
