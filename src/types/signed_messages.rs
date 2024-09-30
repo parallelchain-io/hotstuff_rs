@@ -136,27 +136,31 @@ pub(crate) trait Collector: Clone {
     fn validator_set(&self) -> &ValidatorSet;
 }
 
-/// Struct that combines [`Collector`]s for the two validator sets that could be considered
-/// ["active"](Self#active-validator-sets) at any given [`ValidatorSetState`] and wraps interactions
-/// with them behind a single interface.
+/// Struct that combines [`Collector`]s for the validator set(s) that could be considered
+/// ["active"](Self#active-validator-sets) at any given [`ValidatorSetState`], wrapping interaction with
+/// them behind a single interface.
 ///
 /// # Active Validator Sets
 ///
-/// - The two validator sets that could be active are the committed validator set and the previous
-///   validator set.
-/// - The `ActiveCollectorPair` collects votes from **all** active validator sets.
-/// - (Since votes can arrive from either when the network is in the middle of a validator set update).
-/// - To decide which validator sets are active at any given `validator_set_state`, the [`new`](Self::new)
-///   and [`update_validator_sets`](Self::update_validator_sets) methods queries
-///   `validator_set_state.update_decided()`:
-///      - If it is `true`, then only the CVS will be considered active.
-///      - If it is `false`, then both the CVS and the PVS will be considered active.
+/// At any specific `ValidatorSetState` and in the execution of the [HotStuff](crate::hotstuff) and
+/// [Pacemaker](crate::pacemaker) subprotocols, the "Active Validator Sets" are the validator set(s)
+/// that should participate in voting (by sending [`PhaseVote`](crate::hotstuff::messages::PhaseVote)s
+/// and [`TimeoutVote`](crate::pacemaker::messages::TimeoutVote)s, respectively).
+///
+/// At most **two** validator sets could be active at any given `validator_set_state`:
+/// 1. The **Committed Validator Set (CVS)** is always an active validator set,
+/// 2. While the **Previous Validator Set (PVS)** is active if-and-only-if the latest validator set
+///    update is *not* decided (i.e.,
+///    [`validator_set_state.update_decided()`](ValidatorSetState::update_decided)).
+///
+/// Because `Vote`s do not indicate which validator set they are a part of, `ActiveCollectorPair`'s
+/// [`collect`](Self::collect) method tries to collect any vote it receives with both collectors the
+/// pair may currently contain in turn.
 ///
 /// # Usage
 ///
 /// Use [`new`](Self::new) to create a `ActiveCollectorPair` for a specific `ChainID`, `View`, and the
-/// current `ValidatorSetState`. Then, [`collect`](Self::collect) on it to collect any `SignedMessage`s
-/// that arrive.
+/// current `ValidatorSetState`. Then, call `collect` on it any time a `Vote` arrives.
 ///
 /// Call [`update_validator_sets`](Self::update_validator_sets) whenever the current `ValidatorSetState`
 /// changes. When the current `ViewNumber` changes, discard the `ActiveCollectorPair` and create a new one
@@ -195,7 +199,7 @@ impl<CL: Collector> ActiveCollectorPair<CL> {
         }
     }
 
-    /// Collect `message` with the appropriate collector in this `ActiveCollectorPair`.
+    /// Collect `message` with both collectors in this `ActiveCollectorPair`.
     pub(crate) fn collect(
         &mut self,
         signer: &VerifyingKey,
