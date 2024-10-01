@@ -20,6 +20,12 @@ use crate::{
 
 use super::signed_messages::Certificate;
 
+/// # Permissible variants of `justify.phase`s
+///
+/// `block.justify.phase` must be `Generic` or `Decide`. This invariant is enforced in two places:
+/// 1. When a validator creates a `Block` using [`new`](Self::new).
+/// 2. When a replica receives a `Proposal` containing `block` and checks the
+///    [`safe_block`](crate::state::invariants::safe_block) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
     pub height: BlockHeight,
@@ -30,6 +36,9 @@ pub struct Block {
 }
 
 impl Block {
+    /// # Panics
+    ///
+    /// `justify.phase` must be `Generic` or `Decide`. This function panics otherwise.
     pub fn new(
         height: BlockHeight,
         justify: PhaseCertificate,

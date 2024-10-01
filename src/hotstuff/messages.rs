@@ -121,6 +121,14 @@ pub struct Proposal {
 /// Message broadcasted by a leader in `view` to "nudge" other validators to participate in the voting
 /// phase after `justify.phase` in order to make progress in committing a **validator-set-updating**
 /// block in the block tree identified by `chain_id`.
+///
+/// # Permissible variants of `justify.phase`
+///
+/// `nudge.justify.phase` must be `Prepare`, `Precommit`, or `Commit`. This invariant is enforced in
+/// two places:
+/// 1. When a validator creates a `Nudge` using [`new`](Self::new).
+/// 2. When a replica receives a `Nudge` and checks the
+///    [`safe_nudge`](crate::state::invariants::safe_nudge) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     pub chain_id: ChainID,

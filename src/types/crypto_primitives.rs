@@ -4,6 +4,9 @@
 */
 
 //! Cryptographic primitives.
+//!
+//! Most of the types in this module are re-exports from other libraries, namely [`sha2`] and
+//! [`ed25519_dalek`].
 
 use super::data_types::SignatureBytes;
 
