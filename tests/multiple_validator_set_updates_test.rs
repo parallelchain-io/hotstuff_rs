@@ -3,7 +3,7 @@ use std::{thread, time::Duration};
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
-    basic::Power, signed_messages::SigningKey, validators::ValidatorSetUpdates,
+    crypto_primitives::SigningKey, data_types::Power, validators::ValidatorSetUpdates,
 };
 
 mod common;

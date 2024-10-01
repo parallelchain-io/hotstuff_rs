@@ -298,8 +298,8 @@ use crate::{
         types::{Phase, PhaseCertificate},
     },
     types::{
-        basic::{ChainID, CryptoHash, ViewNumber},
         block::Block,
+        data_types::{ChainID, CryptoHash, ViewNumber},
     },
 };
 

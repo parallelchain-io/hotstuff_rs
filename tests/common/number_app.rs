@@ -13,8 +13,8 @@ use hotstuff_rs::{
     },
     state::{block_tree_snapshot::BlockTreeSnapshot, kv_store::KVGet},
     types::{
-        basic::{AppStateUpdates, CryptoHash, Data, Datum, Power},
-        signed_messages::VerifyingKey,
+        crypto_primitives::VerifyingKey,
+        data_types::{AppStateUpdates, CryptoHash, Data, Datum, Power},
         validators::ValidatorSetUpdates,
     },
 };

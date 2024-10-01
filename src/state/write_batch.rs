@@ -13,8 +13,8 @@ use crate::{
     hotstuff::types::PhaseCertificate,
     pacemaker::types::TimeoutCertificate,
     types::{
-        basic::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
         block::Block,
+        data_types::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
         validators::{
             ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes,
         },

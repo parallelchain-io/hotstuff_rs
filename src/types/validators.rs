@@ -12,7 +12,7 @@ use std::{
     slice,
 };
 
-use super::basic::{BlockHeight, Power, TotalPower, UpdateSet};
+use super::data_types::{BlockHeight, Power, TotalPower, UpdateSet};
 
 pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 

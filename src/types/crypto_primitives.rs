@@ -1,15 +1,20 @@
 /*
-    Copyright © 2023, ParallelChain Lab
+    Copyright © 2024, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for the [`Keypair`] type as an object used to sign messages and access the public key.
+//! Cryptographic primitives.
 
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use super::data_types::SignatureBytes;
 
-use super::basic::SignatureBytes;
+// re-exports below.
+pub use sha2::Sha256 as CryptoHasher;
 
-/// A wrapper around [SigningKey](ed25519_dalek::SigningKey) which implements a [convenience method](Keypair::sign) for creating signatures.
+pub use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+
+/// A wrapper around [SigningKey](ed25519_dalek::SigningKey) that implements a
+/// [convenience method](Self::sign) for creating signatures as well as a [getter](Self::public) for the
+/// public key.
 #[derive(Clone)]
 pub(crate) struct Keypair(pub(crate) SigningKey);
 

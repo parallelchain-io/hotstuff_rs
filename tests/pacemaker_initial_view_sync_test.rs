@@ -3,8 +3,8 @@ use std::{thread, time::Duration};
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
-    basic::{Power, ViewNumber},
-    signed_messages::SigningKey,
+    crypto_primitives::SigningKey,
+    data_types::{Power, ViewNumber},
     validators::ValidatorSetUpdates,
 };
 

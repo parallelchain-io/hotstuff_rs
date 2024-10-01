@@ -3,21 +3,16 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Inert types and `UpdateSet`.
-//!
-//! The types defined in this module are:
-//! 1. "Inert" types, i.e., those that are sent around and inspected, but have no active behavior. These
-//!    types follow the newtype pattern and the API for using these types is defined in this module.
-//! 2. The [`UpdateSet`] type, which represents generic-type state updates associated with committing a
-//!    block.
+//! Types that exist only to store bytes, and do not have any major "active" behavior.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet},
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
+
+use borsh::{BorshDeserialize, BorshSerialize};
 
 /// Id of the blockchain, used to identify the blockchain.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
@@ -126,6 +121,20 @@ impl Debug for CryptoHash {
     }
 }
 
+/// Signature represented in bytes.
+#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
+pub struct SignatureBytes([u8; 64]);
+
+impl SignatureBytes {
+    pub(crate) fn new(bytes: [u8; 64]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn bytes(&self) -> [u8; 64] {
+        self.0
+    }
+}
+
 /// Data stored in a [block][crate::types::block::Block].
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Data(Vec<Datum>);
@@ -207,20 +216,6 @@ impl TotalPower {
 impl AddAssign<Power> for TotalPower {
     fn add_assign(&mut self, rhs: Power) {
         self.0.add_assign(rhs.0 as u128)
-    }
-}
-
-/// Signature represented in bytes.
-#[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
-pub struct SignatureBytes([u8; 64]);
-
-impl SignatureBytes {
-    pub(crate) fn new(bytes: [u8; 64]) -> Self {
-        Self(bytes)
-    }
-
-    pub const fn bytes(&self) -> [u8; 64] {
-        self.0
     }
 }
 

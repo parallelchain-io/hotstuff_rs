@@ -132,8 +132,8 @@ use crate::{
     pacemaker::protocol::PacemakerConfiguration,
     state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
-        basic::{AppStateUpdates, BufferSize, ChainID, EpochLength},
-        keypair::Keypair,
+        crypto_primitives::Keypair,
+        data_types::{AppStateUpdates, BufferSize, ChainID, EpochLength},
         validators::ValidatorSetState,
     },
 };

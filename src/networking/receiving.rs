@@ -10,7 +10,7 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::{
     block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse},
-    types::basic::{BufferSize, ChainID, ViewNumber},
+    types::data_types::{BufferSize, ChainID, ViewNumber},
 };
 
 use super::{

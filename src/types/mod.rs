@@ -3,12 +3,12 @@
 //! Other types and traits, specific to single components of HotStuff-rs protocols, can be found in
 //! the "types" submodules of their components, e.g., [`crate::hotstuff::types`].
 
-pub mod basic;
+pub mod data_types;
+
+pub mod crypto_primitives;
 
 pub mod block;
 
 pub mod validators;
-
-pub mod keypair;
 
 pub mod signed_messages;

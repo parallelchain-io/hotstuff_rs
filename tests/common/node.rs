@@ -14,7 +14,7 @@ use hotstuff_rs::{
     },
     replica::{Configuration, Replica, ReplicaSpec},
     types::{
-        basic::{AppStateUpdates, BufferSize, ChainID, EpochLength, ViewNumber},
+        data_types::{AppStateUpdates, BufferSize, ChainID, EpochLength, ViewNumber},
         validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates},
     },
 };

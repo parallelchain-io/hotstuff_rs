@@ -9,7 +9,7 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::{
     pacemaker::protocol::select_leader,
-    types::{basic::ViewNumber, validators::ValidatorSetState},
+    types::{data_types::ViewNumber, validators::ValidatorSetState},
 };
 
 use super::{

@@ -93,8 +93,8 @@ use crate::{
         kv_store::KVStore,
     },
     types::{
-        basic::{BlockHeight, ChainID, ViewNumber},
         block::Block,
+        data_types::{BlockHeight, ChainID, ViewNumber},
         signed_messages::{Certificate, SignedMessage},
         validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus},
     },

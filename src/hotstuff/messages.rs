@@ -12,9 +12,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use crate::{
     networking::{messages::ProgressMessage, receiving::Cacheable},
     types::{
-        basic::*,
         block::*,
-        keypair::*,
+        crypto_primitives::Keypair,
+        data_types::*,
         signed_messages::{SignedMessage, Vote},
     },
 };

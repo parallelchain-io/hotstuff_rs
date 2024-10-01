@@ -6,7 +6,7 @@ use crate::{
     },
     hotstuff::messages::HotStuffMessage,
     pacemaker::messages::PacemakerMessage,
-    types::basic::{ChainID, ViewNumber},
+    types::data_types::{ChainID, ViewNumber},
 };
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]

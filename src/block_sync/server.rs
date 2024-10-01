@@ -46,8 +46,8 @@ use crate::{
     networking::{network::Network, receiving::BlockSyncServerStub, sending::SenderHandle},
     state::{block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
-        basic::{BlockHeight, ChainID},
-        keypair::Keypair,
+        crypto_primitives::Keypair,
+        data_types::{BlockHeight, ChainID},
     },
 };
 

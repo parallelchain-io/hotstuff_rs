@@ -15,7 +15,7 @@ use crate::{
         block_tree::{BlockTree, BlockTreeError},
         kv_store::KVStore,
     },
-    types::basic::*,
+    types::data_types::*,
 };
 
 use super::signed_messages::Certificate;

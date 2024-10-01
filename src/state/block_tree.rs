@@ -98,11 +98,11 @@ use crate::{
     hotstuff::types::PhaseCertificate,
     pacemaker::types::TimeoutCertificate,
     types::{
-        basic::{
+        block::Block,
+        data_types::{
             AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
             ViewNumber,
         },
-        block::Block,
         validators::{
             ValidatorSet, ValidatorSetState, ValidatorSetUpdates, ValidatorSetUpdatesStatus,
         },

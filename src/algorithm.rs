@@ -31,7 +31,7 @@ use crate::{
     },
     pacemaker::protocol::{Pacemaker, PacemakerConfiguration},
     state::*,
-    types::basic::{BufferSize, ChainID, ViewNumber},
+    types::data_types::{BufferSize, ChainID, ViewNumber},
 };
 
 use self::{block_tree::BlockTree, kv_store::KVStore};

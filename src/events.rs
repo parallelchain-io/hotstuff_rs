@@ -47,8 +47,8 @@ use crate::{
         types::TimeoutCertificate,
     },
     types::{
-        basic::{BlockHeight, CryptoHash, ViewNumber},
         block::Block,
+        data_types::{BlockHeight, CryptoHash, ViewNumber},
         validators::ValidatorSetUpdates,
     },
 };

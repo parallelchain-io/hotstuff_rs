@@ -25,7 +25,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     hotstuff::types::PhaseCertificate,
-    types::{basic::*, block::*, keypair::Keypair, signed_messages::SignedMessage},
+    types::{block::*, crypto_primitives::Keypair, data_types::*, signed_messages::SignedMessage},
 };
 
 /// Messages exchanged between a sync server and a sync client when syncing.

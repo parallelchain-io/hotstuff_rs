@@ -26,8 +26,8 @@ use crate::{
     hotstuff::types::PhaseCertificate,
     networking::{messages::ProgressMessage, receiving::Cacheable},
     types::{
-        basic::*,
-        keypair::*,
+        crypto_primitives::Keypair,
+        data_types::*,
         signed_messages::{SignedMessage, Vote},
     },
 };

@@ -1,10 +1,12 @@
 use std::{thread, time::Duration};
 
-use common::{logging::log_with_context, number_app::NumberApp};
-use hotstuff_rs::types::{
-    basic::Power, signed_messages::SigningKey, validators::ValidatorSetUpdates,
-};
 use rand_core::OsRng;
+
+use hotstuff_rs::types::{
+    crypto_primitives::SigningKey, data_types::Power, validators::ValidatorSetUpdates,
+};
+
+use common::{logging::log_with_context, number_app::NumberApp};
 
 mod common;
 

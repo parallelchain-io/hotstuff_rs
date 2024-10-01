@@ -17,7 +17,7 @@ use crate::{
         kv_store::KVStore,
     },
     types::{
-        basic::*,
+        data_types::*,
         signed_messages::{Certificate, Collector},
         validators::*,
     },

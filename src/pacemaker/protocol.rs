@@ -67,8 +67,8 @@ use crate::{
         write_batch::BlockTreeWriteBatch,
     },
     types::{
-        basic::{ChainID, EpochLength, ViewNumber},
-        keypair::Keypair,
+        crypto_primitives::Keypair,
+        data_types::{ChainID, EpochLength, ViewNumber},
         signed_messages::{ActiveCollectorPair, Certificate, SignedMessage},
         validators::{ValidatorSet, ValidatorSetState},
     },
@@ -744,7 +744,7 @@ fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
 /// Tests if the number of times each validator is selected as a leader is proportional to its power.
 #[test]
 fn select_leader_fairness_test() {
-    use crate::types::{basic::Power, validators::ValidatorSetUpdates};
+    use crate::types::{data_types::Power, validators::ValidatorSetUpdates};
     use ed25519_dalek::{SigningKey, VerifyingKey};
     use rand_core::OsRng;
 

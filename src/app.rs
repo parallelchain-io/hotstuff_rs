@@ -8,8 +8,8 @@
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
     types::{
-        basic::{AppStateUpdates, CryptoHash, Data, ViewNumber},
         block::Block,
+        data_types::{AppStateUpdates, CryptoHash, Data, ViewNumber},
         validators::ValidatorSetUpdates,
     },
 };

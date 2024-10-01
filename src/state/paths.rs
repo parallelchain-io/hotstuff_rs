@@ -37,7 +37,7 @@
 //! # use borsh::ser::BorshSerialize;
 //! # use hotstuff_rs::{
 //! #     types::{
-//! #         basic::{BlockHeight, CryptoHash, Data},
+//! #         data_types::{BlockHeight, CryptoHash, Data},
 //! #         block::Block,
 //! #     },
 //! #     hotstuff::types::PhaseCertificate,

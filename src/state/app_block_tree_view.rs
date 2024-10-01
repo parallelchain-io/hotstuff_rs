@@ -8,8 +8,8 @@
 use crate::{
     hotstuff::types::PhaseCertificate,
     types::{
-        basic::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
         block::Block,
+        data_types::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
         validators::ValidatorSet,
     },
 };
