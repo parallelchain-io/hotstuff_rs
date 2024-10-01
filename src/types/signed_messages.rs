@@ -3,10 +3,39 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Signed messages, votes and aggregates of votes.
+//! Signed messages, votes, and certificates.
 //!
-//!
-
+//! # Relations between concepts
+//! 
+//! The basic definition made in this module is the **[`SignedMessage`]** trait, which, as its rustdocs
+//! explain, is implemented by data types that contain: 1. A message, and 2. A digital signature over
+//! said message whose correctness can be verified against a `VerifyingKey`.
+//! 
+//! Although `SignedMessage` on its own is implemented by a single library-defined type (namely
+//! `AdvertiseBlock`), most of its utility comes from being a supertrait of the more important 
+//! **[`Vote`]** trait, also defined in this module.
+//! 
+//! "Votes", along with "Certificates" are two notions that are common to both the 
+//! [HotStuff](crate::hotstuff) and [Pacemaker](crate::Pacemaker) subprotocols, and are essential to
+//! their functioning. These are represented in this module by the `Vote` and [`Certificate`] traits.
+//! 
+//! `Vote`s and `Certificate`s are data types that represent, respectively: a *single validator's*
+//! digitally signed, non-repudiable agreement to a "decision", and the same thing but for a *set of
+//! validators* instead of only a single one.
+//! 
+//! Certificates are formed by using structs called "Collectors" to aggregate the signatures of 
+//! Votes with matching `ViewNumber`s and `ChainID`s together until the collected
+//! [`SignatureSet`](crate::types::basic::SignatureSet) contains votes from a 
+//! ["quorum"](Certificate::quorum) of validators in a validator set. Collector structs generally 
+//! implement the same basic logic whichever specific `Vote` type they collect into whichever specific
+//! `Certificate` type, which is why this module can define a **[`Collector`]** trait that generalizes
+//! across collector implementations.
+//! 
+//! The `Collector` trait in turn allows this module to define a generic "Active Collector Pair"
+//! struct. An **[`ActiveCollectorPair`]** is not itself a `Collector`, but combines multiple collectors
+//! collecting votes for different "active" validator sets into a single struct and wraps interactions
+//! with them inside a single interface, which simplifies usage.
+ 
 pub use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 pub use sha2::Sha256 as CryptoHasher;
 
