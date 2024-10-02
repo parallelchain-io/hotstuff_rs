@@ -13,12 +13,11 @@ use hotstuff_rs::{
     },
     state::{block_tree_snapshot::BlockTreeSnapshot, kv_store::KVGet},
     types::{
-        crypto_primitives::VerifyingKey,
+        crypto_primitives::{CryptoHasher, Digest, VerifyingKey},
         data_types::{AppStateUpdates, CryptoHash, Data, Datum, Power},
         validators::ValidatorSetUpdates,
     },
 };
-use sha2::{Digest, Sha256};
 
 use crate::common::{mem_db::MemDB, verifying_key_bytes::VerifyingKeyBytes};
 
@@ -101,7 +100,7 @@ impl App<MemDB> for NumberApp {
         let (app_state_updates, validator_set_updates) = self.execute(initial_number, &tx_queue);
         let data = Data::new(vec![Datum::new(tx_queue.try_to_vec().unwrap())]);
         let data_hash = {
-            let mut hasher = Sha256::new();
+            let mut hasher = CryptoHasher::new();
             hasher.update(&data.vec()[0].bytes());
             let bytes = hasher.finalize().into();
             CryptoHash::new(bytes)
@@ -129,7 +128,7 @@ impl App<MemDB> for NumberApp {
     ) -> ValidateBlockResponse {
         let data = &request.proposed_block().data;
         let data_hash: CryptoHash = {
-            let mut hasher = Sha256::new();
+            let mut hasher = CryptoHasher::new();
             hasher.update(&data.vec()[0].bytes());
             let bytes = hasher.finalize().into();
             CryptoHash::new(bytes)

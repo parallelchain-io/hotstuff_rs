@@ -6,8 +6,6 @@
 //! `Block` type and its methods.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sha2::Digest;
-pub use sha2::Sha256 as CryptoHasher;
 
 use crate::{
     hotstuff::types::PhaseCertificate,
@@ -15,7 +13,10 @@ use crate::{
         block_tree::{BlockTree, BlockTreeError},
         kv_store::KVStore,
     },
-    types::data_types::*,
+    types::{
+        crypto_primitives::{CryptoHasher, Digest},
+        data_types::*,
+    },
 };
 
 use super::signed_messages::Certificate;
