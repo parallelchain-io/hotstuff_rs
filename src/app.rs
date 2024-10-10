@@ -40,7 +40,18 @@ use crate::{
 ///
 /// # Determinism
 ///
+/// In order for the state machine to be correctly replicated across all replicas, types that implement
+/// `App` must ensure that their implementations of `produce_block`, `validate_block`, and
+/// `validate_block_for_sync` are deterministic. That is, for any particular request (e.g.,
+/// [`ProduceBlockRequest`]), a function must always produce the same response
+/// ([`ProduceBlockResponse`]), regardless of whether the machine executing the call has an Intel CPU
+/// or an AMD CPU, whether a pseudorandom number generator spits out 0 or 1, or whether it is currently
+/// raining outside, etc.
 ///
+/// The key to making sure that these methods are deterministic is ensuring that their respective
+/// method bodies depend **on and only on** the information that is available through the public methods
+/// of their request type. In particular, this means not reading the block tree through a
+/// `BlockTreeSnapshot`, but reading it only through [`AppBlockTreeView`].
 ///
 /// # Timing
 ///
