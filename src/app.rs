@@ -4,7 +4,29 @@
 */
 
 //! The [`App`] trait, HotStuff-rs' interface into the business logic of users' applications.
-
+//!
+//! # Applications
+//!
+//! The basic interaction between HotStuff-rs and the library user is this:
+//! 1. Library user specifies a state machine.
+//! 2. Library user provides the state machine to HotStuff-rs
+//! 3. HotStuff-rs replicates the state machine.
+//!
+//! We refer to the state machine in this basic interaction as the **"application"**. In short, an
+//! application is a state machine that mutates two states: the **"App State"** and the **"Validator
+//! Set"** in response to a message called a **[`Block`]**. In other words, an application
+//! can be thought of as a function (a "state transition function") with the following type signature:
+//! ```(AppState, ValidatorSet, Block) -> (AppState, ValidatorSet)```.
+//!
+//! To specify an application, the library user must implement the `App` trait. This entails
+//! implementing a state transition function and exposing this function to HotStuff-rs through three
+//! different methods: [`produce_block`](App::produce_block), [`validate_block`](App::validate_block),
+//! and [`validate_block_for_sync`](App::validate_block_for_sync).
+//!
+//! Each of the above three methods correspond to a different context in which HotStuff-rs will call the
+//! application's state transition function. For example, HotStuff-rs will call `produce_block` when the
+//! local replica is a leader and needs to produce a new block to propose it. The different contexts in
+//! which each function is called is documented in their respective Rustdocs.
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
     types::{
@@ -15,6 +37,10 @@ use crate::{
 };
 
 /// Trait implemented by applications that are to be replicated by HotStuff-rs.
+///
+/// # Determinism
+///
+///
 ///
 /// # Timing
 ///

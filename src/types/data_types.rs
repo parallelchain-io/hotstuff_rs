@@ -6,7 +6,6 @@
 //! Types that exist only to store bytes, and do not have any major "active" behavior.
 
 use std::{
-    collections::{hash_map, hash_set, HashMap, HashSet},
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
     ops::{Add, AddAssign, Sub, SubAssign},
