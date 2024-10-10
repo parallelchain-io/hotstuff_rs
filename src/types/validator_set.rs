@@ -7,14 +7,11 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
-use std::{
-    collections::HashMap,
-    slice,
-};
+use std::{collections::HashMap, slice};
 
 use super::{
     data_types::{BlockHeight, Power, TotalPower},
-    update_sets::{VerifyingKeyBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes},
+    update_sets::{ValidatorSetUpdates, ValidatorSetUpdatesBytes, VerifyingKeyBytes},
 };
 
 pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};

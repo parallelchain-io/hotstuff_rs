@@ -16,9 +16,7 @@ use crate::{
         block::Block,
         data_types::{BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
         update_sets::{AppStateUpdates, ValidatorSetUpdates},
-        validator_set::{
-            ValidatorSet, ValidatorSetBytes, ValidatorSetUpdatesStatusBytes,
-        },
+        validator_set::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdatesStatusBytes},
     },
 };
 

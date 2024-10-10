@@ -1,25 +1,20 @@
 use std::{
+    collections::{hash_map, hash_set, HashMap, HashSet},
     hash::Hash,
-    collections::{
-        hash_map,
-        HashMap,
-        hash_set,
-        HashSet,
-    },
 };
 
-use borsh::{BorshSerialize, BorshDeserialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::{
-    data_types::Power,
     crypto_primitives::{SignatureError, VerifyingKey},
+    data_types::Power,
 };
 
 /// Generic set of key-value updates that are committed when a particular block is committed.
-/// 
-/// This generic type currently forms the basis of two concrete types: [`AppStateUpdates`] and 
+///
+/// This generic type currently forms the basis of two concrete types: [`AppStateUpdates`] and
 /// [`ValidatorSetUpdates`](super::validators::ValidatorSetUpdates).
-/// 
+///
 /// # Uniqueness of Key between `inserts` and `deletes`
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct UpdateSet<K: Eq + Hash, V: Eq + Hash> {
@@ -44,7 +39,7 @@ where
 
     /// Schedule the insertion of a `key`-`value` pair when the block that corresponds to this `UpdateSet`
     /// gets committed.
-    /// 
+    ///
     /// This cancels the deletion of `key`, if it has been scheduled using [`delete`](Self::delete).
     pub fn insert(&mut self, key: K, value: V) {
         self.deletes.remove(&key);
@@ -52,7 +47,7 @@ where
     }
 
     /// Schedule the deletion of `key` when the block that corresponds to this `UpdateSet` gets committed.
-    /// 
+    ///
     /// This cancels the insertion of `key`, if it has been scheduled using [`insert`](Self::insert).
     pub fn delete(&mut self, key: K) {
         self.inserts.remove(&key);
@@ -60,7 +55,7 @@ where
     }
 
     /// Get whether the `UpdateSet` is scheduled to insert a value to `key` when the block that corresponds
-    /// to this `UpdateSet` gets committed, and if so, returns a reference to that value. 
+    /// to this `UpdateSet` gets committed, and if so, returns a reference to that value.
     pub fn get_insert(&self, key: &K) -> Option<&V> {
         self.inserts.get(key)
     }
@@ -83,7 +78,7 @@ where
 }
 
 /// Set of key-value updates committed to the App State when a block is committed.
-/// 
+///
 /// TODO: write section in `crate::app` that explains what the App State is.
 pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
 
@@ -109,7 +104,7 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
                 .inserts()
                 .map(|(vk_bytes, &power)| VerifyingKey::from_bytes(vk_bytes).map(|vk| (vk, power)))
                 .collect::<Result<HashMap<VerifyingKey, Power>, Self::Error>>()?,
-            
+
             deletes: vsu_bytes
                 .deletes()
                 .map(|vk_bytes| VerifyingKey::from_bytes(vk_bytes))
@@ -121,15 +116,9 @@ impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
 impl From<&ValidatorSetUpdates> for ValidatorSetUpdatesBytes {
     fn from(vsu: &ValidatorSetUpdates) -> Self {
         ValidatorSetUpdatesBytes {
-            inserts: vsu
-                .inserts()
-                .map(|(k, v)| (k.to_bytes(), *v))
-                .collect(),
-            
-            deletes: vsu
-                .deletes()
-                .map(|k| k.to_bytes())
-                .collect(),
+            inserts: vsu.inserts().map(|(k, v)| (k.to_bytes(), *v)).collect(),
+
+            deletes: vsu.deletes().map(|k| k.to_bytes()).collect(),
         }
     }
 }

@@ -17,10 +17,7 @@ use crate::{
     pacemaker::types::TimeoutCertificate,
     types::{
         block::Block,
-        data_types::{
-            BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
-            ViewNumber,
-        },
+        data_types::{BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber},
         update_sets::AppStateUpdates,
         validator_set::{
             ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdatesStatus,

@@ -96,8 +96,8 @@ use crate::{
         block::Block,
         data_types::{BlockHeight, ChainID, ViewNumber},
         signed_messages::{Certificate, SignedMessage},
-        validator_set::ValidatorSetUpdatesStatus,
         update_sets::ValidatorSetUpdates,
+        validator_set::ValidatorSetUpdatesStatus,
     },
 };
 
@@ -592,11 +592,11 @@ impl From<BlockTreeError> for BlockSyncClientError {
 }
 
 /// Returns whether a given [verifying key](VerifyingKey) is recognised as a valid sync server address.
-/// 
+///
 /// A replica is allowed to act as a sync server if either:
 /// 1. It is a member of the current committed validator set, or
 /// 2. One of the current speculative blocks proposes to add the replica to the validator set.
-/// 
+///
 /// Recognising only committed and candidate validators as potential sync servers is an effective,
 /// though rather conservative solution to the problem of sybil attacks.
 fn is_sync_server_address<K: KVStore>(

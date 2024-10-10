@@ -3,9 +3,7 @@ use std::{thread, time::Duration};
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
-    crypto_primitives::SigningKey,
-    data_types::Power,
-    update_sets::ValidatorSetUpdates,
+    crypto_primitives::SigningKey, data_types::Power, update_sets::ValidatorSetUpdates,
 };
 
 use common::{logging::log_with_context, number_app::NumberApp};

@@ -4,9 +4,9 @@
 */
 
 //! Cryptographic primitives.
-//! 
+//!
 //! The definitions and re-exports in this module provide two categories of cryptographic primitives:
-//! 1. **Cryptographic Hashes**: provided by the [`sha2`] crate. 
+//! 1. **Cryptographic Hashes**: provided by the [`sha2`] crate.
 //! 2. **Digital Signatures**: provided by the [`ed25519_dalek`] crate.
 
 use super::data_types::SignatureBytes;
@@ -15,14 +15,7 @@ use super::data_types::SignatureBytes;
 pub use sha2::Digest;
 pub use sha2::Sha256 as CryptoHasher;
 
-pub use ed25519_dalek::{
-    Signature,
-    SignatureError, 
-    Signer, 
-    SigningKey, 
-    Verifier, 
-    VerifyingKey
-};
+pub use ed25519_dalek::{Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey};
 
 /// A facade around [`SigningKey`] that implements method for [`sign`](Self::sign)-ing messages as well
 /// as a getter for the [`public`](Self::public) key associated with the signing key.

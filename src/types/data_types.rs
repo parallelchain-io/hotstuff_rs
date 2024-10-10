@@ -15,7 +15,7 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 
 /// Number that uniquely identifies a blockchain.
-/// 
+///
 /// Every block in the same block tree should share the same `ChainID`, which in turn should be unique
 /// between different block trees. All replicas that replicate the same block tree should be configured
 /// to use the same `ChainID`.
@@ -34,9 +34,9 @@ impl ChainID {
     }
 }
 
-/// Height of a block in the block tree. 
-/// 
-/// Starts at 0 for Genesis Blocks (blocks that contain the 
+/// Height of a block in the block tree.
+///
+/// Starts at 0 for Genesis Blocks (blocks that contain the
 /// [`genesis_pc`](crate::hotstuff::types::PhaseCertificate::genesis_pc)), and increases by 1 for every
 /// subsequent "level" of blocks connected by [`justify`](crate::types::block::Block::justify) links.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
@@ -48,7 +48,7 @@ impl BlockHeight {
         Self(int)
     }
 
-    /// Get the inner `u64` value of this `BlockHeight`. 
+    /// Get the inner `u64` value of this `BlockHeight`.
     pub const fn int(&self) -> u64 {
         self.0
     }
@@ -86,16 +86,16 @@ impl Sub<BlockHeight> for BlockHeight {
 }
 
 /// List of children of a particular block.
-/// 
+///
 /// The "children" of a `block` is the set of blocks that directly extend `block` through
 /// [`justify`](crate::types::block::Block::justify) links.
-/// 
-/// Instances of this type are stored in the block tree's 
+///
+/// Instances of this type are stored in the block tree's
 /// ["Block to Children"](crate::state::block_tree#blocks) state variable.
-/// 
+///
 /// # Uniqueness
-/// 
-/// Currently, `ChildrenList` does not enforce uniqueness. This means, for example, that 
+///
+/// Currently, `ChildrenList` does not enforce uniqueness. This means, for example, that
 /// [`push`](Self::push)-ing the same `CryptoHash` twice into a `ChildrenList` will result in that hash
 /// appearing twice in the `ChildrenList`.
 #[derive(Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize, Default)]
@@ -124,7 +124,7 @@ impl ChildrenList {
 }
 
 /// SHA256 cryptographic hash.
-/// 
+///
 /// Strictly speaking, this hash could be the SHA256 hash of any kind of message, but within HotStuff-rs
 /// these are used exclusively to identify [`Block`](crate::types::block::Block)s and are produced using
 /// [`Block::hash`](crate::types::block::Block::hash).
@@ -156,7 +156,7 @@ impl Debug for CryptoHash {
 }
 
 /// Ed25519 digital signature.
-/// 
+///
 /// Within HotStuff-rs, these are produced using the [`ed25519_dalek`] crate, whose main definitions
 /// are re-exported from the [`crypto_primitives`](super::crypto_primitives) module.
 #[derive(Clone, Copy, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
@@ -176,19 +176,19 @@ impl SignatureBytes {
 
 /// Arbitrary, indexable data provided by an [`App`](crate::app::App) to HotStuff-rs to be stored
 /// in a [`Block`](super::block::Block).
-/// 
+///
 /// # Querying only a part of `Data`
-/// 
-/// Library users can choose between two methods of 
-/// [`BlockTreeSnapshot`](crate::state::block_tree_snapshot::BlockTreeSnapshot) to get a `Block`'s 
+///
+/// Library users can choose between two methods of
+/// [`BlockTreeSnapshot`](crate::state::block_tree_snapshot::BlockTreeSnapshot) to get a `Block`'s
 /// `Data`:
 /// 1. [`block_data`](crate::state::block_tree_snapshot::BlockTreeSnapshot::block_data) gets the whole of
 ///    `block.data` in a single call.
-/// 2. [`block_datum`](crate::state::block_tree_snapshot::BlockTreeSnapshot::block_datum) gets only 
+/// 2. [`block_datum`](crate::state::block_tree_snapshot::BlockTreeSnapshot::block_datum) gets only
 ///    `block.datum.vec()[datum_index]` in a single call.
-/// 
+///
 /// The first method is simple, but may be overkill and cause unnecessary I/O operations if a use case
-/// only requires getting a small part of `block.data`. In contrast, the second method allows users to 
+/// only requires getting a small part of `block.data`. In contrast, the second method allows users to
 /// get only the parts of `block.data` that a use case needs.
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Data(Vec<Datum>);
@@ -205,13 +205,11 @@ impl Data {
     }
 
     /// Get how many `Datum`s are in this `Data`.
-    /// 
-    /// TODO: fix issue #57.
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub fn len(&self) -> DataLen {
+        DataLen::new(self.0.len() as u32)
     }
 
-    /// Iterate through the `Datum`s that are in this `Data` in the order they were provided in to 
+    /// Iterate through the `Datum`s that are in this `Data` in the order they were provided in to
     /// [`new`](Self::new).
     pub fn iter(&self) -> std::slice::Iter<'_, Datum> {
         self.0.iter()
@@ -234,9 +232,9 @@ impl DataLen {
     }
 }
 
-/// Unit of [`Data`] that can be queried individually from the 
+/// Unit of [`Data`] that can be queried individually from the
 /// [block tree](crate::state::block_tree).
-/// 
+///
 /// Read [Querying only a part of `Data`](Data#querying-only-a-part-of-data) for the rationale behind
 /// why `Data` is split into `Datum`s.
 #[derive(Clone, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
@@ -255,7 +253,7 @@ impl Datum {
 }
 
 /// Weight of a specific validator's votes in consensus decisions.
-/// 
+///
 /// The higher the power, the more weight the validator's votes have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct Power(u64);
@@ -273,14 +271,14 @@ impl Power {
 }
 
 /// Sum of the [`Power`]s of all validators in a [`ValidatorSet`](super::validators::ValidatorSet).
-/// 
+///
 /// The inner type that this newtype wraps around is `u128`, which is bigger than inner `u64` that
 /// `Power` wraps around. This is so that summing up large `Power`s do not cause `TotalPower`'s inner
 /// value to overflow.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, BorshDeserialize, BorshSerialize)]
 pub struct TotalPower(u128);
 
-impl TotalPower { 
+impl TotalPower {
     /// Create a new `TotalPower` wrapping `int`.
     pub(crate) fn new(int: u128) -> Self {
         Self(int)
@@ -300,26 +298,26 @@ impl AddAssign<Power> for TotalPower {
 
 /// An ordered list of [`SignatureBytes`] from the same
 /// [`ValidatorSet`](super::validators::ValidatorSet).
-/// 
+///
 /// # Ordering
-/// 
+///
 /// `SignatureBytes` should appear in `SignatureSet` in an order that corresponds to the `ValidatorSet`
 /// from which the signatures come from.
-/// 
-/// Specifically, this means that if `signature_bytes` was created by a `validator` in a 
-/// `validator_set`, then it should appear in `SignatureSet`s corresponding to `validator_set` in the 
+///
+/// Specifically, this means that if `signature_bytes` was created by a `validator` in a
+/// `validator_set`, then it should appear in `SignatureSet`s corresponding to `validator_set` in the
 /// [`self.validator_set.position(validator)`](super::validators::ValidatorSet::position) position.
-/// 
+///
 /// Users of this type are responsible for enforcing this order **manually**, in particular, every
 /// time they call [`set`](Self::set) to insert a signature into `SignatureSet`. Failing to uphold this
-/// order may cause the [`Certificate`](super::signed_messages::Certificate) that holds this 
+/// order may cause the [`Certificate`](super::signed_messages::Certificate) that holds this
 /// `SignatureSet` to fail validation and be ignored by other replicas.
-/// 
+///
 /// # Optionality
-/// 
+///
 /// A `SignatureSet` created using [`new`](Self::new) initially contains `vec![None; len]`. As `set` is
 /// called, these `None`s will be replaced with `Some(signature_bytes)`.
-/// 
+///
 /// This means that the value at any particular position on the `SignatureSet` is either:
 /// 1. `None`: if the a valid signature from the validator at the given position has not been obtained, or
 /// 2. `Some(signature_bytes)`: if signature_bytes has been obtained from the validator at the given position.
@@ -327,9 +325,9 @@ impl AddAssign<Power> for TotalPower {
 pub struct SignatureSet(Vec<Option<SignatureBytes>>);
 
 impl SignatureSet {
-    /// Create the `SignatureSet` that forms a part of the 
+    /// Create the `SignatureSet` that forms a part of the
     /// [`genesis_pc`](crate::hotstuff::types::PhaseCertificate::genesis_pc).
-    /// 
+    ///
     /// The `SignatureSet` contains an empty `Vec` (of length 0).
     pub const fn genesis() -> Self {
         Self(Vec::new())
@@ -356,9 +354,9 @@ impl SignatureSet {
     }
 
     /// Set the value at `pos` in this `SignatureSet` to be `signature`.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `pos` is `>=` [`len`](Self::len).
     pub(crate) fn set(&mut self, pos: usize, signature: Option<SignatureBytes>) {
         let signature_vec: &mut Vec<Option<SignatureBytes>> = self.0.as_mut();
@@ -366,7 +364,7 @@ impl SignatureSet {
     }
 
     /// Get the length of the inner `Vec<Option<SignatureBytes>>` of this `SignatureSet`.
-    /// 
+    ///
     /// Note that because the inner vector contains `Option`s, this will most often not correspond exactly
     /// to how many signatures are in this `SignatureSet`. However, it will always correspond to exactly
     /// how many validators are in the `ValidatorSet` that corresponds to this `SignatureSet`.
