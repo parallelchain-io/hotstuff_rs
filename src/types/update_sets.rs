@@ -78,8 +78,6 @@ where
 }
 
 /// Set of key-value updates committed to the App State when a block is committed.
-///
-/// TODO: write section in `crate::app` that explains what the App State is.
 pub type AppStateUpdates = UpdateSet<Vec<u8>, Vec<u8>>;
 
 /// Set of updates to the validator that are applied when a block is committed.

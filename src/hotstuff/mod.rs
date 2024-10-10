@@ -1,5 +1,5 @@
-//! A version of the [HotStuff](https://arxiv.org/abs/1803.05069) protocol for Byzantine Fault Tolerant
-//! State Machine Replication, with adaptations designed to enable dynamically-changing validator sets.
+//! Subprotocol that orchestrates validators in the same view to progress through multiple `Phase`s,
+//! eventually concluding in a `Block` being committed.
 //!
 //! ## Operating modes
 //!

@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The [`App`] trait, HotStuff-rs' interface into the business logic of users' applications.
+//! HotStuff-rs' interface into the business logic of users' applications.
 //!
 //! # Applications
 //!
@@ -18,7 +18,7 @@
 //! can be thought of as a function (a "state transition function") with the following type signature:
 //! ```(AppState, ValidatorSet, Block) -> (AppState, ValidatorSet)```.
 //!
-//! To specify an application, the library user must implement the `App` trait. This entails
+//! To specify an application, the library user must implement the [`App`] trait. This entails
 //! implementing a state transition function and exposing this function to HotStuff-rs through three
 //! different methods: [`produce_block`](App::produce_block), [`validate_block`](App::validate_block),
 //! and [`validate_block_for_sync`](App::validate_block_for_sync).
@@ -27,6 +27,10 @@
 //! application's state transition function. For example, HotStuff-rs will call `produce_block` when the
 //! local replica is a leader and needs to produce a new block to propose it. The different contexts in
 //! which each function is called is documented in their respective Rustdocs.
+//!
+//! # App State and Validator Set
+//!
+//! TODO.
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
     types::{

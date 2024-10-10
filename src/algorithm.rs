@@ -3,10 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the hotstuff-rs SMR protocol, which invokes the following sub-protocols:
-//! 1. [`HotStuff`]: for blockchain consensus on a per-view basis,
-//! 2. [`Pacemaker`]: for synchronizing views among the peers,
-//! 3. [`BlockSyncClient`]: for triggering and handling the block sync procedure when needed.
+//! Thread that drives the event-driven implementations of the [HotStuff](crate::hotstuff),
+//! [Pacemaker](crate::pacemaker), and [BlockSync](crate::block_sync) subprotocols.
 
 use std::{
     sync::mpsc::{Receiver, Sender, TryRecvError},

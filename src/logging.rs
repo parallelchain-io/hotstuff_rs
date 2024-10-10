@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions that log out [events](crate::events).
+//! Functions that log out events.
 //!
 //! The logs defined in this module are printed if the user enabled them via replica's
 //! [config](crate::replica::Configuration).
@@ -16,7 +16,7 @@
 //!
 //! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are
 //! always:
-//! 1. The name of the event in PascalCase (defined in this module as constants).
+//! 1. The name of the [event](crate::events) in PascalCase (defined in this module as constants).
 //! 2. The time the event was emitted (as number of seconds since the Unix Epoch).
 //!
 //! The rest of the values differ depending on the kind of event. For example, the following snippet

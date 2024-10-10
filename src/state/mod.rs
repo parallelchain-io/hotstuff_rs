@@ -1,4 +1,4 @@
-//! The persistent state of a replica.
+//! Persistent state of a replica.
 
 pub mod app_block_tree_view;
 pub mod block_tree;

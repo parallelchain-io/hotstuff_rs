@@ -3,8 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! A thread that receives events emitted from the [algorithm](crate::algorithm) and
-//! [sync server](crate::block_sync::server::BlockSyncServer) threads and calls registered event
+//! Thread that receives events emitted by the [algorithm](crate::algorithm) and
+//! [block sync server](crate::block_sync::server::BlockSyncServer) threads and passes them to event
 //! handlers.
 //!
 //! When the thread receives a message containing an [event](crate::events::Event), it triggers the
