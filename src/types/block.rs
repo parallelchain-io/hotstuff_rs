@@ -46,6 +46,8 @@ impl Block {
         data_hash: CryptoHash,
         data: Data,
     ) -> Block {
+        assert!(justify.phase.is_generic() || justify.phase.is_decide());
+
         Block {
             height,
             hash: Block::hash(height, &justify, &data_hash),

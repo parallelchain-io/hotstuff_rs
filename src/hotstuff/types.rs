@@ -19,7 +19,7 @@ use crate::{
     types::{
         data_types::*,
         signed_messages::{Certificate, Collector},
-        validators::*,
+        validator_set::*,
     },
 };
 
@@ -190,7 +190,7 @@ impl PhaseCertificate {
             view: ViewNumber::init(),
             block: CryptoHash::new([0u8; 32]),
             phase: Phase::Generic,
-            signatures: SignatureSet::init(),
+            signatures: SignatureSet::genesis(),
         }
     }
 

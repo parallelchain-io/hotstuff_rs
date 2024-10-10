@@ -8,16 +8,16 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::Error;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     slice,
 };
 
-use super::data_types::{BlockHeight, Power, TotalPower, UpdateSet};
+use super::{
+    data_types::{BlockHeight, Power, TotalPower},
+    update_sets::{VerifyingKeyBytes, ValidatorSetUpdates, ValidatorSetUpdatesBytes},
+};
 
 pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
-
-/// Internal type used for serializing and deserializing values of type [`VerifyingKey`].
-type VerifyingKeyBytes = [u8; 32];
 
 /// Stores the identities of validators and their voting powers.
 ///
@@ -96,7 +96,7 @@ impl ValidatorSet {
             self.put(peer, *new_power);
         }
 
-        for peer in updates.deletions() {
+        for peer in updates.deletes() {
             self.remove(peer);
         }
     }
@@ -241,75 +241,6 @@ impl Into<ValidatorSetBytes> for &ValidatorSet {
         ValidatorSetBytes {
             validators: new_validators,
             powers: new_powers,
-        }
-    }
-}
-
-/// Set of changes (insertions and deletions) that can be applied on a validator set.
-pub type ValidatorSetUpdates = UpdateSet<VerifyingKey, Power>;
-
-/// Intermediate representation of [ValidatorSetUpdates] for safe serialization and deserialization.
-///
-/// ## Rationale
-///
-/// See the [related section](ValidatorSetBytes#rationale) about `ValidatorSetBytes`.
-pub(crate) type ValidatorSetUpdatesBytes = UpdateSet<VerifyingKeyBytes, Power>;
-
-impl TryFrom<ValidatorSetUpdatesBytes> for ValidatorSetUpdates {
-    type Error = ed25519_dalek::SignatureError;
-
-    fn try_from(value: ValidatorSetUpdatesBytes) -> Result<Self, Self::Error> {
-        let mut new_inserts = <HashMap<VerifyingKey, Power>>::new();
-        let convert_and_insert_inserts = |(k, v): (&[u8; 32], &Power)| -> Result<(), Error> {
-            let pk = VerifyingKey::from_bytes(k)?;
-            new_inserts.insert(pk, *v); // Safety: Insert should always return None.
-            Ok(())
-        };
-        let _ = value
-            .inserts
-            .keys()
-            .zip(value.inserts.values())
-            .try_for_each(convert_and_insert_inserts);
-
-        let mut new_deletes: HashSet<VerifyingKey> = HashSet::new();
-        let convert_and_insert_deletes = |k: &[u8; 32]| -> Result<(), Error> {
-            let pk = VerifyingKey::from_bytes(k)?;
-            new_deletes.insert(pk); // Safety: Insert should never return false.
-            Ok(())
-        };
-        let _ = value
-            .deletes
-            .iter()
-            .try_for_each(convert_and_insert_deletes);
-
-        let new_validator_set_updates = Self {
-            inserts: new_inserts,
-            deletes: new_deletes,
-        };
-        Ok(new_validator_set_updates)
-    }
-}
-
-impl Into<ValidatorSetUpdatesBytes> for &ValidatorSetUpdates {
-    fn into(self) -> ValidatorSetUpdatesBytes {
-        let mut new_inserts = <HashMap<VerifyingKeyBytes, Power>>::new();
-        self.inserts
-            .keys()
-            .zip(self.inserts.values())
-            .for_each(|(k, v)| match new_inserts.insert(k.to_bytes(), *v) {
-                _ => (),
-            }); // Safety: Insert should always return None.
-
-        let mut new_deletes: HashSet<VerifyingKeyBytes> = HashSet::new();
-        self.deletes
-            .iter()
-            .for_each(|k| match new_deletes.insert(k.to_bytes()) {
-                _ => (),
-            }); // Safety: Insert should never return false.
-
-        ValidatorSetUpdatesBytes {
-            inserts: new_inserts,
-            deletes: new_deletes,
         }
     }
 }

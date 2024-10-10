@@ -143,15 +143,12 @@ impl Nudge {
     ///
     /// `justify.phase` must be `Prepare` or `Precommit`. This function panics otherwise.
     pub fn new(chain_id: ChainID, view: ViewNumber, justify: PhaseCertificate) -> Self {
-        match justify.phase {
-            Phase::Generic | Phase::Decide => {
-                panic!("`justify.phase` should be either Prepare or Precommit")
-            }
-            Phase::Prepare | Phase::Precommit | Phase::Commit => Self {
-                chain_id,
-                view,
-                justify,
-            },
+        assert!(justify.phase.is_prepare() || justify.phase.is_precommit() || justify.phase.is_commit());
+
+        Self {
+            chain_id,
+            view,
+            justify,
         }
     }
 }

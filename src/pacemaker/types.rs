@@ -17,7 +17,7 @@ use crate::{
     types::{
         data_types::*,
         signed_messages::{Certificate, Collector},
-        validators::*,
+        validator_set::*,
     },
 };
 

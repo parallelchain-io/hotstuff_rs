@@ -9,8 +9,8 @@ use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
     types::{
         block::Block,
-        data_types::{AppStateUpdates, CryptoHash, Data, ViewNumber},
-        validators::ValidatorSetUpdates,
+        data_types::{CryptoHash, Data, ViewNumber},
+        update_sets::{AppStateUpdates, ValidatorSetUpdates},
     },
 };
 

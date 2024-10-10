@@ -14,9 +14,10 @@ use crate::{
     pacemaker::types::TimeoutCertificate,
     types::{
         block::Block,
-        data_types::{AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
-        validators::{
-            ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes,
+        data_types::{BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
+        update_sets::{AppStateUpdates, ValidatorSetUpdates},
+        validator_set::{
+            ValidatorSet, ValidatorSetBytes, ValidatorSetUpdatesStatusBytes,
         },
     },
 };
@@ -211,7 +212,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
             self.set_committed_app_state(key, value);
         }
 
-        for key in app_state_updates.deletions() {
+        for key in app_state_updates.deletes() {
             self.delete_committed_app_state(key);
         }
     }

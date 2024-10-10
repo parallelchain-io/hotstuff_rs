@@ -38,7 +38,7 @@ use crate::{
         crypto_primitives::Keypair,
         data_types::{BlockHeight, ChainID},
         signed_messages::{ActiveCollectorPair, Certificate, SignedMessage},
-        validators::ValidatorSetState,
+        validator_set::ValidatorSetState,
     },
 };
 

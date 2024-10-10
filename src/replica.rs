@@ -133,8 +133,9 @@ use crate::{
     state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
         crypto_primitives::Keypair,
-        data_types::{AppStateUpdates, BufferSize, ChainID, EpochLength},
-        validators::ValidatorSetState,
+        data_types::{BufferSize, ChainID, EpochLength},
+        update_sets::AppStateUpdates,
+        validator_set::ValidatorSetState,
     },
 };
 use std::sync::mpsc::{self, Sender};

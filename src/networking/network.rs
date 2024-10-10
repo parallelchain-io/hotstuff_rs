@@ -1,6 +1,9 @@
 use ed25519_dalek::VerifyingKey;
 
-use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
+use crate::types::{
+    validator_set::ValidatorSet,
+    update_sets::ValidatorSetUpdates,
+};
 
 use super::messages::Message;
 

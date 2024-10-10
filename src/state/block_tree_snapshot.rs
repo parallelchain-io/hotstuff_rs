@@ -10,10 +10,11 @@ use crate::{
     types::{
         block::Block,
         data_types::{
-            AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
+            BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum,
             ViewNumber,
         },
-        validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus},
+        update_sets::AppStateUpdates,
+        validator_set::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus},
     },
 };
 

@@ -14,7 +14,7 @@
 //! **[`Vote`]** trait, also defined in this module.
 //!
 //! "Votes", along with "Certificates" are two notions that are common to both the
-//! [HotStuff](crate::hotstuff) and [Pacemaker](crate::Pacemaker) subprotocols, and are essential to
+//! [HotStuff](crate::hotstuff) and [Pacemaker](crate::pacemaker) subprotocols, and are essential to
 //! their functioning. These are represented in this module by the `Vote` and [`Certificate`] traits.
 //!
 //! `Vote`s and `Certificate`s are data types that represent, respectively: a *single validator's*
@@ -42,7 +42,7 @@ use crate::state::{
 use super::{
     crypto_primitives::{Signature, Verifier, VerifyingKey},
     data_types::{ChainID, SignatureBytes, TotalPower, ViewNumber},
-    validators::{ValidatorSet, ValidatorSetState},
+    validator_set::{ValidatorSet, ValidatorSetState},
 };
 
 /// Data types that contain: 1. A message, and 2. A digital signature over said message whose

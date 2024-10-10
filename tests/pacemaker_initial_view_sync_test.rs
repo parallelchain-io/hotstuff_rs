@@ -5,7 +5,7 @@ use rand_core::OsRng;
 use hotstuff_rs::types::{
     crypto_primitives::SigningKey,
     data_types::{Power, ViewNumber},
-    validators::ValidatorSetUpdates,
+    update_sets::ValidatorSetUpdates,
 };
 
 mod common;

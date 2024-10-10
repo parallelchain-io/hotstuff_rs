@@ -11,7 +11,10 @@ use std::{
 use ed25519_dalek::VerifyingKey;
 use hotstuff_rs::{
     networking::{messages::Message, network::Network},
-    types::validators::{ValidatorSet, ValidatorSetUpdates},
+    types::{
+        validator_set::ValidatorSet,
+        update_sets::ValidatorSetUpdates,
+    },
 };
 
 /// A network stub that passes messages to and from nodes using channels.

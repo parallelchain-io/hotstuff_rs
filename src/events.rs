@@ -49,7 +49,7 @@ use crate::{
     types::{
         block::Block,
         data_types::{BlockHeight, CryptoHash, ViewNumber},
-        validators::ValidatorSetUpdates,
+        update_sets::ValidatorSetUpdates,
     },
 };
 

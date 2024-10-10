@@ -9,8 +9,9 @@ use crate::{
     hotstuff::types::PhaseCertificate,
     types::{
         block::Block,
-        data_types::{AppStateUpdates, BlockHeight, CryptoHash, Data, DataLen, Datum},
-        validators::ValidatorSet,
+        data_types::{BlockHeight, CryptoHash, Data, DataLen, Datum},
+        update_sets::AppStateUpdates,
+        validator_set::ValidatorSet,
     },
 };
 
