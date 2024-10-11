@@ -7,8 +7,8 @@
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology,
 //! these processes are called 'replicas', and therefore the set of all replicas is called the
-//! 'replica set'. Each replica is uniquely identified by an
-//! [Ed25519 public key](ed25519_dalek::VerifyingKey).
+//! 'replica set'. Each replica is uniquely identified by an Ed25519
+//! [`VerifyingKey`](crate::types::crypto_primitives::VerifyingKey).
 //!
 //! They key components of this module are:
 //! - The builder-pattern interface to construct a [specification of the replica](ReplicaSpec) with:

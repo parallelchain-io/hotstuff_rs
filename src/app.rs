@@ -13,24 +13,42 @@
 //! 3. HotStuff-rs replicates the state machine.
 //!
 //! We refer to the state machine in this basic interaction as the **"application"**. In short, an
-//! application is a state machine that mutates two states: the **"App State"** and the **"Validator
-//! Set"** in response to a message called a **[`Block`]**. In other words, an application
-//! can be thought of as a function (a "state transition function") with the following type signature:
-//! ```(AppState, ValidatorSet, Block) -> (AppState, ValidatorSet)```.
+//! application is a state machine that mutates
+//! [two states](#two-app-mutable-states-app-state-and-validator-set), namely the *App State* and the
+//! *Validator Set*, in response to receiving a payload called a [`Block`]. In other words, an
+//! application can be thought of as a function (a "state transition function") with the following type
+//! signature: ```(AppState, ValidatorSet, Block) -> (AppState, ValidatorSet)```.
 //!
 //! To specify an application, the library user must implement the [`App`] trait. This entails
 //! implementing a state transition function and exposing this function to HotStuff-rs through three
-//! different methods: [`produce_block`](App::produce_block), [`validate_block`](App::validate_block),
-//! and [`validate_block_for_sync`](App::validate_block_for_sync).
+//! different [required methods](App#required-methods), namely `produce_block`, `validate_block`, and
+//! `validate_block_for_sync`.
 //!
-//! Each of the above three methods correspond to a different context in which HotStuff-rs will call the
+//! Each of the above three methods correspond to a distinct context in which HotStuff-rs will call the
 //! application's state transition function. For example, HotStuff-rs will call `produce_block` when the
-//! local replica is a leader and needs to produce a new block to propose it. The different contexts in
-//! which each function is called is documented in their respective Rustdocs.
+//! local replica is a leader and needs to produce a new block to propose it. The context in which each
+//! function is called is documented in their respective Rustdocs.
 //!
-//! # App State and Validator Set
+//! # Two app-mutable states: App State and Validator Set
 //!
-//! TODO.
+//! The two states that an application can mutate in response to a block are the App State, and the
+//! Validator Set. Both states are stored in the block tree, which itself is stored in the pluggable
+//! [`KVStore`](crate::state::kv_store) provided to HotStuff-rs by the library user.
+//!
+//! The **App State** is a set of key-value mappings, in which the keys and values are be arbitrary byte
+//! strings. The library user is completely free to decide the structure and contents of this mapping
+//! in whichever way supports their use-case. HotStuff-rs itself does not assume anything about the app
+//! state, nor does it insert anything into the app state when a replica is
+//! [`initialize`](crate::replica::Replica::initialize)d besides what the library user configures as the
+//! `initial_app_state`.
+//!
+//! For more information about the **Validator Set**, read the rustdocs in the
+//! [`validator_set`](crate::types::validator_set) module.
+//!
+//! `App` code tells HotStuff-rs to make changes to the app state and the validator set by listing the
+//! changes that should be made in an [`AppStateUpdates`] or [`ValidatorSetUpdates`] (respectively) and
+//! returning these changes from calls to its three methods.
+
 use crate::{
     state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
     types::{
@@ -42,7 +60,7 @@ use crate::{
 
 /// Trait implemented by applications that are to be replicated by HotStuff-rs.
 ///
-/// # Determinism
+/// # Determinism requirements
 ///
 /// In order for the state machine to be correctly replicated across all replicas, types that implement
 /// `App` must ensure that their implementations of `produce_block`, `validate_block`, and
@@ -56,8 +74,8 @@ use crate::{
 /// method bodies depend **on and only on** the information that is available through the public methods
 /// of their request type. In particular, this means not reading the block tree through a
 /// `BlockTreeSnapshot`, but reading it only through [`AppBlockTreeView`].
-///
-/// # Timing
+
+/// # Timing requirements
 ///
 /// HotStuff-rs calls `produce_block` when a replica has to produce a block, and calls `validate_block`
 /// when a replica has to validate a block.
@@ -78,7 +96,7 @@ use crate::{
 /// - `max_view_time`: the provided
 ///   [`Configuration::max_view_time`](crate::replica::Configuration::max_view_time).
 ///
-/// ## Reasoning behind timing constraint
+/// ## Rationale behind timing requirements
 ///
 /// Let's say a view begins at time T for the proposer of the view, and assume that:
 /// - Messages take `EWNL` to deliver between validators,
