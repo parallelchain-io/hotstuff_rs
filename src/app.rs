@@ -178,10 +178,7 @@ pub trait App<K: KVStore>: Send {
     ) -> ValidateBlockResponse;
 }
 
-/// Request for the app to produce a new block extending the parent block. Contains information about
-/// the current [view number](crate::types::basic::ViewNumber), the parent
-/// [block](crate::types::basic::CryptoHash) (if any), and the relevant
-/// [state of the Block Tree](crate::state::app_block_tree_view::AppBlockTreeView).
+/// Request for an `App` to produce a new block extending a specific `parent_block`.
 pub struct ProduceBlockRequest<'a, K: KVStore> {
     cur_view: ViewNumber,
     parent_block: Option<CryptoHash>,
@@ -189,6 +186,7 @@ pub struct ProduceBlockRequest<'a, K: KVStore> {
 }
 
 impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
+    /// Create a new `ProduceBlockRequest`.
     pub(crate) fn new(
         cur_view: ViewNumber,
         parent_block: Option<CryptoHash>,
@@ -201,25 +199,24 @@ impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
         }
     }
 
+    /// Get the current view of the replica.
     pub fn cur_view(&self) -> ViewNumber {
         self.cur_view
     }
 
+    /// Get the parent block of the block that this `produce_block` call should extend.
     pub fn parent_block(&self) -> Option<CryptoHash> {
         self.parent_block
     }
 
+    /// Get a current view of the block tree that this `produce_block` call can safely read from without
+    /// risking [non-determinism](Self#determinism-requirements).
     pub fn block_tree(&self) -> &AppBlockTreeView<'a, K> {
         &self.block_tree_view
     }
 }
 
-/// Response from the app upon receiving a [request to produce a new block](ProduceBlockRequest).
-/// Contains the new block's [data](crate::types::basic::Data), the
-/// [hash of the data](crate::types::basic::CryptoHash),
-/// the [app state updates](crate::types::basic::AppStateUpdates) associated with the block (if any),
-/// and the [validator set updates](crate::types::validators::ValidatorSetUpdates) associated with the
-/// block (if any).
+/// Response from an `App` to a [`ProduceBlockRequest`].
 pub struct ProduceBlockResponse {
     pub data_hash: CryptoHash,
     pub data: Data,
@@ -236,6 +233,7 @@ pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
 }
 
 impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
+    /// Create a new `ValidateBlockRequest`.
     pub(crate) fn new(proposed_block: &'a Block, block_tree_view: AppBlockTreeView<'b, K>) -> Self {
         Self {
             proposed_block,
@@ -243,10 +241,13 @@ impl<'a, 'b, K: KVStore> ValidateBlockRequest<'a, 'b, K> {
         }
     }
 
+    /// Get the block that this `validate_block` call should validate.
     pub fn proposed_block(&self) -> &Block {
         self.proposed_block
     }
 
+    /// Get a current view of the block tree that this `validate_block` call can safely read from without
+    /// risking [non-determinism](Self#determinism-requirements).
     pub fn block_tree(&self) -> &AppBlockTreeView<K> {
         &self.block_tree_view
     }
