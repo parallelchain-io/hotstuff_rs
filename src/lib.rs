@@ -105,11 +105,18 @@
 //!
 //! ## Organization
 //!
-//! Organized into **three** subprotocols... and common modules... the three subprotocols are:
-//! - **HotStuff**
-//! - **Pacemaker**
-//! - **Block Sync**
+//! HotStuff-rs' modules are organized into two levels depending on whether the definitions they contain
+//! are **subprotocol**-specific, or commonly used across multiple subprotocols.
 //!
+//! The three subprotocols of HotStuff-rs and their associated modules are:
+//! 1. **HotStuff** ([`hotstuff`]): the subprotocol for committing blocks.
+//! 2. **Pacemaker** ([`pacemaker`]): the subprotocol for bringing replicas into the same view so that they
+//!    can start committing blocks.
+//! 3. **Block Sync** ([`block_sync`]): the subprotocol for bringing replicas' block trees up-to-date after
+//!    periods of time in which they miss messages.
+//!
+//! Modules not listed above not subprotocol-specific.
+
 pub mod app;
 
 mod algorithm;
