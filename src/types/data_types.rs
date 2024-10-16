@@ -269,7 +269,7 @@ impl Power {
     }
 }
 
-/// Sum of the [`Power`]s of all validators in a [`ValidatorSet`](super::validators::ValidatorSet).
+/// Sum of the [`Power`]s of all validators in a [`ValidatorSet`](super::validator_set::ValidatorSet).
 ///
 /// The inner type that this newtype wraps around is `u128`, which is bigger than inner `u64` that
 /// `Power` wraps around. This is so that summing up large `Power`s do not cause `TotalPower`'s inner

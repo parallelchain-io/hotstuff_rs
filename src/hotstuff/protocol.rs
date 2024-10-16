@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of a participant in the HotStuff subprotocol.
+//! Implementation of a participant in the HotStuff subprotocol. Implements
+//! [`specification`](super::specification).
 
 use std::{sync::mpsc::Sender, time::SystemTime};
 
@@ -117,18 +118,14 @@ impl<N: Network> HotStuff<N> {
     /// messages and perform state updates associated with exiting the current view, and update the local
     /// view info.
     ///
-    /// ## Internal procedure
-    ///
-    /// This function executes the following steps:
-    /// 1. Send a [`NewView`] message for the current view to the leader of the next view.
-    /// 2. Update the internal view info, proposal status, and vote collectors to reflect `new_view_info`.
-    /// 3. Set `highest_view_entered` in the block tree to the new view, then emit a `StartView` event.
-    /// 4. If serving as a leader of the newly entered view, broadcast a `Proposal` or a `Nudge`.
-    ///
-    /// ## Precondition
+    /// # Precondition
     ///
     /// [`is_view_outdated`](Self::is_view_outdated) returns true. This is the case when the Pacemaker has updated
     /// `ViewInfo` but the update has not been made available to the [`HotStuff`] struct yet.
+    ///
+    /// # Specification
+    ///
+    /// [Enter View](super::specification#enter-view).
     pub(crate) fn enter_view<K: KVStore>(
         &mut self,
         new_view_info: ViewInfo,
@@ -334,9 +331,13 @@ impl<N: Network> HotStuff<N> {
 
     /// Process a newly received `proposal`.
     ///
-    /// ## Preconditions
+    /// # Preconditions
     ///
     /// [`is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`](is_proposer).
+    ///
+    /// # Specification
+    ///
+    /// [On Receive Proposal](super::specification#on-receive-proposal).
     fn on_receive_proposal<K: KVStore>(
         &mut self,
         proposal: Proposal,
@@ -462,6 +463,10 @@ impl<N: Network> HotStuff<N> {
     /// ## Preconditions
     ///
     /// [`is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`](is_proposer).
+    ///
+    /// # Specification
+    ///
+    /// [On Receive Nudge](super::specification#on-receive-nudge).
     fn on_receive_nudge<K: KVStore>(
         &mut self,
         nudge: Nudge,
@@ -561,7 +566,11 @@ impl<N: Network> HotStuff<N> {
         Ok(())
     }
 
-    /// Process a received `phased_vote`.
+    /// Process a received `phase_vote`.
+    ///
+    /// # Specification
+    ///
+    /// [On Receive Phase Vote](super::specification#on-receive-phase-vote).
     fn on_receive_phase_vote<K: KVStore>(
         &mut self,
         phase_vote: PhaseVote,
@@ -614,6 +623,10 @@ impl<N: Network> HotStuff<N> {
     }
 
     /// Process the received NewView.
+    ///
+    /// # Specification
+    ///
+    /// [On Receive New View](super::specification#on-receive-new-view).
     fn on_receive_new_view<K: KVStore>(
         &mut self,
         new_view: NewView,

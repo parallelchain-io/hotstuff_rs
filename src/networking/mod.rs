@@ -1,4 +1,4 @@
-//! HotStuff-rs' interface into pluggable peer-to-peer networking.
+//! Pluggable peer-to-peer (P2P) networking.
 
 pub mod network;
 

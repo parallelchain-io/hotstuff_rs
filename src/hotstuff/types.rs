@@ -23,11 +23,12 @@ use crate::{
     },
 };
 
-/// Proof that at least a quorum of validators have voted for a [`Proposal`](super::messages::Proposal)
-/// or [`Nudge`](super::messages::Nudge) with the included `chain_id`, `view`, `block`, and `phase`.
+/// Cryptographic proof that at least a quorum of validators have voted for a
+/// [`Proposal`](super::messages::Proposal) or [`Nudge`](super::messages::Nudge) with the included
+/// `chain_id`, `view`, `block`, and `phase`.
 ///
-/// Required for extending a block in the HotStuff subprotocol, and for optimistic advance to a new
-/// view in the [pacemaker][crate::pacemaker] protocol.
+/// Used to extend a block in the HotStuff subprotocol, and to optimistically advance to a new view in
+/// the [pacemaker](crate::pacemaker) subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct PhaseCertificate {
     pub chain_id: ChainID,
@@ -184,6 +185,12 @@ impl Certificate for PhaseCertificate {
 }
 
 impl PhaseCertificate {
+    /// Get the "Genesis Phase Certificate", the phase certificate that `Block`s of height 0 ("Genesis
+    /// Blocks") include as their `block.justify`.
+    ///
+    /// The fields of this `PhaseCertificate` all take the "default" values of their respective types.
+    /// For example, `genesis_pc.chain_id` is 0 regardless of the `ChainID` of the specific block tree, and
+    /// `genesis_pc.block` is `[0u8; 32]`.
     pub const fn genesis_pc() -> PhaseCertificate {
         PhaseCertificate {
             chain_id: ChainID::new(0),
@@ -194,32 +201,47 @@ impl PhaseCertificate {
         }
     }
 
+    /// Check whether this `PhaseCertificate` is the [`genesis_pc`](Self::genesis_pc).
     pub fn is_genesis_pc(&self) -> bool {
         *self == Self::genesis_pc()
     }
 
+    /// Check whether `self.phase` is a variant that is allowed for `PhaseCertificate`s that serve as
+    /// [`block.justify`](crate::types::block::Block::justify).
+    ///
+    /// Returns `true` if [`phase.is_generic()`](Phase::is_generic) or
+    /// [`phase.is_decide()`](Phase::is_decide). Returns `false` otherwise.
     pub fn is_block_justify(&self) -> bool {
         self.phase.is_generic() || self.phase.is_decide()
     }
 
+    /// Check whether `self.phase` is a veriant that is allowed for `PhaseCertificate`s that serve as
+    /// [`nudge.justify`](super::messages::Nudge::justify).
+    ///
+    /// Returns `true` if [`phase.is_prepare()`](Phase::is_prepare),
+    /// [`phase.is_precommit()`](Phase::is_precommit), or [`phase.is_commit()`](Phase::is_commit). Returns `false`
+    /// otherwise.
     pub fn is_nudge_justify(&self) -> bool {
         self.phase.is_prepare() || self.phase.is_precommit() || self.phase.is_commit()
     }
 }
 
-/// Voting phase in the hotstuff-rs consensus protocol.
+/// HotStuff subprotocol voting phases.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
-    // ↓↓↓ For pipelined flow ↓↓↓ //
+    /// Generic phase. The only voting phase in the pipelined mode.
     Generic,
 
-    // ↓↓↓ For phased flow ↓↓↓ //
+    /// Prepare phase. The **first** voting phase in the phased mode.  
     Prepare,
 
+    /// Precommit phase. The **second** voting phase in the phased mode.
     Precommit,
 
+    /// Commit phase. The **third** voting phase in the phased mode.
     Commit,
 
+    /// Decide phase. The **fourth** and final voting phase in the phased mode.
     Decide,
 }
 

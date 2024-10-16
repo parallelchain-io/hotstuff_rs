@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Notifications that are emitted when significant things happen in the local HotStuff-rs replica.
+//! Subscribable events that are published when significant things happen in the replica.
 //!
 //! ## Event enum
 //!

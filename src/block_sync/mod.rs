@@ -1,5 +1,4 @@
-//! Subprotocol that "catches-up" the local block tree in case the replica missed out on messages
-//! because of downtime or network disruption.
+//! Subprotocol that "catches-up" the local block tree in case the replica misses out on messages.
 
 pub mod messages;
 

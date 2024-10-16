@@ -2,8 +2,7 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-//! Defines the [`KVStore`] trait, which specifies the required interface for the key-value store provided
-//! by the user.
+//! Pluggable key-value storage.
 //!
 //! Given a method to obtain the value for a given key in bytes, this module also provides methods to
 //! obtain the variables stored in the key-value store, as described in [`crate::state::block_tree`].

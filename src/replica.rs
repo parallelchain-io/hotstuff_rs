@@ -47,7 +47,7 @@
 //! becoming a peer in the user-provided network.
 //! messages.
 //!
-//! ## Starting a replica
+//! # Starting a replica
 //!
 //! Below is an example that demonstrates how to build and start running a replica using the builder pattern:
 //!
@@ -65,7 +65,7 @@
 //!     .start()
 //! ```
 //!
-//! ### Required setters
+//! ## Required setters
 //!
 //! The required setters are for providing the trait implementations required to run a replica:
 //! - `.app(...)`
@@ -74,7 +74,7 @@
 //! - `.pacemaker(...)`
 //! - `.configuration(...)`
 //!
-//! ### Optional setters
+//! ## Optional setters
 //!
 //! The optional setters are for registering user-defined event handlers for events from [crate::events]:
 //! - `.on_insert_block(...)`

@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! HotStuff-rs' interface into the business logic of users' applications.
+//! Pluggable, replicable applications.
 //!
 //! # Applications
 //!
@@ -71,7 +71,7 @@ use crate::{
 /// raining outside, etc.
 ///
 /// The key to making sure that these methods are deterministic is ensuring that their respective
-/// method bodies depend **on and only on** the information that is available through the public methods
+/// method bodies depend on and **only on** the information that is available through the public methods
 /// of their request type. In particular, this means not reading the block tree through a
 /// `BlockTreeSnapshot`, but reading it only through [`AppBlockTreeView`].
 

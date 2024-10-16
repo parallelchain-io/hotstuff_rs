@@ -1,5 +1,4 @@
-//! Subprotocol that orchestrates validators in the same view to progress through multiple `Phase`s,
-//! eventually concluding in a `Block` being committed.
+//! Subprotocol for committing `Block`s.
 //!
 //! ## Operating modes
 //!
@@ -80,5 +79,7 @@ pub mod messages;
 pub mod types;
 
 pub(crate) mod protocol;
+
+pub(crate) mod specification;
 
 pub(crate) mod roles;
