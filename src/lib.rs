@@ -66,9 +66,7 @@
 //!
 //! The Pacemaker subprotocol works to keep track of an increasing counter called the "view number",
 //! which is a sort of logical clock that the algorithm thread uses to decide the replica should do at
-//! any moment in time.
-//!
-//! At any given view, a replica could either be a
+//! any moment in time. At any given view, a replica could either be a
 //! [validator, or a listener](replica#kinds-of-replicas). Suppose that it is a validator. Then, it
 //! needs to play a [role](hotstuff::roles) in the HotStuff subpprotocol.
 //!
@@ -103,7 +101,7 @@
 //! As all of this is happening, the algorithm constantly emits [`events`], which user code can receive
 //! as they occur by registering event handlers.
 //!
-//! ## Organization
+//! ## Module organization
 //!
 //! HotStuff-rs' modules are organized into two levels depending on whether the definitions they contain
 //! are **subprotocol**-specific, or commonly used across multiple subprotocols.

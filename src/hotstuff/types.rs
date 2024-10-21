@@ -229,7 +229,7 @@ impl PhaseCertificate {
 /// HotStuff subprotocol voting phases.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize, Debug)]
 pub enum Phase {
-    /// Generic phase. The only voting phase in the pipelined mode.
+    /// Generic phase. The only voting phase in the [pipelined mode](super#dual-operating-modes).
     Generic,
 
     /// Prepare phase. The **first** voting phase in the phased mode.  

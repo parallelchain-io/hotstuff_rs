@@ -122,11 +122,16 @@ impl ChildrenList {
     }
 }
 
-/// SHA256 cryptographic hash.
+/// 32-byte cryptographic hash.
 ///
-/// Strictly speaking, this hash could be the SHA256 hash of any kind of message, but within HotStuff-rs
-/// these are used exclusively to identify [`Block`](crate::types::block::Block)s and are produced using
-/// [`Block::hash`](crate::types::block::Block::hash).
+/// # Choice of cryptographic hash function
+///
+/// The type signature of this type allows instances of `CryptoHash` to be produced by any cryptographic
+/// hash function with a 32-byte output. However, within HotStuff-rs, `CryptoHash`-es are only encountered
+/// in two contexts, both of them inside blocks:
+/// 1. [`data_hash`](super::block::Block::data_hash): this `CryptoHash` can be any 32-byte cryptographic
+///    hash.
+/// 2. [`hash`](super::block::Block#structfield.hash): this `CryptoHash` is always a SHA256 hash.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, BorshDeserialize, BorshSerialize)]
 pub struct CryptoHash([u8; 32]);
 

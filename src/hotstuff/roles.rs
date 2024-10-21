@@ -53,6 +53,34 @@ pub(crate) fn is_validator(
                 .contains(replica))
 }
 
+/// Determine whether `validator` should act as a proposer in the given `view`, given the current
+/// `validator_set_state`.
+///
+/// ## `is_proposer` Logic
+///
+/// Whether or not `validator` is a proposer in `view` depends on two factors:
+/// 1. Whether or not  `validator` is the [leader](select_leader) in either the CVS or the PVS in
+///    `view` (it could possibly be in both), and
+/// 2. Whether or not `validator_set_update.update_decided`.
+///
+/// The below table specifies exactly the return value of `is_proposer` in every possible combination
+/// of the two factors:
+///
+/// ||Validator Set Update Decided|Validator Set Update Not Decided|
+/// |---|---|---|
+/// |Leader in CVS (and maybe also PVS)|`true`|`true`|
+/// |Leader in PVS only|`false`|`true`|
+/// |Leader in neither CVS or PVS|`false`|`false`|
+pub(crate) fn is_proposer(
+    validator: &VerifyingKey,
+    view: ViewNumber,
+    validator_set_state: &ValidatorSetState,
+) -> bool {
+    validator == &select_leader(view, validator_set_state.committed_validator_set())
+        || (!validator_set_state.update_decided()
+            && validator == &select_leader(view, validator_set_state.previous_validator_set()))
+}
+
 /// Determine whether or not `replica` should phase-vote for the `Proposal` or `Nudge` that `justify`
 /// was taken from. This depends on whether `replica`'s `PhaseVote`s can become part of quorum
 /// certificates that directly extend `justify`.
@@ -104,34 +132,6 @@ pub(crate) fn is_phase_voter(
                 .contains(&replica),
         }
     }
-}
-
-/// Determine whether `validator` should act as a proposer in the given `view`, given the current
-/// `validator_set_state`.
-///
-/// ## `is_proposer` Logic
-///
-/// Whether or not `validator` is a proposer in `view` depends on two factors:
-/// 1. Whether or not  `validator` is the [leader](select_leader) in either the CVS or the PVS in
-///    `view` (it could possibly be in both), and
-/// 2. Whether or not `validator_set_update.update_decided`.
-///
-/// The below table specifies exactly the return value of `is_proposer` in every possible combination
-/// of the two factors:
-///
-/// ||Validator Set Update Decided|Validator Set Update Not Decided|
-/// |---|---|---|
-/// |Leader in CVS (and maybe also PVS)|`true`|`true`|
-/// |Leader in PVS only|`false`|`true`|
-/// |Leader in neither CVS or PVS|`false`|`false`|
-pub(crate) fn is_proposer(
-    validator: &VerifyingKey,
-    view: ViewNumber,
-    validator_set_state: &ValidatorSetState,
-) -> bool {
-    validator == &select_leader(view, validator_set_state.committed_validator_set())
-        || (!validator_set_state.update_decided()
-            && validator == &select_leader(view, validator_set_state.previous_validator_set()))
 }
 
 /// Identify the leader that `phase_vote` should be sent to, given the current `validator_set_state`.

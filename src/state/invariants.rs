@@ -218,9 +218,9 @@
 //! As is the case with Locking, Committing in HotStuff-rs follows the same basic logic as committing in
 //! PODC '19 HotStuff, but with a small and nuanced difference. The following two subsections discuss, in
 //! turn:
-//! 1. Under what conditions will a block become committed, one of the conditions being a "consecutive
-//!    views requirement" that is more relaxed than the "same views requirement" used in Algorithm 1 of
-//!    PODC '19 HotStuff.
+//! 1. The conditions in which a block becomes committed, one of the conditions being a "consecutive views
+//!    requirement" that is more relaxed than the "same views requirement" used in Algorithm 1 of PODC '19
+//!    HotStuff.
 //! 2. How the algorithm requires that replicas *re-propose* existing blocks in certain conditions in order
 //!    to satisfy the consecutive views requirement while still achieving Immediacy.
 //!

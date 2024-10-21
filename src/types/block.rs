@@ -21,6 +21,10 @@ use crate::{
 
 use super::signed_messages::Certificate;
 
+/// Cryptographically hashed, `justify`-linked payload that mutates the
+/// [app state and validator set](crate::app#two-app-mutable-states-app-state-and-validator-set) when
+/// committed.
+///
 /// # Permissible variants of `justify.phase`s
 ///
 /// `block.justify.phase` must be `Generic` or `Decide`. This invariant is enforced in two places:
@@ -30,13 +34,22 @@ use super::signed_messages::Certificate;
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
     pub height: BlockHeight,
+
+    /// Library-computed cryptographic hash over `(height, justify, data_hash)`.
     pub hash: CryptoHash,
+
+    /// `PhaseCertificate` linking this block with its parent block.
     pub justify: PhaseCertificate,
+
+    /// `App`-provided cryptographic hash over `data`.
     pub data_hash: CryptoHash,
     pub data: Data,
 }
 
 impl Block {
+    /// Create a new block with the specified `height`, `justify`, `data_hash`, and `data`, computing
+    /// [`hash`](Self::hash) automatically.
+    ///
     /// # Panics
     ///
     /// `justify.phase` must be `Generic` or `Decide`. This function panics otherwise.

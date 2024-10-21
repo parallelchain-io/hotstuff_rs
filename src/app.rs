@@ -218,9 +218,16 @@ impl<'a, K: KVStore> ProduceBlockRequest<'a, K> {
 
 /// Response from an `App` to a [`ProduceBlockRequest`].
 pub struct ProduceBlockResponse {
+    /// The `data_hash` field of the produced block.
     pub data_hash: CryptoHash,
+
+    /// The `data` field of the produced block.
     pub data: Data,
+
+    /// The `AppStateUpdates` that the produced block will cause when it is committed.
     pub app_state_updates: Option<AppStateUpdates>,
+
+    /// The `ValidatorSetUpdates` that the produced block will cause when it is committed.
     pub validator_set_updates: Option<ValidatorSetUpdates>,
 }
 
@@ -264,7 +271,8 @@ pub enum ValidateBlockResponse {
         validator_set_updates: Option<ValidatorSetUpdates>,
     },
 
-    /// Indicates that [`ValidateBlockRequest::proposed_block`] is invalid according the the `App`'s
-    /// semantics.
+    /// Indicates either that [`ValidateBlockRequest::proposed_block`] is invalid according to the
+    /// `App`'s semantics, or that the execution of `validate_block` for the proposed block will exceed the
+    /// [timing requirements](App#timing-requirements).
     Invalid,
 }

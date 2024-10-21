@@ -3,8 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of a participant in the HotStuff subprotocol. Implements
-//! [`specification`](super::specification).
+//! Event-driven implementation of the HotStuff subprotocol, as specified in
+//! [`sequence_flow`](super::sequence_flow).
 
 use std::{sync::mpsc::Sender, time::SystemTime};
 
@@ -460,7 +460,7 @@ impl<N: Network> HotStuff<N> {
 
     /// Process the received nudge.
     ///
-    /// ## Preconditions
+    /// # Preconditions
     ///
     /// [`is_proposer(origin, self.view_info.view, &block_tree.validator_set_state()?)`](is_proposer).
     ///

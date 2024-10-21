@@ -21,7 +21,7 @@ use crate::{
 
 use super::types::{Phase, PhaseCertificate};
 
-/// Messages that are sent between replicas as part of the HotStuff subprotocol.
+/// Every kind of message sent between replicas as part of the HotStuff subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum HotStuffMessage {
     /// See [`Proposal`].
@@ -109,12 +109,18 @@ impl Into<ProgressMessage> for HotStuffMessage {
     }
 }
 
-/// Message broadcasted by a leader in `view`, who proposes it to extend the block tree identified by
-/// `chain_id` by inserting `block`.
+/// Message broadcasted by a leader in `view` to propose to other validators that the block tree
+/// identified by `chain_id` be extended by inserting `block`.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Proposal {
+    /// `ChainID` of the block tree that this `Proposal` should extend.
     pub chain_id: ChainID,
+
+    /// Current `ViewNumber` of the [proposer](super::roles::is_proposer) that created this
+    /// `Proposal`.
     pub view: ViewNumber,
+
+    /// A `Block` extending the chain identified by `chain_id`.
     pub block: Block,
 }
 
@@ -131,8 +137,15 @@ pub struct Proposal {
 ///    [`safe_nudge`](crate::state::invariants::safe_nudge) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
+    /// `ChainID` of the block tree that `justify.block` is part of.
     pub chain_id: ChainID,
+
+    /// Current `ViewNumber` of the [proposer](super::roles::is_proposer) that created this
+    /// `Nudge`.
     pub view: ViewNumber,
+
+    /// [`PhaseVote`]s for this `Nudge` should be for the `Phase` immediately after `justify.phase`. E.g.,
+    /// if `justify.phase == Precommit`, then `phase_vote.phase` should be `Commit`.
     pub justify: PhaseCertificate,
 }
 
@@ -155,21 +168,30 @@ impl Nudge {
     }
 }
 
-/// Message sent by a validator to [a leader of `view + 1`](super::roles::phase_vote_recipient) to vote
-/// for a [`Proposal`] or [`Nudge`].
+/// Message sent by a validator to [a leader of `view + 1`](super::roles::phase_vote_recipient) to
+/// indicate that the validator agrees to a specific [`Proposal`] or [`Nudge`].
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct PhaseVote {
+    /// `chain_id` field of the `Proposal` or `Nudge` associated with this `PhaseVote`.
     pub chain_id: ChainID,
+
+    /// `view` field of the `Proposal` or `Nudge` associated with this `PhaseVote`.
     pub view: ViewNumber,
+
+    /// `block` field of the `Proposal` or `Nudge` associated with this `PhaseVote`.
     pub block: CryptoHash,
+
+    /// `phase` field of the `Proposal` or `Nudge` associated with this `PhaseVote`.
     pub phase: Phase,
+
+    /// Digital signature formed using
     pub signature: SignatureBytes,
 }
 
 impl PhaseVote {
     /// Create a `PhaseVote` for the given `chain_id`, `view`, `block`, and `phase` by signing over the values
     /// with the provided `keypair`.
-    pub fn new(
+    pub(crate) fn new(
         keypair: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
@@ -211,23 +233,28 @@ impl Vote for PhaseVote {
     }
 }
 
-/// Message sent by a replica to the next leader on view timeout to update the next leader about the
-/// `highest_pc` that the replica knows of.
+/// Message sent by a replica to [the leaders of the next view](super::roles::new_view_recipients) on
+/// view timeout to make them aware of the replica's `highest_pc`.
 ///
-/// ## `NewView` and view synchronization
+/// # `NewView` and view synchronization
 ///
 /// In the original HotStuff protocol, the leader of the next view keeps track of the number of
 /// `NewView` messages collected in the current view with the aim of advancing to the next view once a
-/// quorum of `NewView` messages are seen. This behavior can be thought of as implementing a rudimentary
-/// view synchronization mechanism, which is helpful in the original HotStuff protocol because it did
-/// not come with a "fully-featured" BFT view synchronization mechanism.
+/// quorum of `NewView` messages are seen. This behavior implements a rudimentary view synchronization
+/// mechanism, which is helpful in the original HotStuff protocol because it did not come with a
+/// "fully-featured" BFT view synchronization mechanism.
 ///
 /// HotStuff-rs, on the other hand, *does* include a separate BFT view synchronization mechanism (in the
-/// form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem replicating this behavior
-/// unnecessary.
+/// form of the [Pacemaker](crate::pacemaker) module). Therefore, we deem this behavior unnecessary and
+/// do not implement it.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct NewView {
+    /// `ChainID` of the block tree that `highest_pc.block` is part of.
     pub chain_id: ChainID,
+
+    /// The `view` that the replica sending this `NewView` is exiting.
     pub view: ViewNumber,
+
+    /// The sending replica's `highest_pc`.
     pub highest_pc: PhaseCertificate,
 }

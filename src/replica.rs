@@ -28,7 +28,8 @@
 //!  merely replicates the block tree.
 //!
 //! As the definition above implies, the **Validator Set** is dynamic, and will change as
-//! [**validator set-updating**](crate::app::ValidateBlockResponse) blocks are produced and committed.
+//! [**validator set-updating**](crate::app#two-app-mutable-states-app-state-and-validator-set) blocks
+//! are produced and committed.
 //!
 //! ## Becoming a Listener
 //!
@@ -127,7 +128,7 @@ use crate::{
     },
     event_bus::*,
     events::*,
-    hotstuff::protocol::HotStuffConfiguration,
+    hotstuff::implementation::HotStuffConfiguration,
     networking::{network::Network, receiving::start_polling},
     pacemaker::protocol::PacemakerConfiguration,
     state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},

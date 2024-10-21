@@ -20,7 +20,7 @@ use crate::{
         messages::BlockSyncResponse,
     },
     events::*,
-    hotstuff::protocol::{HotStuff, HotStuffConfiguration},
+    hotstuff::implementation::{HotStuff, HotStuffConfiguration},
     networking::{
         messages::ProgressMessage,
         network::{Network, ValidatorSetUpdateHandle},

@@ -1,5 +1,5 @@
-//! Specification of a participant in the HotStuff subprotocol. Implemented in
-//! [`protocol`](super::protocol).
+//! Specification of the sequence flow of the event-driven [`implementation`](super::implementation)
+//! of the HotStuff subprotocol.
 //!
 //! # Enter View
 //!
