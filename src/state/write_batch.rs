@@ -9,19 +9,22 @@ pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
 use borsh::BorshSerialize;
 use paths::*;
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{
-    AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber,
-};
-use crate::types::block::Block;
-use crate::types::validators::{
-    ValidatorSet, ValidatorSetBytes, ValidatorSetUpdates, ValidatorSetUpdatesStatusBytes,
+use crate::{
+    hotstuff::types::PhaseCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        block::Block,
+        data_types::{BlockHeight, ChildrenList, CryptoHash, DataLen, ViewNumber},
+        update_sets::{AppStateUpdates, ValidatorSetUpdates},
+        validator_set::{ValidatorSet, ValidatorSetBytes, ValidatorSetUpdatesStatusBytes},
+    },
 };
 
-use super::block_tree::BlockTreeError;
-use super::kv_store::Key;
-use super::paths::{self, combine};
+use super::{
+    block_tree::BlockTreeError,
+    kv_store::Key,
+    paths::{self, combine},
+};
 
 pub trait WriteBatch {
     fn new() -> Self;
@@ -207,7 +210,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
             self.set_committed_app_state(key, value);
         }
 
-        for key in app_state_updates.deletions() {
+        for key in app_state_updates.deletes() {
             self.delete_committed_app_state(key);
         }
     }
@@ -282,14 +285,14 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Locked QC ↓↓↓ */
+    /* ↓↓↓ Locked PC ↓↓↓ */
 
-    pub fn set_locked_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
+    pub fn set_locked_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::LOCKED_QC,
-            &qc.try_to_vec()
+            &paths::LOCKED_PC,
+            &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
-                    key: Key::LockedQC,
+                    key: Key::LockedPC,
                     source: err,
                 })?,
         ))
@@ -309,12 +312,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+    /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
 
-    pub fn set_highest_qc(&mut self, qc: &QuorumCertificate) -> Result<(), BlockTreeError> {
+    pub fn set_highest_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::HIGHEST_QC,
-            &qc.try_to_vec()
+            &paths::HIGHEST_PC,
+            &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
                     key: Key::HighestTC,
                     source: err,
@@ -416,15 +419,15 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         ))
     }
 
-    /* ↓↓↓ Highest View Voted ↓↓↓ */
+    /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
 
-    pub fn set_highest_view_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+    pub fn set_highest_view_phase_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &paths::HIGHEST_VIEW_VOTED,
+            &paths::HIGHEST_VIEW_PHASE_VOTED,
             &view
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
-                    key: Key::HighestViewVoted,
+                    key: Key::HighestViewPhaseVoted,
                     source: err,
                 })?,
         ))

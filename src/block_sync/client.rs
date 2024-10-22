@@ -18,13 +18,13 @@
 //! ## Triggering Block Sync
 //!
 //! HotStuff-rs replicas implement two complementary and configurable block sync trigger mechanisms:
-//! 1. Event-based sync trigger: on receiving an [`AdvertiseQC`] message with a correct QC from the
-//!    future. By how many views the received QC must be ahead of the current view to trigger sync can
+//! 1. Event-based sync trigger: on receiving an [`AdvertisePC`] message with a correct PC from the
+//!    future. By how many views the received PC must be ahead of the current view to trigger sync can
 //!    be configured by setting `block_sync_trigger_min_view_difference` in the replica
 //!    [configuration](crate::replica::Configuration).
 //! 2. Timeout-based sync trigger: when no "progress" is made for a sufficiently long time. Here
-//!    "progress" is understood as updating the highestQC stored in the [block tree](BlockTree) - in the
-//!    context of the HotStuff SMR, updating the highestQC means that the validators are achieving
+//!    "progress" is understood as updating the Highest PC stored in the [block tree](BlockTree) - in the
+//!    context of the HotStuff SMR, updating the Highest PC means that the validators are achieving
 //!    consensus and extending the blockchain. The amount of time without progress or sync attempts
 //!    required to trigger sync can be configured by setting `block_sync_trigger_timeout` in the replica
 //!    configuration.
@@ -67,34 +67,38 @@
 //! hashmap of available sync servers, and a queue of blacklisted sync servers together with their
 //! expiry times.
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant, SystemTime};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::mpsc::Sender,
+    time::{Duration, Instant, SystemTime},
+};
 
 use ed25519_dalek::VerifyingKey;
 use rand::seq::IteratorRandom;
 
-use crate::app::{App, ValidateBlockRequest, ValidateBlockResponse};
-use crate::block_sync::messages::{
-    AdvertiseBlock, AdvertiseQC, BlockSyncAdvertiseMessage, BlockSyncRequest,
-};
-use crate::events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent};
-use crate::messages::SignedMessage;
-use crate::networking::{
-    BlockSyncClientStub, BlockSyncResponseReceiveError, Network, SenderHandle,
-    ValidatorSetUpdateHandle,
-};
-use crate::state::{
-    block_tree::{BlockTree, BlockTreeError},
-    kv_store::KVStore,
-    safety::{safe_block, safe_qc},
-};
-use crate::types::basic::ViewNumber;
-use crate::types::{
-    basic::{BlockHeight, ChainID},
-    block::Block,
-    collectors::Certificate,
-    validators::{ValidatorSetUpdates, ValidatorSetUpdatesStatus},
+use crate::{
+    app::{App, ValidateBlockRequest, ValidateBlockResponse},
+    block_sync::messages::{
+        AdvertiseBlock, AdvertisePC, BlockSyncAdvertiseMessage, BlockSyncRequest,
+    },
+    events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent},
+    networking::{
+        network::{Network, ValidatorSetUpdateHandle},
+        receiving::{BlockSyncClientStub, BlockSyncResponseReceiveError},
+        sending::SenderHandle,
+    },
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        invariants::{safe_block, safe_pc},
+        kv_store::KVStore,
+    },
+    types::{
+        block::Block,
+        data_types::{BlockHeight, ChainID, ViewNumber},
+        signed_messages::{Certificate, SignedMessage},
+        update_sets::ValidatorSetUpdates,
+        validator_set::ValidatorSetUpdatesStatus,
+    },
 };
 
 pub(crate) struct BlockSyncClient<N: Network> {
@@ -137,8 +141,8 @@ impl<N: Network> BlockSyncClient<N> {
             BlockSyncAdvertiseMessage::AdvertiseBlock(advertise_block) => {
                 self.on_receive_advertise_block(advertise_block, origin, block_tree)
             }
-            BlockSyncAdvertiseMessage::AdvertiseQC(advertise_qc) => {
-                self.on_receive_advertise_qc(advertise_qc, origin, block_tree, app)
+            BlockSyncAdvertiseMessage::AdvertisePC(advertise_pc) => {
+                self.on_receive_advertise_pc(advertise_pc, origin, block_tree, app)
             }
         }
     }
@@ -155,10 +159,10 @@ impl<N: Network> BlockSyncClient<N> {
         self.block_sync_client_state
             .remove_expired_blacklisted_servers();
 
-        // 2. Update highest_qc_view if needed.
-        let highest_qc_view = block_tree.highest_qc()?.view;
-        if highest_qc_view > self.block_sync_client_state.highest_qc_view {
-            self.block_sync_client_state.highest_qc_view = highest_qc_view;
+        // 2. Update highest_pc_view if needed.
+        let highest_pc_view = block_tree.highest_pc()?.view;
+        if highest_pc_view > self.block_sync_client_state.highest_pc_view {
+            self.block_sync_client_state.highest_pc_view = highest_pc_view;
             self.block_sync_client_state.last_progress_or_sync_time = Instant::now();
         }
 
@@ -209,11 +213,11 @@ impl<N: Network> BlockSyncClient<N> {
         Ok(())
     }
 
-    /// Process an [`AdvertiseQC`] message. This can lead to triggering sync if the criteria for event-based
+    /// Process an [`AdvertisePC`] message. This can lead to triggering sync if the criteria for event-based
     /// sync trigger are met.
-    fn on_receive_advertise_qc<K: KVStore>(
+    fn on_receive_advertise_pc<K: KVStore>(
         &mut self,
-        advertise_qc: AdvertiseQC,
+        advertise_pc: AdvertisePC,
         origin: &VerifyingKey,
         block_tree: &mut BlockTree<K>,
         app: &mut impl App<K>,
@@ -228,17 +232,17 @@ impl<N: Network> BlockSyncClient<N> {
             return Ok(());
         }
 
-        // If the advertised QC has smaller view number than the highest view entered,
+        // If the advertised PC has smaller view number than the highest view entered,
         // then it cannot trigger sync.
-        if advertise_qc.highest_qc.view < highest_view_entered {
+        if advertise_pc.highest_pc.view < highest_view_entered {
             return Ok(());
         }
 
-        // If the received QC is correct *and* the difference between its view and the highest view
+        // If the received PC is correct *and* the difference between its view and the highest view
         // entered is sufficiently big, then trigger sync.
-        let view_difference = (advertise_qc.highest_qc.view - highest_view_entered) as u64;
+        let view_difference = (advertise_pc.highest_pc.view - highest_view_entered) as u64;
         if view_difference >= self.config.block_sync_trigger_min_view_difference
-            && advertise_qc.highest_qc.is_correct(block_tree)?
+            && advertise_pc.highest_pc.is_correct(block_tree)?
         {
             self.sync(block_tree, app)?;
             self.block_sync_client_state.last_progress_or_sync_time = Instant::now();
@@ -359,7 +363,7 @@ impl<N: Network> BlockSyncClient<N> {
                             return Ok(());
                         }
 
-                        let parent_block = if block.justify.is_genesis_qc() {
+                        let parent_block = if block.justify.is_genesis_pc() {
                             None
                         } else {
                             Some(&block.justify.block)
@@ -385,7 +389,7 @@ impl<N: Network> BlockSyncClient<N> {
                             })
                             .publish(&self.event_publisher);
 
-                            // 2. Trigger block tree updates: update highestQC, lock, commit.
+                            // 2. Trigger block tree updates: update highest PC, lock, commit.
                             let committed_validator_set_updates =
                                 block_tree.update(&block.justify, &self.event_publisher)?;
 
@@ -410,10 +414,10 @@ impl<N: Network> BlockSyncClient<N> {
                             return Ok(());
                         }
 
-                        if response.highest_qc.is_correct(block_tree)?
-                            && safe_qc(&response.highest_qc, block_tree, self.config.chain_id)?
+                        if response.highest_pc.is_correct(block_tree)?
+                            && safe_pc(&response.highest_pc, block_tree, self.config.chain_id)?
                         {
-                            block_tree.update(&response.highest_qc, &self.event_publisher)?;
+                            block_tree.update(&response.highest_pc, &self.event_publisher)?;
                         }
                     }
                 }
@@ -462,11 +466,11 @@ pub(crate) struct BlockSyncClientConfiguration {
     /// Time after which a blacklisted sync server should be removed from the block sync blacklist.
     pub(crate) blacklist_expiry_time: Duration,
 
-    /// By how many views a QC received via [`AdvertiseQC`] must be ahead of the current view in order to
+    /// By how many views a PC received via [`AdvertisePC`] must be ahead of the current view in order to
     /// trigger sync (via the event-based sync trigger).
     pub(crate) block_sync_trigger_min_view_difference: u64,
 
-    /// How much time needs to pass without any progress (i.e., updating the highest QC) or sync attempts in
+    /// How much time needs to pass without any progress (i.e., updating the highest PC) or sync attempts in
     /// order to trigger sync (via the timeout-based sync trigger).
     pub(crate) block_sync_trigger_timeout: Duration,
 }
@@ -482,12 +486,12 @@ struct BlockSyncClientState {
     blacklist: VecDeque<(VerifyingKey, Instant)>,
 
     /// The most recent instant in time when either:
-    /// 1. Progress was made (the highest QC was updated).
+    /// 1. Progress was made (the highest PC was updated).
     /// 2. The block sync procedure was completed (not necessarily successfully).
     last_progress_or_sync_time: Instant,
 
-    /// Cached value of `block_tree.highest_qc().view`.
-    highest_qc_view: ViewNumber,
+    /// Cached value of `block_tree.highest_pc().view`.
+    highest_pc_view: ViewNumber,
 }
 
 impl BlockSyncClientState {
@@ -497,7 +501,7 @@ impl BlockSyncClientState {
             available_sync_servers: HashMap::new(),
             blacklist: VecDeque::new(),
             last_progress_or_sync_time: Instant::now(),
-            highest_qc_view: ViewNumber::new(0),
+            highest_pc_view: ViewNumber::new(0),
         }
     }
 
@@ -588,9 +592,11 @@ impl From<BlockTreeError> for BlockSyncClientError {
 }
 
 /// Returns whether a given [verifying key](VerifyingKey) is recognised as a valid sync server address.
+///
 /// A replica is allowed to act as a sync server if either:
 /// 1. It is a member of the current committed validator set, or
 /// 2. One of the current speculative blocks proposes to add the replica to the validator set.
+///
 /// Recognising only committed and candidate validators as potential sync servers is an effective,
 /// though rather conservative solution to the problem of sybil attacks.
 fn is_sync_server_address<K: KVStore>(
@@ -620,8 +626,9 @@ fn is_sync_server_address<K: KVStore>(
                         ValidatorSetUpdates::new()
                     }
                 });
+
             Ok(speculative_vs_updates
-                .find(|vs_updates| vs_updates.inserts.contains_key(verifying_key))
+                .find(|vs_updates| vs_updates.get_insert(verifying_key).is_some())
                 .is_some())
         }
         None => Ok(false),

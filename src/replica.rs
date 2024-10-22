@@ -3,40 +3,54 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Methods to build, run, and initialize the storage of a replica.
+//! Methods for building and running a replica as well as initializing its storage.
 //!
 //! HotStuff-rs works to safely replicate a state machine in multiple processes. In our terminology,
 //! these processes are called 'replicas', and therefore the set of all replicas is called the
-//! 'replica set'. Each replica is uniquely identified by an
-//! [Ed25519 public key](ed25519_dalek::VerifyingKey).
+//! 'replica set'. Each replica is uniquely identified by an Ed25519
+//! [`VerifyingKey`](crate::types::crypto_primitives::VerifyingKey).
 //!
 //! They key components of this module are:
 //! - The builder-pattern interface to construct a [specification of the replica](ReplicaSpec) with:
 //!   1. `ReplicaSpec::builder` to construct a `ReplicaSpecBuilder`,
 //!   2. The setters of the `ReplicaSpecBuilder`, and
 //!   3. The `ReplicaSpecBuilder::build` method to construct a [`ReplicaSpec`],
-//! - The function to [start](ReplicaSpec::start) a [Replica] given its specification,
-//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::BlockTree),
+//! - The function to [start](ReplicaSpec::start) a [`Replica`] given its specification,
+//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::block_tree),
 //! - [The type](Replica) which keeps the replica alive.
 //!
-//! ## Validators and Listeners
+//! # Kinds of replicas
 //!
-//! Not every replica has to vote in consensus. Some operators may want to run replicas that merely
-//! keep up with consensus decisions, without having weight in them. We call these replicas 'listeners',
-//! and call the replicas that vote in consensus 'validators'.
+//! At any given moment a Replica could either be a Validator, or a Listener, depending on whether it
+//! is currently allowed to take part in consensus decisions:
+//! - **Validators**: replicas that currently take part in consensus decisions.
+//! - **Listeners**: replicas that currently do not take part in consensus decisions, but rather
+//!  merely replicates the block tree.
 //!
-//! HotStuff-rs needs to know the full 'validator set' at all times to collect votes, but does not need
-//! to know the identity of listeners. But for listeners to keep up with consensus decisions, they also
-//! need to receive progress messages.
+//! As the definition above implies, the **Validator Set** is dynamic, and will change as
+//! [**validator set-updating**](crate::app#two-app-mutable-states-app-state-and-validator-set) blocks
+//! are produced and committed.
 //!
-//! Concretely, this requires that the library user's [networking provider's](crate::networking)
-//! broadcast method send progress messages to all peers it is connected to, and not only the
-//! validators. The library user is free to design and implement their own mechanism for deciding which
-//! peers, besides those in the validator set, should be connected to the network.
+//! ## Becoming a Listener
 //!
-//! ## Starting a replica
+//! While HotStuff-rs keeps track of the current committed (and possibly the previous) validator set in
+//! the persistent block tree, it does not keep track of a "Listener Set" anywhere, and nor can the
+//! `App` ever specify "Listener Set Updates".
 //!
-//! Here is an example that demonstrates how to build and start running a replica using the builder pattern:
+//! This begs the question: "if HotStuff-rs does not know who the listeners are, how can the listeners
+//! receive blocks and replicate the block tree?"
+//!
+//! In order for listeners to replicate the block tree, the library user should make sure that the
+//! `broadcast` method of the [networking implementation](crate::networking) it provides sends messages to
+//! **all** the peers the replica is connected to, and not only the validators. The library user is free
+//! to implement their own mechanism or deciding which peers, besides those in the validator set, should
+//! be connected to the network. This reduces the process of becoming a listener to the process of
+//! becoming a peer in the user-provided network.
+//! messages.
+//!
+//! # Starting a replica
+//!
+//! Below is an example that demonstrates how to build and start running a replica using the builder pattern:
 //!
 //! ```ignore
 //! let replica =
@@ -52,7 +66,7 @@
 //!     .start()
 //! ```
 //!
-//! ### Required setters
+//! ## Required setters
 //!
 //! The required setters are for providing the trait implementations required to run a replica:
 //! - `.app(...)`
@@ -61,26 +75,26 @@
 //! - `.pacemaker(...)`
 //! - `.configuration(...)`
 //!
-//! ### Optional setters
+//! ## Optional setters
 //!
 //! The optional setters are for registering user-defined event handlers for events from [crate::events]:
 //! - `.on_insert_block(...)`
 //! - `.on_commit_block(...)`
 //! - `.on_prune_block(...)`
-//! - `.on_update_highest_qc(...)`
+//! - `.on_update_highest_pc(...)`
 //! - `.on_update_locked_view(...)`
 //! - `.on_update_validator_set(...)`
 //! - `.on_propose(...)`
 //! - `.on_nudge(...)`
-//! - `.on_vote(...)`
+//! - `.on_phase_vote(...)`
 //! - `.on_new_view(...)`
 //! - `.on_receive_proposal(...)`
 //! - `.on_receive_nudge(...)`
-//! - `.on_receive_vote(...)`
+//! - `.on_receive_phase_vote(...)`
 //! - `.on_receive_new_view(...)`
 //! - `.on_start_view(...)`
 //! - `.on_view_timeout(...)]`
-//! - `.on_collect_qc(...)`
+//! - `.on_collect_pc(...)`
 //! - `.on_start_sync(...)`
 //! - `.on_end_sync(...)`
 //! - `.on_receive_sync_request(...)`
@@ -100,36 +114,36 @@
 //!     .build()
 //! ```
 
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::{thread::JoinHandle, time::Duration};
 
 use ed25519_dalek::SigningKey;
 use typed_builder::TypedBuilder;
 
-use crate::algorithm::Algorithm;
-use crate::app::App;
-use crate::block_sync::client::BlockSyncClientConfiguration;
-use crate::block_sync::server::BlockSyncServer;
-use crate::block_sync::server::BlockSyncServerConfiguration;
-use crate::event_bus::*;
-use crate::events::*;
-use crate::hotstuff::protocol::HotStuffConfiguration;
-use crate::networking::{start_polling, Network};
-use crate::pacemaker::protocol::PacemakerConfiguration;
-use crate::state::block_tree::BlockTree;
-use crate::state::block_tree_snapshot::BlockTreeCamera;
-use crate::state::kv_store::KVStore;
-use crate::types::basic::AppStateUpdates;
-use crate::types::basic::BufferSize;
-use crate::types::basic::ChainID;
-use crate::types::basic::EpochLength;
-use crate::types::keypair::Keypair;
-use crate::types::validators::ValidatorSetState;
+use crate::{
+    algorithm::Algorithm,
+    app::App,
+    block_sync::{
+        client::BlockSyncClientConfiguration,
+        server::{BlockSyncServer, BlockSyncServerConfiguration},
+    },
+    event_bus::*,
+    events::*,
+    hotstuff::implementation::HotStuffConfiguration,
+    networking::{network::Network, receiving::start_polling},
+    pacemaker::protocol::PacemakerConfiguration,
+    state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
+    types::{
+        crypto_primitives::Keypair,
+        data_types::{BufferSize, ChainID, EpochLength},
+        update_sets::AppStateUpdates,
+        validator_set::ValidatorSetState,
+    },
+};
 use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:
 /// 1. The replica's [keypair](ed25519_dalek::SigningKey).
-/// 2. The [chain ID](crate::types::basic::ChainID) of the target blockchain.
+/// 2. The [chain ID](crate::types::data_types::ChainID) of the target blockchain.
 /// 3. The sync request limit, which determines how many blocks should the replica request from its peer
 ///    when syncing.
 /// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the
@@ -146,8 +160,8 @@ use std::sync::mpsc::{self, Sender};
 ///
 /// ## Chain ID
 ///
-/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::basic::ChainID). This
-/// is included in votes and other messages so that replicas don't mistake messages and blocks for
+/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::data_types::ChainID).
+/// This is included in votes and other messages so that replicas don't mistake messages and blocks for
 /// one HotStuff-rs blockchain does not get mistaken for those for another blockchain. In most cases,
 /// having a chain ID that collides with another blockchain is harmless. But if your application is a
 /// Proof of Stake public blockchain, this may cause a slashable offence if you operate validators in
@@ -192,7 +206,7 @@ pub struct Configuration {
     ))]
     pub block_sync_request_limit: u32,
     #[builder(setter(
-        doc = "Set how frequently the sync server should advertise its highest committed block and highestQC. Required."
+        doc = "Set how frequently the sync server should advertise its Highest Committed Block and Highest PC. Required."
     ))]
     pub block_sync_server_advertise_time: Duration,
     #[builder(setter(
@@ -204,11 +218,11 @@ pub struct Configuration {
     ))]
     pub block_sync_blacklist_expiry_time: Duration,
     #[builder(setter(
-        doc = "Set the number of views a QC received by the sync client must be ahead of the current view in order to trigger sync (event-based sync trigger). Required."
+        doc = "Set the number of views a PC received by the sync client must be ahead of the current view in order to trigger sync (event-based sync trigger). Required."
     ))]
     pub block_sync_trigger_min_view_difference: u64,
     #[builder(setter(
-        doc = "Set the time that needs to pass without any progress (i.e., updating the highestQC) or sync attempts in order to trigger sync (timeout-based sync trigger). Required."
+        doc = "Set the time that needs to pass without any progress (i.e., updating the Highest PC) or sync attempts in order to trigger sync (timeout-based sync trigger). Required."
     ))]
     pub block_sync_trigger_timeout: Duration,
     #[builder(setter(
@@ -293,25 +307,25 @@ impl
     - `.on_insert_block(...)`
     - `.on_commit_block(...)`
     - `.on_prune_block(...)`
-    - `.on_update_highest_qc(...)`
-    - `.on_update_locked_qc(...)`
+    - `.on_update_highest_pc(...)`
+    - `.on_update_locked_pc(...)`
     - `.on_update_locked_tc(...)`
     - `.on_update_validator_set(...)`
     - `.on_propose(...)`
     - `.on_nudge(...)`
-    - `.on_vote(...)`
+    - `.on_phase_vote(...)`
     - `.on_new_view(...)`
     - `.on_timeout_vote(...)`
     - `.on_advance_view(...)`
     - `.on_receive_proposal(...)`
     - `.on_receive_nudge(...)`
-    - `.on_receive_vote(...)`
+    - `.on_receive_phase_vote(...)`
     - `.on_receive_new_view(...)`
     - `.on_receive_timeout_vote(...)`
     - `.on_receive_advance_view(...)`
     - `.on_start_view(...)`
     - `.on_view_timeout(...)`
-    - `.on_collect_qc(...)`
+    - `.on_collect_pc(...)`
     - `.on_collect_tc(...)`
     - `.on_start_sync(...)`
     - `.on_end_sync(...)`
@@ -346,12 +360,12 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&PruneBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PruneBlockEvent>),
     doc = "Register a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's [Block Tree](crate::state::BlockTree). Optional."))]
     on_prune_block: Option<HandlerPtr<PruneBlockEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica updates its highest QC. Optional."))]
-    on_update_highest_qc: Option<HandlerPtr<UpdateHighestQCEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica updates its locked QC. Optional."))]
-    on_update_locked_qc: Option<HandlerPtr<UpdateLockedQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its highest PC. Optional."))]
+    on_update_highest_pc: Option<HandlerPtr<UpdateHighestPCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&UpdateLockedPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateLockedPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica updates its locked PC. Optional."))]
+    on_update_locked_pc: Option<HandlerPtr<UpdateLockedPCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestTCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest TC. Optional."))]
     on_update_highest_tc: Option<HandlerPtr<UpdateHighestTCEvent>>,
@@ -364,14 +378,14 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&NudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NudgeEvent>),
     doc = "Register a handler closure to be invoked after the replica broadcasts a nudge for a block. Optional."))]
     on_nudge: Option<HandlerPtr<NudgeEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&VoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<VoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica sends a vote. Optional."))]
-    on_vote: Option<HandlerPtr<VoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&PhaseVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PhaseVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica sends a `PhaseVote`. Optional."))]
+    on_phase_vote: Option<HandlerPtr<PhaseVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&NewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<NewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica sends a new view message to the next leader. Optional."))]
     on_new_view: Option<HandlerPtr<NewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&TimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<TimeoutVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica sends a timeout vote. Optional."))]
+    doc = "Register a handler closure to be invoked after the replica sends a `TimeoutVote`. Optional."))]
     on_timeout_vote: Option<HandlerPtr<TimeoutVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&AdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<AdvanceViewEvent>),
     doc = "Register a handler closure to be invoked after the replica sends an advance view message. Optional."))]
@@ -382,14 +396,14 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNudgeEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNudgeEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a nudge for a block. Optional."))]
     on_receive_nudge: Option<HandlerPtr<ReceiveNudgeEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&ReceiveVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica receives a vote. Optional."))]
-    on_receive_vote: Option<HandlerPtr<ReceiveVoteEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&ReceivePhaseVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceivePhaseVoteEvent>),
+    doc = "Register a handler closure to be invoked after the replica receives a `PhaseVote`. Optional."))]
+    on_receive_phase_vote: Option<HandlerPtr<ReceivePhaseVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveNewViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveNewViewEvent>),
     doc = "Register a handler closure to be invoked after the replica receives a new view message. Optional."))]
     on_receive_new_view: Option<HandlerPtr<ReceiveNewViewEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveTimeoutVoteEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveTimeoutVoteEvent>),
-    doc = "Register a handler closure to be invoked after the replica receives a timeout vote. Optional."))]
+    doc = "Register a handler closure to be invoked after the replica receives a `TimeoutVote`. Optional."))]
     on_receive_timeout_vote: Option<HandlerPtr<ReceiveTimeoutVoteEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&ReceiveAdvanceViewEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ReceiveAdvanceViewEvent>),
     doc = "Register a handler closure to be invoked after the replica receives an advance view message. Optional."))]
@@ -400,9 +414,9 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     #[builder(default, setter(transform = |handler: impl Fn(&ViewTimeoutEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<ViewTimeoutEvent>),
     doc = "Register a handler closure to be invoked after the replica's view times out. Optional."))]
     on_view_timeout: Option<HandlerPtr<ViewTimeoutEvent>>,
-    #[builder(default, setter(transform = |handler: impl Fn(&CollectQCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectQCEvent>),
-    doc = "Register a handler closure to be invoked after the replica collects a new quorum certificate. Optional."))]
-    on_collect_qc: Option<HandlerPtr<CollectQCEvent>>,
+    #[builder(default, setter(transform = |handler: impl Fn(&CollectPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectPCEvent>),
+    doc = "Register a handler closure to be invoked after the replica collects a new `PhaseCertificate`. Optional."))]
+    on_collect_pc: Option<HandlerPtr<CollectPCEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&CollectTCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CollectTCEvent>),
     doc = "Register a handler closure to be invoked after the replica collects a new timeout certificate. Optional."))]
     on_collect_tc: Option<HandlerPtr<CollectTCEvent>>,
@@ -446,25 +460,25 @@ impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N>
             self.on_insert_block,
             self.on_commit_block,
             self.on_prune_block,
-            self.on_update_highest_qc,
-            self.on_update_locked_qc,
+            self.on_update_highest_pc,
+            self.on_update_locked_pc,
             self.on_update_highest_tc,
             self.on_update_validator_set,
             self.on_propose,
             self.on_nudge,
-            self.on_vote,
+            self.on_phase_vote,
             self.on_new_view,
             self.on_timeout_vote,
             self.on_advance_view,
             self.on_receive_proposal,
             self.on_receive_nudge,
-            self.on_receive_vote,
+            self.on_receive_phase_vote,
             self.on_receive_new_view,
             self.on_receive_timeout_vote,
             self.on_receive_advance_view,
             self.on_start_view,
             self.on_view_timeout,
-            self.on_collect_qc,
+            self.on_collect_pc,
             self.on_collect_tc,
             self.on_start_sync,
             self.on_end_sync,
@@ -552,8 +566,8 @@ pub struct Replica<K: KVStore> {
 
 impl<K: KVStore> Replica<K> {
     /// Initializes the replica's [Block Tree](crate::state::block_tree::BlockTree) with the intial
-    /// [app state updates](crate::types::basic::AppStateUpdates) and
-    /// [validator set updates](crate::types::validators::ValidatorSetUpdates).
+    /// [app state updates](crate::types::update_sets::AppStateUpdates) and
+    /// [validator set updates](crate::types::update_sets::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
@@ -565,8 +579,8 @@ impl<K: KVStore> Replica<K> {
             .expect("Block Tree initialization failed!")
     }
 
-    /// Returns a [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) which can be used
-    /// to peek into the [`BlockTree`](crate::state::block_tree::BlockTree).
+    /// Returns a [`BlockTreeCamera`] which can be used
+    /// to peek into the [`BlockTree`].
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }

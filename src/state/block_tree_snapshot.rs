@@ -4,16 +4,21 @@
 */
 //! General purpose, read-only interface for querying the Block Tree.
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{
-    AppStateUpdates, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+use crate::{
+    hotstuff::types::PhaseCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        block::Block,
+        data_types::{BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber},
+        update_sets::AppStateUpdates,
+        validator_set::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus},
+    },
 };
-use crate::types::validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus};
-use crate::types::{basic::BlockHeight, block::Block};
 
-use super::block_tree::BlockTreeError;
-use super::kv_store::{KVGet, KVStore};
+use super::{
+    block_tree::BlockTreeError,
+    kv_store::{KVGet, KVStore},
+};
 
 /// A factory for [`BlockTreeSnapshot`]s.
 #[derive(Clone)]
@@ -102,7 +107,7 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
                     }
                 }
 
-                if block_justify == QuorumCertificate::genesis_qc() {
+                if block_justify == PhaseCertificate::genesis_pc() {
                     break;
                 }
 
@@ -141,7 +146,7 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(self.0.block_data_hash(block)?)
     }
 
-    pub fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, BlockTreeError> {
+    pub fn block_justify(&self, block: &CryptoHash) -> Result<PhaseCertificate, BlockTreeError> {
         Ok(self.0.block_justify(block)?)
     }
 
@@ -190,16 +195,16 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
         Ok(self.0.validator_set_updates_status(block)?)
     }
 
-    pub fn locked_qc(&self) -> Result<QuorumCertificate, BlockTreeError> {
-        Ok(self.0.locked_qc()?)
+    pub fn locked_pc(&self) -> Result<PhaseCertificate, BlockTreeError> {
+        Ok(self.0.locked_pc()?)
     }
 
     pub fn highest_view_entered(&self) -> Result<ViewNumber, BlockTreeError> {
         Ok(self.0.highest_view_entered()?)
     }
 
-    pub fn highest_qc(&self) -> Result<QuorumCertificate, BlockTreeError> {
-        Ok(self.0.highest_qc()?)
+    pub fn highest_pc(&self) -> Result<PhaseCertificate, BlockTreeError> {
+        Ok(self.0.highest_pc()?)
     }
 
     pub fn highest_committed_block(&self) -> Result<Option<CryptoHash>, BlockTreeError> {
@@ -231,6 +236,6 @@ impl<S: KVGet> BlockTreeSnapshot<S> {
     }
 
     pub fn highest_view_voted(&self) -> Result<Option<ViewNumber>, BlockTreeError> {
-        Ok(self.0.highest_view_voted()?)
+        Ok(self.0.highest_view_phase_voted()?)
     }
 }

@@ -17,15 +17,16 @@
 //!     1. Their availability and commitment to providing blocks at least up to a given height
 //!        ([`AdvertiseBlock`]).
 //!     2. Whether the quorum is making progress in a future view, as evidenced by the server's local
-//!        Highest QC ([`AdvertiseQC`]).
+//!        Highest PC ([`AdvertisePC`]).
 
 use std::mem;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::messages::SignedMessage;
-use crate::types::{basic::*, block::*, keypair::Keypair};
+use crate::{
+    hotstuff::types::PhaseCertificate,
+    types::{block::*, crypto_primitives::Keypair, data_types::*, signed_messages::SignedMessage},
+};
 
 /// Messages exchanged between a sync server and a sync client when syncing.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
@@ -49,9 +50,9 @@ impl BlockSyncMessage {
 
     pub fn block_sync_response(
         blocks: Vec<Block>,
-        highest_qc: QuorumCertificate,
+        highest_pc: PhaseCertificate,
     ) -> BlockSyncMessage {
-        BlockSyncMessage::BlockSyncResponse(BlockSyncResponse { blocks, highest_qc })
+        BlockSyncMessage::BlockSyncResponse(BlockSyncResponse { blocks, highest_pc })
     }
 }
 
@@ -68,12 +69,12 @@ pub struct BlockSyncRequest {
 
 /// Sync response sent by a sync server to a sync client requesting blocks. The response includes:
 /// 1. Blocks: entire [`Block`]s that the client can validate and insert into their blockchain,
-/// 2. HighestQC: highest-viewed [`QuorumCertificate`] known to the server, which the client can
+/// 2. HighestPC: highest-viewed [`PhaseCertificate`] known to the server, which the client can
 ///    validate and use to find out what is the latest consensus decision is.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockSyncResponse {
     pub blocks: Vec<Block>,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }
 
 /// Messages periodically broadcasted by the sync server to update clients about their availability,
@@ -81,7 +82,7 @@ pub struct BlockSyncResponse {
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum BlockSyncAdvertiseMessage {
     AdvertiseBlock(AdvertiseBlock),
-    AdvertiseQC(AdvertiseQC),
+    AdvertisePC(AdvertisePC),
 }
 
 impl BlockSyncAdvertiseMessage {
@@ -101,21 +102,21 @@ impl BlockSyncAdvertiseMessage {
         })
     }
 
-    pub(crate) fn advertise_qc(highest_qc: QuorumCertificate) -> Self {
-        BlockSyncAdvertiseMessage::AdvertiseQC(AdvertiseQC { highest_qc })
+    pub(crate) fn advertise_pc(highest_pc: PhaseCertificate) -> Self {
+        BlockSyncAdvertiseMessage::AdvertisePC(AdvertisePC { highest_pc })
     }
 
     pub fn chain_id(&self) -> ChainID {
         match self {
             BlockSyncAdvertiseMessage::AdvertiseBlock(msg) => msg.chain_id,
-            BlockSyncAdvertiseMessage::AdvertiseQC(msg) => msg.highest_qc.chain_id,
+            BlockSyncAdvertiseMessage::AdvertisePC(msg) => msg.highest_pc.chain_id,
         }
     }
 
     pub fn size(&self) -> u64 {
         match self {
             BlockSyncAdvertiseMessage::AdvertiseBlock(_) => mem::size_of::<AdvertiseBlock>() as u64,
-            BlockSyncAdvertiseMessage::AdvertiseQC(_) => mem::size_of::<AdvertiseQC>() as u64,
+            BlockSyncAdvertiseMessage::AdvertisePC(_) => mem::size_of::<AdvertisePC>() as u64,
         }
     }
 }
@@ -143,10 +144,12 @@ impl SignedMessage for AdvertiseBlock {
     }
 }
 
-/// A message periodically broadcasted by the sync server to let clients know about the highestQC the
-/// server knows. This information may serve as an evidence for the fact that a client is lagging
-/// behind, and thus make the client trigger the sync process with some server.
+/// A message periodically broadcasted by the sync server to let clients know about the Highest
+/// `PhaseCertificate` the server knows.
+///
+/// This information may serve as an evidence for the fact that a client is lagging behind, and thus
+/// make the client trigger the sync process with some server.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub struct AdvertiseQC {
-    pub highest_qc: QuorumCertificate,
+pub struct AdvertisePC {
+    pub highest_pc: PhaseCertificate,
 }

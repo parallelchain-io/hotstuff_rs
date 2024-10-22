@@ -9,12 +9,14 @@ use borsh::BorshDeserialize;
 use ed25519_dalek::SigningKey;
 use hotstuff_rs::{
     events::{
-        CommitBlockEvent, InsertBlockEvent, ReceiveProposalEvent, UpdateHighestQCEvent, VoteEvent,
+        CommitBlockEvent, InsertBlockEvent, PhaseVoteEvent, ReceiveProposalEvent,
+        UpdateHighestPCEvent,
     },
     replica::{Configuration, Replica, ReplicaSpec},
     types::{
-        basic::{AppStateUpdates, BufferSize, ChainID, EpochLength, ViewNumber},
-        validators::{ValidatorSet, ValidatorSetState, ValidatorSetUpdates},
+        data_types::{BufferSize, ChainID, EpochLength, ViewNumber},
+        update_sets::{AppStateUpdates, ValidatorSetUpdates},
+        validator_set::{ValidatorSet, ValidatorSetState},
     },
 };
 
@@ -88,8 +90,8 @@ impl Node {
             .on_insert_block(insert_block_handler(verifying_key))
             .on_receive_proposal(receive_proposal_handler(verifying_key))
             .on_commit_block(commit_block_handler(verifying_key))
-            .on_update_highest_qc(update_highest_qc_handler(verifying_key))
-            .on_vote(vote_handler(verifying_key))
+            .on_update_highest_pc(update_highest_pc_handler(verifying_key))
+            .on_phase_vote(phase_vote_handler(verifying_key))
             .build()
             .start();
 
@@ -203,20 +205,20 @@ fn commit_block_handler(
     }
 }
 
-/// Return a closure that logs out an `UpdateHighestQCEvent` in a human-readable way.
-fn update_highest_qc_handler(
+/// Return a closure that logs out an `UpdateHighestPCEvent` in a human-readable way.
+fn update_highest_pc_handler(
     verifying_key: VerifyingKeyBytes,
-) -> impl Fn(&UpdateHighestQCEvent) + Send + 'static {
-    move |update_highest_qc_event| {
+) -> impl Fn(&UpdateHighestPCEvent) + Send + 'static {
+    move |update_highest_pc_event| {
         log_with_context(
             Some(verifying_key),
             &format!(
-                "Updated Highest QC, block hash: {}, view: {}, phase: {:?}, no. of signatures: {}",
-                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
-                update_highest_qc_event.highest_qc.view,
-                update_highest_qc_event.highest_qc.phase,
-                update_highest_qc_event
-                    .highest_qc
+                "Updated Highest PC, block hash: {}, view: {}, phase: {:?}, no. of signatures: {}",
+                first_seven_base64_chars(&update_highest_pc_event.highest_pc.block.bytes()),
+                update_highest_pc_event.highest_pc.view,
+                update_highest_pc_event.highest_pc.phase,
+                update_highest_pc_event
+                    .highest_pc
                     .signatures
                     .iter()
                     .filter(|sig| sig.is_some())
@@ -227,15 +229,17 @@ fn update_highest_qc_handler(
 }
 
 /// Return a closure that logs out an `VoteEvent` in a human-readable way.
-fn vote_handler(verifying_key: VerifyingKeyBytes) -> impl Fn(&VoteEvent) + Send + 'static {
-    move |vote_event: &VoteEvent| {
+fn phase_vote_handler(
+    verifying_key: VerifyingKeyBytes,
+) -> impl Fn(&PhaseVoteEvent) + Send + 'static {
+    move |phase_vote_event: &PhaseVoteEvent| {
         log_with_context(
             Some(verifying_key),
             &format!(
-                "Voted, block hash: {}, view: {}, phase: {:?}",
-                first_seven_base64_chars(&vote_event.vote.block.bytes()),
-                vote_event.vote.view,
-                vote_event.vote.phase,
+                "Phase Voted, block hash: {}, view: {}, phase: {:?}",
+                first_seven_base64_chars(&phase_vote_event.vote.block.bytes()),
+                phase_vote_event.vote.view,
+                phase_vote_event.vote.phase,
             ),
         );
     }

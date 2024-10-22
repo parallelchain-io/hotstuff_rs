@@ -6,32 +6,61 @@
 //! `Block` type and its methods.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sha2::Digest;
-pub use sha2::Sha256 as CryptoHasher;
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::types::basic::*;
+use crate::{
+    hotstuff::types::PhaseCertificate,
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+    },
+    types::{
+        crypto_primitives::{CryptoHasher, Digest},
+        data_types::*,
+    },
+};
 
-use super::collectors::Certificate;
+use super::signed_messages::Certificate;
 
+/// Cryptographically hashed, `justify`-linked payload that mutates the
+/// [app state and validator set](crate::app#two-app-mutable-states-app-state-and-validator-set) when
+/// committed.
+///
+/// # Permissible variants of `justify.phase`s
+///
+/// `block.justify.phase` must be `Generic` or `Decide`. This invariant is enforced in two places:
+/// 1. When a validator creates a `Block` using [`new`](Self::new).
+/// 2. When a replica receives a `Proposal` containing `block` and checks the
+///    [`safe_block`](crate::state::invariants::safe_block) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
     pub height: BlockHeight,
+
+    /// Library-computed cryptographic hash over `(height, justify, data_hash)`.
     pub hash: CryptoHash,
-    pub justify: QuorumCertificate,
+
+    /// `PhaseCertificate` linking this block with its parent block.
+    pub justify: PhaseCertificate,
+
+    /// `App`-provided cryptographic hash over `data`.
     pub data_hash: CryptoHash,
     pub data: Data,
 }
 
 impl Block {
+    /// Create a new block with the specified `height`, `justify`, `data_hash`, and `data`, computing
+    /// [`hash`](Self::hash) automatically.
+    ///
+    /// # Panics
+    ///
+    /// `justify.phase` must be `Generic` or `Decide`. This function panics otherwise.
     pub fn new(
         height: BlockHeight,
-        justify: QuorumCertificate,
+        justify: PhaseCertificate,
         data_hash: CryptoHash,
         data: Data,
     ) -> Block {
+        assert!(justify.phase.is_generic() || justify.phase.is_decide());
+
         Block {
             height,
             hash: Block::hash(height, &justify, &data_hash),
@@ -43,7 +72,7 @@ impl Block {
 
     pub fn hash(
         height: BlockHeight,
-        justify: &QuorumCertificate,
+        justify: &PhaseCertificate,
         data_hash: &CryptoHash,
     ) -> CryptoHash {
         let mut hasher = CryptoHasher::new();

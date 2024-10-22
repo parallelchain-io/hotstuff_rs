@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Functions that log out [events](crate::events).
+//! Functions that log out events.
 //!
 //! The logs defined in this module are printed if the user enabled them via replica's
 //! [config](crate::replica::Configuration).
@@ -16,7 +16,7 @@
 //!
 //! Log messages are CSVs (Comma Separated Values) with at least two values. The first two values are
 //! always:
-//! 1. The name of the event in PascalCase (defined in this module as constants).
+//! 1. The name of the [event](crate::events) in PascalCase (defined in this module as constants).
 //! 2. The time the event was emitted (as number of seconds since the Unix Epoch).
 //!
 //! The rest of the values differ depending on the kind of event. For example, the following snippet
@@ -42,28 +42,28 @@ use std::time::SystemTime;
 pub const INSERT_BLOCK: &str = "InsertBlock";
 pub const COMMIT_BLOCK: &str = "CommitBlock";
 pub const PRUNE_BLOCK: &str = "PruneBlock";
-pub const UPDATE_HIGHEST_QC: &str = "UpdateHighestQC";
-pub const UPDATE_LOCKED_QC: &str = "UpdateLockedQC";
+pub const UPDATE_HIGHEST_PC: &str = "UpdateHighestPC";
+pub const UPDATE_LOCKED_PC: &str = "UpdateLockedPC";
 pub const UPDATE_HIGHEST_TC: &str = "UpdateHighestTC";
 pub const UPDATE_VALIDATOR_SET: &str = "UpdateValidatorSet";
 
 pub const PROPOSE: &str = "Propose";
 pub const NUDGE: &str = "Nudge";
-pub const VOTE: &str = "Vote";
+pub const PHASE_VOTE: &str = "PhaseVote";
 pub const NEW_VIEW: &str = "NewView";
 pub const TIMEOUT_VOTE: &str = "TimeoutVote";
 pub const ADVANCE_VIEW: &str = "AdvanceView";
 
 pub const RECEIVE_PROPOSAL: &str = "ReceiveProposal";
 pub const RECEIVE_NUDGE: &str = "ReceiveNudge";
-pub const RECEIVE_VOTE: &str = "ReceiveVote";
+pub const RECEIVE_PHASE_VOTE: &str = "ReceivePhaseVote";
 pub const RECEIVE_NEW_VIEW: &str = "ReceiveNewView";
 pub const RECEIVE_TIMEOUT_VOTE: &str = "ReceiveTimeoutVote";
 pub const RECEIVE_ADVANCE_VIEW: &str = "ReceiveAdvanceView";
 
 pub const START_VIEW: &str = "StartView";
 pub const VIEW_TIMEOUT: &str = "ViewTimeout";
-pub const COLLECT_QC: &str = "CollectQC";
+pub const COLLECT_PC: &str = "CollectPC";
 pub const COLLECT_TC: &str = "CollectTC";
 
 pub const START_SYNC: &str = "StartSync";
@@ -120,32 +120,32 @@ impl Logger for PruneBlockEvent {
     }
 }
 
-impl Logger for UpdateHighestQCEvent {
+impl Logger for UpdateHighestPCEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |update_highest_qc_event: &UpdateHighestQCEvent| {
+        let logger = |update_highest_pc_event: &UpdateHighestPCEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                UPDATE_HIGHEST_QC,
-                secs_since_unix_epoch(update_highest_qc_event.timestamp),
-                first_seven_base64_chars(&update_highest_qc_event.highest_qc.block.bytes()),
-                update_highest_qc_event.highest_qc.view,
-                update_highest_qc_event.highest_qc.phase
+                UPDATE_HIGHEST_PC,
+                secs_since_unix_epoch(update_highest_pc_event.timestamp),
+                first_seven_base64_chars(&update_highest_pc_event.highest_pc.block.bytes()),
+                update_highest_pc_event.highest_pc.view,
+                update_highest_pc_event.highest_pc.phase
             )
         };
         Box::new(logger)
     }
 }
 
-impl Logger for UpdateLockedQCEvent {
+impl Logger for UpdateLockedPCEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |update_locked_qc_event: &UpdateLockedQCEvent| {
+        let logger = |update_locked_pc_event: &UpdateLockedPCEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                UPDATE_LOCKED_QC,
-                secs_since_unix_epoch(update_locked_qc_event.timestamp),
-                first_seven_base64_chars(&update_locked_qc_event.locked_qc.block.bytes()),
-                update_locked_qc_event.locked_qc.view,
-                update_locked_qc_event.locked_qc.phase
+                UPDATE_LOCKED_PC,
+                secs_since_unix_epoch(update_locked_pc_event.timestamp),
+                first_seven_base64_chars(&update_locked_pc_event.locked_pc.block.bytes()),
+                update_locked_pc_event.locked_pc.view,
+                update_locked_pc_event.locked_pc.phase
             )
         };
         Box::new(logger)
@@ -212,16 +212,16 @@ impl Logger for NudgeEvent {
     }
 }
 
-impl Logger for VoteEvent {
+impl Logger for PhaseVoteEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |vote_event: &VoteEvent| {
+        let logger = |phase_vote_event: &PhaseVoteEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                VOTE,
-                secs_since_unix_epoch(vote_event.timestamp),
-                first_seven_base64_chars(&vote_event.vote.block.bytes()),
-                vote_event.vote.view,
-                vote_event.vote.phase
+                PHASE_VOTE,
+                secs_since_unix_epoch(phase_vote_event.timestamp),
+                first_seven_base64_chars(&phase_vote_event.vote.block.bytes()),
+                phase_vote_event.vote.view,
+                phase_vote_event.vote.phase
             )
         };
         Box::new(logger)
@@ -235,9 +235,9 @@ impl Logger for NewViewEvent {
                 "{}, {}, {}, {}, {:?}",
                 NEW_VIEW,
                 secs_since_unix_epoch(new_view_event.timestamp),
-                first_seven_base64_chars(&new_view_event.new_view.highest_qc.block.bytes()),
+                first_seven_base64_chars(&new_view_event.new_view.highest_pc.block.bytes()),
                 new_view_event.new_view.view,
-                new_view_event.new_view.highest_qc.phase
+                new_view_event.new_view.highest_pc.phase
             )
         };
         Box::new(logger)
@@ -304,16 +304,16 @@ impl Logger for ReceiveNudgeEvent {
     }
 }
 
-impl Logger for ReceiveVoteEvent {
+impl Logger for ReceivePhaseVoteEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |receive_vote_event: &ReceiveVoteEvent| {
+        let logger = |receive_vote_event: &ReceivePhaseVoteEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                RECEIVE_VOTE,
+                RECEIVE_PHASE_VOTE,
                 secs_since_unix_epoch(receive_vote_event.timestamp),
                 first_seven_base64_chars(&receive_vote_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_vote_event.vote.block.bytes()),
-                receive_vote_event.vote.phase
+                first_seven_base64_chars(&receive_vote_event.phase_vote.block.bytes()),
+                receive_vote_event.phase_vote.phase
             )
         };
         Box::new(logger)
@@ -328,9 +328,9 @@ impl Logger for ReceiveNewViewEvent {
                 RECEIVE_NEW_VIEW,
                 secs_since_unix_epoch(receive_new_view_event.timestamp),
                 first_seven_base64_chars(&receive_new_view_event.origin.to_bytes()),
-                first_seven_base64_chars(&receive_new_view_event.new_view.highest_qc.block.bytes()),
+                first_seven_base64_chars(&receive_new_view_event.new_view.highest_pc.block.bytes()),
                 receive_new_view_event.new_view.view,
-                receive_new_view_event.new_view.highest_qc.phase
+                receive_new_view_event.new_view.highest_pc.phase
             )
         };
         Box::new(logger)
@@ -397,16 +397,16 @@ impl Logger for ViewTimeoutEvent {
     }
 }
 
-impl Logger for CollectQCEvent {
+impl Logger for CollectPCEvent {
     fn get_logger() -> Box<dyn Fn(&Self) + Send> {
-        let logger = |collect_qc_event: &CollectQCEvent| {
+        let logger = |collect_pc_event: &CollectPCEvent| {
             log::info!(
                 "{}, {}, {}, {}, {:?}",
-                COLLECT_QC,
-                secs_since_unix_epoch(collect_qc_event.timestamp),
-                first_seven_base64_chars(&collect_qc_event.quorum_certificate.block.bytes()),
-                collect_qc_event.quorum_certificate.view,
-                collect_qc_event.quorum_certificate.phase,
+                COLLECT_PC,
+                secs_since_unix_epoch(collect_pc_event.timestamp),
+                first_seven_base64_chars(&collect_pc_event.phase_certificate.block.bytes()),
+                collect_pc_event.phase_certificate.view,
+                collect_pc_event.phase_certificate.phase,
             )
         };
         Box::new(logger)
@@ -480,7 +480,7 @@ impl Logger for SendSyncResponseEvent {
                 SEND_SYNC_RESPONSE,
                 secs_since_unix_epoch(send_sync_response_event.timestamp),
                 first_seven_base64_chars(&send_sync_response_event.peer.to_bytes()),
-                first_seven_base64_chars(&send_sync_response_event.highest_qc.block.bytes()),
+                first_seven_base64_chars(&send_sync_response_event.highest_pc.block.bytes()),
                 send_sync_response_event.blocks.len(),
             )
         };
@@ -505,14 +505,14 @@ fn secs_since_unix_epoch(timestamp: SystemTime) -> u64 {
         .as_secs()
 }
 
-fn progress_certificate_info(progress_certificate: &ProgressCertificate) -> String {
-    match progress_certificate {
-        ProgressCertificate::QuorumCertificate(qc) => String::from(format!(
-            "Quorum Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}",
-            qc.view,
-            qc.phase,
-            first_seven_base64_chars(&qc.block.bytes()),
-            qc.signatures.iter().filter(|sig| sig.is_some()).count()
+fn progress_certificate_info(certificate: &ProgressCertificate) -> String {
+    match certificate {
+        ProgressCertificate::PhaseCertificate(pc) => String::from(format!(
+            "Phase Certificate, view: {}, phase: {:?}, block: {}, no. of signatures: {}",
+            pc.view,
+            pc.phase,
+            first_seven_base64_chars(&pc.block.bytes()),
+            pc.signatures.iter().filter(|sig| sig.is_some()).count()
         )),
         ProgressCertificate::TimeoutCertificate(tc) => {
             String::from(format!("Timeout Certificate, view: {}", tc.view))

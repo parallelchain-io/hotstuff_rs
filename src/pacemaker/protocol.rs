@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the Pacemaker protocol, based on the Lewis-Pye View Synchronisation protocol
-//! (https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved Weighted Round Robin leader selection
-//! mechanism.
+//! Implementation of the Pacemaker protocol, based on the
+//! [Lewis-Pye View Synchronisation protocol](https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved
+//! Weighted Round Robin leader selection mechanism.
 //!
 //! The liveness of the HotStuff protocol is dependent on the Pacemaker module, which regulates how and
 //! when a replica advances its view, as well as determines which validator shall act as the leader of
@@ -14,7 +14,7 @@
 //! ## View Synchronisation
 //!
 //! The goal is to ensure that at any point all honest replicas should eventually end up in the same
-//! view and stay there for long enough to enable consensus through forming a QC. Just like the HotStuff
+//! view and stay there for long enough to enable consensus through forming a PC. Just like the HotStuff
 //! SMR, the Pacemaker protocol is Byzantine Fault Tolerant: eventual succesful view synchronization is
 //! guaranteed in the presence of n = 3f + 1 validators where at most f validators are Byzantine.
 //!
@@ -24,7 +24,7 @@
 //! 1. All-to-all broadcast in every epoch-change view (i.e., last view of an epoch) upon which replicas
 //!    enter the next epoch and set their timeout deadlines for all views in the next epoch,
 //! 2. Advancing to a next view within the same epoch either on timeout or optimistically on receiving a
-//!    QC for their current view.
+//!    PC for their current view.
 //!
 //! The latter ensures synchronisation when timeouts are set in a uniform manner and when leaders are
 //! honest, and the former serves as a fallback mechanism in case views fall out of sync.
@@ -42,38 +42,43 @@
 //! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power
 //!    than any other validator, it will never act as a leader for more than one consecutive view.
 
-use std::time::{Duration, SystemTime};
-use std::{collections::BTreeMap, sync::mpsc::Sender, time::Instant};
+use std::{
+    collections::BTreeMap,
+    sync::mpsc::Sender,
+    time::{Duration, Instant, SystemTime},
+};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::events::{
-    AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
-    TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
-};
-use crate::hotstuff::voting::is_validator;
-use crate::messages::{Message, SignedMessage};
-use crate::networking::{Network, SenderHandle};
-use crate::pacemaker::messages::ProgressCertificate;
-use crate::pacemaker::messages::{AdvanceView, PacemakerMessage, TimeoutVote};
-use crate::pacemaker::types::TimeoutVoteCollector;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::state::write_batch::BlockTreeWriteBatch;
-use crate::types::basic::EpochLength;
-use crate::types::collectors::{Certificate, Collectors};
-use crate::types::validators::{ValidatorSet, ValidatorSetState};
-use crate::types::{
-    basic::{ChainID, ViewNumber},
-    keypair::Keypair,
+use crate::{
+    events::{
+        AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
+        TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
+    },
+    hotstuff::roles::is_validator,
+    networking::{messages::Message, network::Network, sending::SenderHandle},
+    pacemaker::{
+        messages::{AdvanceView, PacemakerMessage, ProgressCertificate, TimeoutVote},
+        types::TimeoutVoteCollector,
+    },
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+        write_batch::BlockTreeWriteBatch,
+    },
+    types::{
+        crypto_primitives::Keypair,
+        data_types::{ChainID, EpochLength, ViewNumber},
+        signed_messages::{ActiveCollectorPair, Certificate, SignedMessage},
+        validator_set::{ValidatorSet, ValidatorSetState},
+    },
 };
 
-/// A Pacemaker protocol for Byzantine View Synchronization inspired by the Lewis-Pye View
-/// Synchronization protocol (https://arxiv.org/pdf/2201.01107.pdf). Its [`PacemakerState`] is an
-/// authoritative source of information regarding the current view and its leader, and
-/// [`Algorithm`][crate::algorithm::Algorithm] should regularly query the [`Pacemaker`] for this
-/// information ([`ViewInfo`]), and propagate the information to
-/// [`HotStuff`](crate::hotstuff::protocol::HotStuff).
+/// A Pacemaker protocol for Byzantine View Synchronization inspired by the
+/// [Lewis-Pye View Synchronization protocol](https://arxiv.org/pdf/2201.01107.pdf). Its
+/// [`PacemakerState`] is the authoritative source of information regarding the current view and its
+/// leader, and [`Algorithm`][crate::algorithm::Algorithm] should regularly query the [`Pacemaker`] for
+/// this information ([`ViewInfo`]), and propagate the information to [`hotstuff`](crate::hotstuff).
 ///
 /// The Pacemaker exposes the following API for use in the Algorithm:
 /// 1. [Pacemaker::new]: creates a fresh instance of the [`Pacemaker`],
@@ -131,8 +136,8 @@ impl<N: Network> Pacemaker<N> {
     ///    be broadcasted.
     /// 2. If it is a not an epoch-change view, then the view should be updated to the subsequent view.
     ///
-    /// Additionally, tick should check if there is a QC for the current view (whether an epoch-change
-    /// view or not) available in the block tree, and if so it should broadcast the QC in an advance
+    /// Additionally, tick should check if there is a PC for the current view (whether an epoch-change
+    /// view or not) available in the block tree, and if so it should broadcast the PC in an advance
     /// view message.
     ///
     /// It should also check of the validator set state has been updated, and if so it should update the
@@ -185,16 +190,16 @@ impl<N: Network> Pacemaker<N> {
             .timeout_vote_collectors
             .update_validator_sets(&validator_set_state);
 
-        // 3. Check if a QC for the current view is available and if I am a validator, and if so
+        // 3. Check if a PC for the current view is available and if I am a validator, and if so
         //    broadcast an advance view message.
-        if block_tree.highest_qc()?.view >= cur_view
-            && !block_tree.highest_qc()?.is_genesis_qc()
+        if block_tree.highest_pc()?.view >= cur_view
+            && !block_tree.highest_pc()?.is_genesis_pc()
             && is_validator(&self.config.keypair.public(), &validator_set_state)
             && (self.state.last_advance_view.is_none()
                 || self.state.last_advance_view.is_some_and(|v| v < cur_view))
         {
             let pacemaker_message = PacemakerMessage::advance_view(
-                ProgressCertificate::QuorumCertificate(block_tree.highest_qc()?),
+                ProgressCertificate::PhaseCertificate(block_tree.highest_pc()?),
             );
             self.sender
                 .broadcast(Message::from(pacemaker_message.clone()));
@@ -374,11 +379,11 @@ impl<N: Network> Pacemaker<N> {
         }
 
         // Check whether the progress certificate contained in the Advance View message is "valid". What this
-        // entails differs depending on whether the certificate is a Quorum Certificate or a Timeout
+        // entails differs depending on whether the certificate is a Phase Certificate or a Timeout
         // Certificate.
         let progress_certificate = advance_view.progress_certificate.clone();
         let is_valid = match &progress_certificate {
-            ProgressCertificate::QuorumCertificate(qc) => qc.is_correct(block_tree)?,
+            ProgressCertificate::PhaseCertificate(pc) => pc.is_correct(block_tree)?,
             ProgressCertificate::TimeoutCertificate(tc) => {
                 tc.is_correct(&block_tree)?
                     && is_epoch_change_view(&tc.view, self.config.epoch_length)
@@ -389,7 +394,7 @@ impl<N: Network> Pacemaker<N> {
             // If the received certificate is a Timeout Certificate and has a higher view number than `highest_tc`,
             // update the `highest_tc`.
             //
-            // Note: we do not update `highest_qc` here, since checking the safety of QCs and updating `highest_qc`
+            // Note: we do not update `highest_pc` here, since checking the safety of PCs and updating `highest_pc`
             // is a responsibility of the HotStuff sub-protocol.
             if let ProgressCertificate::TimeoutCertificate(tc) = &progress_certificate {
                 if block_tree.highest_tc()?.is_none()
@@ -475,7 +480,7 @@ impl<N: Network> Pacemaker<N> {
         );
 
         // Update the timeout vote collectors.
-        self.state.timeout_vote_collectors = <Collectors<TimeoutVoteCollector>>::new(
+        self.state.timeout_vote_collectors = <ActiveCollectorPair<TimeoutVoteCollector>>::new(
             self.config.chain_id,
             next_view,
             validator_set_state,
@@ -519,7 +524,7 @@ pub(crate) struct PacemakerConfiguration {
     pub(crate) keypair: Keypair,
     pub(crate) epoch_length: EpochLength,
 
-    // How long a view can take before timing out.
+    // How much time can elapse in a view before timing out.
     pub(crate) max_view_time: Duration,
 }
 
@@ -527,7 +532,7 @@ pub(crate) struct PacemakerConfiguration {
 /// (if any), and the [timeout votes][TimeoutVote] collected for the current view.
 struct PacemakerState {
     timeouts: BTreeMap<ViewNumber, Instant>,
-    timeout_vote_collectors: Collectors<TimeoutVoteCollector>,
+    timeout_vote_collectors: ActiveCollectorPair<TimeoutVoteCollector>,
 
     // The view in which this replica last broadcasted an Advance View message.
     last_advance_view: Option<ViewNumber>,
@@ -543,31 +548,12 @@ impl PacemakerState {
     ) -> Self {
         Self {
             timeouts: Self::initial_timeouts(init_view, config),
-            timeout_vote_collectors: <Collectors<TimeoutVoteCollector>>::new(
+            timeout_vote_collectors: <ActiveCollectorPair<TimeoutVoteCollector>>::new(
                 config.chain_id,
                 init_view,
                 validator_set_state,
             ),
             last_advance_view: None,
-        }
-    }
-
-    /// Set the timeout for each view in the epoch starting from a given view.
-    fn set_timeouts(&mut self, start_view: ViewNumber, config: &PacemakerConfiguration) {
-        // Remove the timeouts for expired views.
-        self.timeouts = self.timeouts.split_off(&start_view);
-
-        let epoch = epoch(start_view, config.epoch_length);
-        let epoch_view = epoch * config.epoch_length.int() as u64;
-
-        let start_time = Instant::now();
-
-        // Add timeouts for all remaining views in the epoch of start_view.
-        for view in start_view.int()..=epoch_view {
-            let time_to_view_deadline =
-                Duration::from_secs(config.max_view_time.as_secs() * (view - start_view.int() + 1));
-            self.timeouts
-                .insert(ViewNumber::new(view), start_time + time_to_view_deadline);
         }
     }
 
@@ -591,6 +577,25 @@ impl PacemakerState {
         }
 
         return timeouts;
+    }
+
+    /// Set the timeout for each view in the epoch starting from a given view.
+    fn set_timeouts(&mut self, start_view: ViewNumber, config: &PacemakerConfiguration) {
+        // Remove the timeouts for expired views.
+        self.timeouts = self.timeouts.split_off(&start_view);
+
+        let epoch = epoch(start_view, config.epoch_length);
+        let epoch_view = epoch * config.epoch_length.int() as u64;
+
+        let start_time = Instant::now();
+
+        // Add timeouts for all remaining views in the epoch of start_view.
+        for view in start_view.int()..=epoch_view {
+            let time_to_view_deadline =
+                Duration::from_secs(config.max_view_time.as_secs() * (view - start_view.int() + 1));
+            self.timeouts
+                .insert(ViewNumber::new(view), start_time + time_to_view_deadline);
+        }
     }
 
     /// Extend the timeout of the epoch-change view by another max_view_time.
@@ -725,10 +730,12 @@ pub fn select_leader(view: ViewNumber, validator_set: &ValidatorSet) -> Verifyin
     unreachable!("Cannot select a leader: index not found!")
 }
 
+/// Check whether `view` is an epoch-change view given the configured `epoch_length`.
 fn is_epoch_change_view(view: &ViewNumber, epoch_length: EpochLength) -> bool {
     view.int() % (epoch_length.int() as u64) == 0
 }
 
+/// Compute the current epoch based on the current `view` and the configured `epoch_length`.
 fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
     view.int().div_ceil(epoch_length.int() as u64)
 }
@@ -736,8 +743,7 @@ fn epoch(view: ViewNumber, epoch_length: EpochLength) -> u64 {
 /// Tests if the number of times each validator is selected as a leader is proportional to its power.
 #[test]
 fn select_leader_fairness_test() {
-    use crate::types::basic::Power;
-    use crate::types::validators::ValidatorSetUpdates;
+    use crate::types::{data_types::Power, update_sets::ValidatorSetUpdates};
     use ed25519_dalek::{SigningKey, VerifyingKey};
     use rand_core::OsRng;
 

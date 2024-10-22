@@ -2,8 +2,7 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-//! Defines the [`KVStore`] trait, which specifies the required interface for the key-value store provided
-//! by the user.
+//! Pluggable key-value storage.
 //!
 //! Given a method to obtain the value for a given key in bytes, this module also provides methods to
 //! obtain the variables stored in the key-value store, as described in [`crate::state::block_tree`].
@@ -12,19 +11,24 @@ use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::validators::{ValidatorSetUpdatesStatus, ValidatorSetUpdatesStatusBytes};
-use crate::types::{
-    basic::{
-        AppStateUpdates, BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber,
+use crate::{
+    hotstuff::types::PhaseCertificate,
+    pacemaker::types::TimeoutCertificate,
+    types::{
+        block::Block,
+        data_types::{BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber},
+        update_sets::AppStateUpdates,
+        validator_set::{
+            ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdatesStatus,
+            ValidatorSetUpdatesStatusBytes,
+        },
     },
-    block::Block,
-    validators::{ValidatorSet, ValidatorSetBytes, ValidatorSetState},
 };
 
-use super::paths::{self, combine};
-use super::write_batch::WriteBatch;
+use super::{
+    paths::{self, combine},
+    write_batch::WriteBatch,
+};
 
 pub trait KVStore: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;
@@ -93,8 +97,8 @@ pub trait KVGet {
         }
     }
 
-    fn block_justify(&self, block: &CryptoHash) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(
+    fn block_justify(&self, block: &CryptoHash) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(
             &mut &*self
                 .get(&combine(
                     &paths::BLOCKS,
@@ -297,16 +301,16 @@ pub trait KVGet {
         })
     }
 
-    /* ↓↓↓ Locked QC ↓↓↓ */
+    /* ↓↓↓ Locked PC ↓↓↓ */
 
-    fn locked_qc(&self) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(
+    fn locked_pc(&self) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(
             &mut &*self
-                .get(&paths::LOCKED_QC)
-                .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedQC })?,
+                .get(&paths::LOCKED_PC)
+                .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedPC })?,
         )
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::LockedQC,
+            key: Key::LockedPC,
             source: err,
         })
     }
@@ -325,16 +329,16 @@ pub trait KVGet {
         })
     }
 
-    /* ↓↓↓ Highest Quorum Certificate ↓↓↓ */
+    /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
 
-    fn highest_qc(&self) -> Result<QuorumCertificate, KVGetError> {
-        QuorumCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_QC).ok_or(
+    fn highest_pc(&self) -> Result<PhaseCertificate, KVGetError> {
+        PhaseCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_PC).ok_or(
             KVGetError::ValueExpectedButNotFound {
-                key: Key::HighestQC,
+                key: Key::HighestPC,
             },
         )?)
         .map_err(|err| KVGetError::DeserializeValueError {
-            key: Key::HighestQC,
+            key: Key::HighestPC,
             source: err,
         })
     }
@@ -448,13 +452,13 @@ pub trait KVGet {
         ))
     }
 
-    /* ↓↓↓ Highest View Voted ↓↓↓ */
+    /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
 
-    fn highest_view_voted(&self) -> Result<Option<ViewNumber>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::HIGHEST_VIEW_VOTED) {
+    fn highest_view_phase_voted(&self) -> Result<Option<ViewNumber>, KVGetError> {
+        if let Some(bytes) = self.get(&paths::HIGHEST_VIEW_PHASE_VOTED) {
             let view_number = ViewNumber::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
-                    key: Key::HighestViewVoted,
+                    key: Key::HighestViewPhaseVoted,
                     source: err,
                 }
             })?;
@@ -498,16 +502,16 @@ pub enum Key {
     PendingAppStateUpdates { block: CryptoHash },
     CommittedValidatorSet,
     ValidatorSetUpdatesStatus { block: CryptoHash },
-    LockedQC,
+    LockedPC,
     HighestViewEntered,
-    HighestQC,
+    HighestPC,
     HighestCommittedBlock,
     NewestBlock,
     HighestTC,
     PreviousValidatorSet,
     ValidatorSetUpdateHeight,
     ValidatorSetUpdateDecided,
-    HighestViewVoted,
+    HighestViewPhaseVoted,
 }
 
 impl Display for Key {
@@ -528,16 +532,16 @@ impl Display for Key {
             &Key::ValidatorSetUpdatesStatus { block } => {
                 write!(f, "Validator Set Updates Status for block {}", block)
             }
-            &Key::LockedQC => write!(f, "Locked QC"),
+            &Key::LockedPC => write!(f, "Locked PC"),
             &Key::HighestViewEntered => write!(f, "Highest View Entered"),
-            &Key::HighestQC => write!(f, "Highest Quorum Certificate"),
+            &Key::HighestPC => write!(f, "Highest Phase Certificate"),
             &Key::HighestCommittedBlock => write!(f, "Highest Committed Block"),
             &Key::NewestBlock => write!(f, "Newest Block"),
             &Key::HighestTC => write!(f, "Highest Timeout Certificate"),
             &Key::PreviousValidatorSet => write!(f, "Previous Validator Set"),
             &Key::ValidatorSetUpdateHeight => write!(f, "Validator Set Update Block Height"),
             &Key::ValidatorSetUpdateDecided => write!(f, "Validator Set Update Decided"),
-            &Key::HighestViewVoted => write!(f, "Highest View Voted"),
+            &Key::HighestViewPhaseVoted => write!(f, "Highest View Phase-Voted"),
         }
     }
 }

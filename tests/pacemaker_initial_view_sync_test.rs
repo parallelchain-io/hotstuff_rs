@@ -3,9 +3,9 @@ use std::{thread, time::Duration};
 use rand_core::OsRng;
 
 use hotstuff_rs::types::{
-    basic::{Power, ViewNumber},
-    collectors::SigningKey,
-    validators::ValidatorSetUpdates,
+    crypto_primitives::SigningKey,
+    data_types::{Power, ViewNumber},
+    update_sets::ValidatorSetUpdates,
 };
 
 mod common;

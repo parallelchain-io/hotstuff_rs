@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Notifications that are emitted when significant things happen in the local HotStuff-rs replica.
+//! Subscribable events that are published when significant things happen in the replica.
 //!
 //! ## Event enum
 //!
@@ -33,18 +33,25 @@
 //! [insert block event](InsertBlockEvent) is only emitted after the insertion has been persisted into
 //! the backing storage of the block tree.
 
-use std::sync::mpsc::Sender;
-use std::time::SystemTime;
+use std::{sync::mpsc::Sender, time::SystemTime};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::hotstuff::messages::{NewView, Nudge, Proposal, Vote};
-use crate::hotstuff::types::QuorumCertificate;
-use crate::pacemaker::messages::{AdvanceView, TimeoutVote};
-use crate::pacemaker::types::TimeoutCertificate;
-use crate::types::basic::{BlockHeight, CryptoHash, ViewNumber};
-use crate::types::block::Block;
-use crate::types::validators::ValidatorSetUpdates;
+use crate::{
+    hotstuff::{
+        messages::{NewView, Nudge, PhaseVote, Proposal},
+        types::PhaseCertificate,
+    },
+    pacemaker::{
+        messages::{AdvanceView, TimeoutVote},
+        types::TimeoutCertificate,
+    },
+    types::{
+        block::Block,
+        data_types::{BlockHeight, CryptoHash, ViewNumber},
+        update_sets::ValidatorSetUpdates,
+    },
+};
 
 /// Enumerates all events defined for HotStuff-rs.
 pub enum Event {
@@ -52,15 +59,15 @@ pub enum Event {
     InsertBlock(InsertBlockEvent),
     CommitBlock(CommitBlockEvent),
     PruneBlock(PruneBlockEvent),
-    UpdateHighestQC(UpdateHighestQCEvent),
-    UpdateLockedQC(UpdateLockedQCEvent),
+    UpdateHighestPC(UpdateHighestPCEvent),
+    UpdateLockedPC(UpdateLockedPCEvent),
     UpdateHighestTC(UpdateHighestTCEvent),
     UpdateValidatorSet(UpdateValidatorSetEvent),
 
     // Events that involve broadcasting or sending a Progress Message.
     Propose(ProposeEvent),
     Nudge(NudgeEvent),
-    Vote(VoteEvent),
+    PhaseVote(PhaseVoteEvent),
     NewView(NewViewEvent),
     TimeoutVote(TimeoutVoteEvent),
     AdvanceView(AdvanceViewEvent),
@@ -68,7 +75,7 @@ pub enum Event {
     // Events that involve receiving a Progress Message.
     ReceiveProposal(ReceiveProposalEvent),
     ReceiveNudge(ReceiveNudgeEvent),
-    ReceiveVote(ReceiveVoteEvent),
+    ReceivePhaseVote(ReceivePhaseVoteEvent),
     ReceiveNewView(ReceiveNewViewEvent),
     ReceiveTimeoutVote(ReceiveTimeoutVoteEvent),
     ReceiveAdvanceView(ReceiveAdvanceViewEvent),
@@ -76,7 +83,7 @@ pub enum Event {
     // Other progress mode events.
     StartView(StartViewEvent),
     ViewTimeout(ViewTimeoutEvent),
-    CollectQC(CollectQCEvent),
+    CollectPC(CollectPCEvent),
     CollectTC(CollectTCEvent),
 
     // Sync mode events.
@@ -116,18 +123,18 @@ pub struct PruneBlockEvent {
     pub block: CryptoHash,
 }
 
-/// The Highest Quroum Certificate, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
-/// was updated. Includes the new Highest [`Quroum Certificate`](crate::hotstuff::types::QuorumCertificate).
-pub struct UpdateHighestQCEvent {
+/// The Highest `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
+/// was updated.
+pub struct UpdateHighestPCEvent {
     pub timestamp: SystemTime,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }
 
-/// The Locked QC stored in the [`Block Tree`](crate::state::block_tree::BlockTree) was updated.
-/// Includes the new locked [quorum certificate](crate::hotstuff::types::QuorumCertificate).
-pub struct UpdateLockedQCEvent {
+/// The Locked `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
+/// was updated.
+pub struct UpdateLockedPCEvent {
     pub timestamp: SystemTime,
-    pub locked_qc: QuorumCertificate,
+    pub locked_pc: PhaseCertificate,
 }
 
 /// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree),
@@ -137,10 +144,10 @@ pub struct UpdateHighestTCEvent {
     pub highest_tc: TimeoutCertificate,
 }
 
-/// The committed validator set, stored in the [Block Tree](crate::state::BlockTree), was updated.
-/// Includes the [hash](crate::types::basic::CryptoHash) of the block with which the updates are
+/// The committed validator set, stored in the [Block Tree](crate::state::block_tree::BlockTree), was updated.
+/// Includes the [hash](crate::types::data_types::CryptoHash) of the block with which the updates are
 /// associated, and the information about the
-/// [validator set updates](crate::types::validators::ValidatorSetUpdates), i.e., the insertions and
+/// [validator set updates](crate::types::update_sets::ValidatorSetUpdates), i.e., the insertions and
 /// deletions relative to the previous committed validator set.
 pub struct UpdateValidatorSetEvent {
     pub timestamp: SystemTime,
@@ -162,11 +169,10 @@ pub struct NudgeEvent {
     pub nudge: Nudge,
 }
 
-/// The replica voted for a block by sending a [vote](crate::hotstuff::messages::Vote) to the leader of
-/// the next view.
-pub struct VoteEvent {
+/// The replica voted for a phase of a block by sending `phase_vote` to a leader of the next view.
+pub struct PhaseVoteEvent {
     pub timestamp: SystemTime,
-    pub vote: Vote,
+    pub vote: PhaseVote,
 }
 
 /// The replica sent a [new view](crate::hotstuff::messages::NewView) message for its current view
@@ -206,12 +212,12 @@ pub struct ReceiveNudgeEvent {
     pub nudge: Nudge,
 }
 
-/// The replica received a `vote` for the replica's current view from another replica, identified by its
-/// [`VerifyingKey`].
-pub struct ReceiveVoteEvent {
+/// The replica received a `phase_vote` for the replica's current view from the replica identified by
+/// `origin`.
+pub struct ReceivePhaseVoteEvent {
     pub timestamp: SystemTime,
     pub origin: VerifyingKey,
-    pub vote: Vote,
+    pub phase_vote: PhaseVote,
 }
 
 /// The replica received a [new view](crate::hotstuff::messages::NewView) message for the current view from
@@ -250,11 +256,11 @@ pub struct ViewTimeoutEvent {
     pub view: ViewNumber,
 }
 
-/// The replica collected a new `quorum_certificate` from the votes it received from the validators in
+/// The replica collected a new `phase_certificate` from the votes it received from the validators in
 /// the current view.
-pub struct CollectQCEvent {
+pub struct CollectPCEvent {
     pub timestamp: SystemTime,
-    pub quorum_certificate: QuorumCertificate,
+    pub phase_certificate: PhaseCertificate,
 }
 
 /// The replica collected a new `timeout_certificate` from the votes it received from the validators in
@@ -296,10 +302,10 @@ pub struct ReceiveSyncRequestEvent {
 /// [sync response](crate::block_sync::messages::BlockSyncResponse) to a peer identifiable by its
 /// [public key](ed25519_dalek::VerifyingKey). Includes information about the vector of
 /// [blocks](crate::types::block::Block) and the Highest
-/// [Quroum Certificate](crate::hotstuff::types::QuorumCertificate) sent to the peer.
+/// [Quroum Certificate](crate::hotstuff::types::PhaseCertificate) sent to the peer.
 pub struct SendSyncResponseEvent {
     pub timestamp: SystemTime,
     pub peer: VerifyingKey,
     pub blocks: Vec<Block>,
-    pub highest_qc: QuorumCertificate,
+    pub highest_pc: PhaseCertificate,
 }

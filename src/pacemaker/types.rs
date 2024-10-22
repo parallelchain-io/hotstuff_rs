@@ -8,16 +8,21 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
-use crate::pacemaker::messages::TimeoutVote;
-use crate::state::block_tree::{BlockTree, BlockTreeError};
-use crate::state::kv_store::KVStore;
-use crate::types::collectors::{Certificate, Collector};
-use crate::types::{basic::*, validators::*};
+use crate::{
+    pacemaker::messages::TimeoutVote,
+    state::{
+        block_tree::{BlockTree, BlockTreeError},
+        kv_store::KVStore,
+    },
+    types::{
+        data_types::*,
+        signed_messages::{Certificate, Collector},
+        validator_set::*,
+    },
+};
 
-/// Proof that at least a quorum of validators have sent a
-/// [`TimeoutVote`][crate::pacemaker::messages::TimeoutVote] for the same view.
-/// Required for advancing to a new epoch as part of the
-/// [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+/// Proof that at least a quorum of validators have sent a [`TimeoutVote`] for the same view. Required
+/// for advancing to a new epoch as part of the [`pacemaker`][crate::pacemaker] protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TimeoutCertificate {
     pub chain_id: ChainID,
@@ -26,6 +31,8 @@ pub struct TimeoutCertificate {
 }
 
 impl Certificate for TimeoutCertificate {
+    type Vote = TimeoutVote;
+
     /// Checks if the signatures in the TC are correct and form a quorum for an appropriate validator set.
     ///
     /// During the speculation phase, i.e., when the new validator set has been committed, but the old
@@ -96,8 +103,9 @@ pub(crate) struct TimeoutVoteCollector {
 }
 
 impl Collector for TimeoutVoteCollector {
-    type S = TimeoutVote;
-    type C = TimeoutCertificate;
+    type Vote = TimeoutVote;
+
+    type Certificate = TimeoutCertificate;
 
     fn new(chain_id: ChainID, view: ViewNumber, validator_set: ValidatorSet) -> Self {
         let n = validator_set.len();
@@ -129,7 +137,8 @@ impl Collector for TimeoutVoteCollector {
     /// not part of its validator set, then this is a no-op.
     ///
     /// # Preconditions
-    /// vote.is_correct(signer)
+    ///
+    /// `vote.is_correct(signer)`
     fn collect(&mut self, signer: &VerifyingKey, vote: TimeoutVote) -> Option<TimeoutCertificate> {
         if self.chain_id != vote.chain_id || self.view != vote.view {
             return None;
@@ -142,7 +151,7 @@ impl Collector for TimeoutVoteCollector {
                 self.signature_set.set(pos, Some(vote.signature));
                 self.signature_set_power += *self.validator_set.power(signer).unwrap();
 
-                // If inserting the vote makes the signature set form a quorum, then create a quorum certificate.
+                // If inserting the vote makes the signature set form a quorum, then create a TimeoutCertificate.
                 if self.signature_set_power >= self.validator_set.quorum() {
                     let collected_tc = TimeoutCertificate {
                         chain_id: self.chain_id,

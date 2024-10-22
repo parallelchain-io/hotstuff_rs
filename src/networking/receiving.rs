@@ -1,45 +1,22 @@
-/*
-    Copyright © 2023, ParallelChain Lab
-    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-*/
-
-//! [Trait definition](Network) for pluggable peer-to-peer networking, as well as the internal types and
-//! functions that replicas use to interact with the network.
-//!
-//! HotStuff-rs' has modular peer-to-peer networking, with each peer reachable by their
-//! [`VerifyingKey`](ed25519_dalek::VerifyingKey). Networking providers interact with HotStuff-rs' threads
-//! through implementations of the [`Network`] trait. This trait has five methods that collectively allow
-//! peers to exchange progress protocol and sync protocol messages.  
-
-use std::collections::{BTreeMap, VecDeque};
-use std::mem;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
-use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    mem,
+    sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+    thread::{self, JoinHandle},
+    time::Instant,
+};
 
 use ed25519_dalek::VerifyingKey;
 
-use crate::block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse};
-use crate::messages::*;
-use crate::types::basic::{BufferSize, ChainID, ViewNumber};
-use crate::types::validators::{ValidatorSet, ValidatorSetUpdates};
+use crate::{
+    block_sync::messages::{BlockSyncMessage, BlockSyncRequest, BlockSyncResponse},
+    types::data_types::{BufferSize, ChainID, ViewNumber},
+};
 
-pub trait Network: Clone + Send {
-    /// Informs the network provider the validator set on wake-up.
-    fn init_validator_set(&mut self, validator_set: ValidatorSet);
-
-    /// Informs the networking provider of updates to the validator set.
-    fn update_validator_set(&mut self, updates: ValidatorSetUpdates);
-
-    /// Send a message to all peers (including listeners) without blocking.
-    fn broadcast(&mut self, message: Message);
-
-    /// Send a message to the specified peer without blocking.
-    fn send(&mut self, peer: VerifyingKey, message: Message);
-
-    /// Receive a message from any peer. Returns immediately with a None if no message is available now.
-    fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
-}
+use super::{
+    messages::{Message, ProgressMessage},
+    network::Network,
+};
 
 /// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receivers
 /// for:
@@ -93,49 +70,6 @@ pub(crate) fn start_polling<N: Network + 'static>(
         sync_request_receiver,
         sync_response_receiver,
     )
-}
-
-/// Handle for sending and broadcasting messages to the [`Network`]. It can be used to send or broadcast
-/// instances of any type that implement the [`Into<Message>`] trait.
-#[derive(Clone)]
-pub(crate) struct SenderHandle<N: Network> {
-    network: N,
-}
-
-impl<N: Network> SenderHandle<N> {
-    pub(crate) fn new(network: N) -> Self {
-        Self { network }
-    }
-
-    pub(crate) fn send<S: Into<Message>>(&mut self, peer: VerifyingKey, msg: S) {
-        self.network.send(peer, msg.into())
-    }
-
-    pub(crate) fn broadcast<S: Into<Message>>(&mut self, msg: S) {
-        self.network.broadcast(msg.into())
-    }
-}
-
-/// Handle for informing the Network Provider about validator set updates.
-///
-/// It is important for the network provider to know about validator set updates because, for example,
-/// if a validator set update adds new validators into the validator set, the network provider may want
-/// to establish connections to these new validators.
-#[derive(Clone)]
-pub(crate) struct ValidatorSetUpdateHandle<N: Network> {
-    network: N,
-}
-
-impl<N: Network> ValidatorSetUpdateHandle<N> {
-    /// Create a new update handle.
-    pub(crate) fn new(network: N) -> Self {
-        Self { network }
-    }
-
-    /// Inform the network provider of new validator set `updates` that have been committed.
-    pub(crate) fn update_validator_set(&mut self, updates: ValidatorSetUpdates) {
-        self.network.update_validator_set(updates)
-    }
 }
 
 /// A receiving end for [`ProgressMessages`](ProgressMessage).
@@ -405,6 +339,17 @@ impl ProgressMessageBuffer {
     fn remove_expired_msgs(&mut self, cur_view: ViewNumber) {
         self.buffer = self.buffer.split_off(&cur_view)
     }
+}
+
+/// A cacheable message can be inserted into the
+/// [progress message buffer](crate::networking::receiving::ProgressMessageStub).
+///
+/// For this, we require that:
+/// 1. The message is associated with a view,
+/// 2. The message size is statically known and depends on a particular enum variant.
+pub(crate) trait Cacheable {
+    fn view(&self) -> ViewNumber;
+    fn size(&self) -> u64;
 }
 
 /// A receiving end for sync responses. The [`BlockSyncClientStub::recv_response`] method returns

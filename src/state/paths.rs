@@ -18,11 +18,11 @@
 //!
 //! ## Single values
 //!
-//! "Single values" (e.g., committed validator set, locked QC) are stored in one-byte, constant keys
+//! "Single values" (e.g., committed validator set, locked PC) are stored in one-byte, constant keys
 //! defined in constants sharing the variable's name.
 //!
-//! For example, the locked QC variable is set by serializing a quorum certificate and setting it at
-//! the [`LOCKED_QC`] key.
+//! For example, the locked PC variable is set by serializing a `PhaseCertificate` and setting it at
+//! the [`LOCKED_PC`] key.
 //!
 //! ## Mappings
 //!
@@ -37,10 +37,10 @@
 //! # use borsh::ser::BorshSerialize;
 //! # use hotstuff_rs::{
 //! #     types::{
-//! #         basic::{BlockHeight, CryptoHash, Data},
+//! #         data_types::{BlockHeight, CryptoHash, Data},
 //! #         block::Block,
 //! #     },
-//! #     hotstuff::types::QuorumCertificate,
+//! #     hotstuff::types::PhaseCertificate,
 //! #     state::{
 //! #         write_batch::WriteBatch,
 //! #         paths::{self, combine},
@@ -101,16 +101,16 @@ pub const COMMITTED_APP_STATE: [u8; 1] = [3];
 pub const PENDING_APP_STATE_UPDATES: [u8; 1] = [4];
 pub const COMMITTED_VALIDATOR_SET: [u8; 1] = [5];
 pub const VALIDATOR_SET_UPDATES_STATUS: [u8; 1] = [6];
-pub const LOCKED_QC: [u8; 1] = [7];
+pub const LOCKED_PC: [u8; 1] = [7];
 pub const HIGHEST_VIEW_ENTERED: [u8; 1] = [8];
-pub const HIGHEST_QC: [u8; 1] = [9];
+pub const HIGHEST_PC: [u8; 1] = [9];
 pub const HIGHEST_COMMITTED_BLOCK: [u8; 1] = [10];
 pub const NEWEST_BLOCK: [u8; 1] = [11];
 pub const HIGHEST_TC: [u8; 1] = [12];
 pub const PREVIOUS_VALIDATOR_SET: [u8; 1] = [13];
 pub const VALIDATOR_SET_UPDATE_BLOCK_HEIGHT: [u8; 1] = [14];
 pub const VALIDATOR_SET_UPDATE_DECIDED: [u8; 1] = [15];
-pub const HIGHEST_VIEW_VOTED: [u8; 1] = [16];
+pub const HIGHEST_VIEW_PHASE_VOTED: [u8; 1] = [16];
 
 // Fields of Block
 pub const BLOCK_HEIGHT: [u8; 1] = [0];
