@@ -144,10 +144,10 @@ pub struct UpdateHighestTCEvent {
     pub highest_tc: TimeoutCertificate,
 }
 
-/// The committed validator set, stored in the [Block Tree](crate::state::BlockTree), was updated.
-/// Includes the [hash](crate::types::basic::CryptoHash) of the block with which the updates are
+/// The committed validator set, stored in the [Block Tree](crate::state::block_tree::BlockTree), was updated.
+/// Includes the [hash](crate::types::data_types::CryptoHash) of the block with which the updates are
 /// associated, and the information about the
-/// [validator set updates](crate::types::validators::ValidatorSetUpdates), i.e., the insertions and
+/// [validator set updates](crate::types::update_sets::ValidatorSetUpdates), i.e., the insertions and
 /// deletions relative to the previous committed validator set.
 pub struct UpdateValidatorSetEvent {
     pub timestamp: SystemTime,

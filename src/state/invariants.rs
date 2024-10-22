@@ -346,7 +346,7 @@ pub(crate) fn safe_block<K: KVStore>(
 ///
 /// # Precondition
 ///
-/// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `block.justify`.
+/// [`is_correct`](crate::types::signed_messages::Certificate::is_correct) is `true` for `block.justify`.
 pub(crate) fn safe_pc<K: KVStore>(
     pc: &PhaseCertificate,
     block_tree: &BlockTree<K>,
@@ -376,7 +376,7 @@ pub(crate) fn safe_pc<K: KVStore>(
 ///
 /// # Precondition
 ///
-/// [`is_correct`](crate::types::collectors::Certificate::is_correct) is `true` for `nudge.justify`.
+/// [`is_correct`](crate::types::signed_messages::Certificate::is_correct) is `true` for `nudge.justify`.
 pub fn safe_nudge<K: KVStore>(
     nudge: &Nudge,
     current_view: ViewNumber,

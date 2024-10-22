@@ -438,7 +438,7 @@ impl<K: KVStore> BlockTree<K> {
     ///
     /// ## Preconditions
     ///
-    /// [`block_to_commit`](safety::block_to_commit) returns `block`.
+    /// [`block_to_commit`](invariants::block_to_commit) returns `block`.
     pub fn commit(
         &mut self,
         wb: &mut BlockTreeWriteBatch<K::WriteBatch>,
@@ -602,7 +602,7 @@ impl<K: KVStore> BlockTree<K> {
         branch.into_iter()
     }
 
-    /// Publish all events resulting from calling [update_block_tree]. These events have to do with changing
+    /// Publish all events resulting from calling [`update`](Self::update). These events have to do with changing
     /// persistent state, and  possibly include: [`UpdateHighestPCEvent`], [`UpdateLockedPCEvent`],
     /// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
     ///

@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the Pacemaker protocol, based on the Lewis-Pye View Synchronisation protocol
-//! (https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved Weighted Round Robin leader selection
-//! mechanism.
+//! Implementation of the Pacemaker protocol, based on the
+//! [Lewis-Pye View Synchronisation protocol](https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved
+//! Weighted Round Robin leader selection mechanism.
 //!
 //! The liveness of the HotStuff protocol is dependent on the Pacemaker module, which regulates how and
 //! when a replica advances its view, as well as determines which validator shall act as the leader of
@@ -74,12 +74,11 @@ use crate::{
     },
 };
 
-/// A Pacemaker protocol for Byzantine View Synchronization inspired by the Lewis-Pye View
-/// Synchronization protocol (https://arxiv.org/pdf/2201.01107.pdf). Its [`PacemakerState`] is an
-/// authoritative source of information regarding the current view and its leader, and
-/// [`Algorithm`][crate::algorithm::Algorithm] should regularly query the [`Pacemaker`] for this
-/// information ([`ViewInfo`]), and propagate the information to
-/// [`HotStuff`](crate::hotstuff::protocol::HotStuff).
+/// A Pacemaker protocol for Byzantine View Synchronization inspired by the
+/// [Lewis-Pye View Synchronization protocol](https://arxiv.org/pdf/2201.01107.pdf). Its
+/// [`PacemakerState`] is the authoritative source of information regarding the current view and its
+/// leader, and [`Algorithm`][crate::algorithm::Algorithm] should regularly query the [`Pacemaker`] for
+/// this information ([`ViewInfo`]), and propagate the information to [`hotstuff`](crate::hotstuff).
 ///
 /// The Pacemaker exposes the following API for use in the Algorithm:
 /// 1. [Pacemaker::new]: creates a fresh instance of the [`Pacemaker`],

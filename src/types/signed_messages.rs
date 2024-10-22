@@ -23,7 +23,7 @@
 //!
 //! Certificates are formed by using structs called "Collectors" to aggregate the signatures of
 //! Votes with matching `ViewNumber`s and `ChainID`s together until the collected
-//! [`SignatureSet`](crate::types::basic::SignatureSet) contains votes from a
+//! [`SignatureSet`](crate::types::data_types::SignatureSet) contains votes from a
 //! ["quorum"](Certificate::quorum) of validators in a validator set. Collector structs generally
 //! implement the same basic logic whichever specific `Vote` type they collect into whichever specific
 //! `Certificate` type, which is why this module can define a **[`Collector`]** trait that generalizes
@@ -107,8 +107,35 @@ pub(crate) trait Certificate {
     /// `validator_set_power` total power must contain in order for it to correspond to a "quorum" of
     /// validators.
     ///
-    /// "Minimum" here is understood in the inclusive sense, a certificate corresponds to a quorum if its power
-    /// is **greater than or equal** to the return value of `quorum`.
+    /// "Minimum" here is understood in the inclusive sense, a certificate corresponds to a quorum if its
+    /// power is **greater than or equal** to the return value of `quorum`.
+    ///
+    /// # Uniqueness of quorums
+    ///
+    /// The quorum size of a validator set with the total power `validator_set_power` is
+    /// `ceil(validator_set_power * 2/3)`.
+    ///
+    /// This exact threshold (**2/3rds**) of the total power of a validator set is the minimum
+    /// needed to guarantee the invariant that in any view, at most one `Certificate` (of each concrete
+    /// kind) can be formed, given that at most 1/3rds of the total power could be Byzantine.
+    ///
+    /// To see why, consider the "worst-case" scenario where, in the current view:
+    /// - Just under 1/3rds ("1/3rds - 1") of the total power of the current validator set is Byzantine.
+    /// - Just over 2/3rds ("2/3rds + 1") of the total power is honest.
+    ///
+    /// To attack the uniqueness invariant in this scenario (i.e., to try and form two conflicting
+    /// certificates), all Byzantine validators would (double-)vote for conflicting certificates `A` and
+    /// `B` with the same view number. Both certificates would now have the power "1/3rds - 1". Then, since
+    /// honest validators only vote for one certificate of each concrete kind per view, one of the following
+    /// will be the case:
+    /// - Only `A` accumulates enough votes to constitute a quorum.
+    /// - Only `B` accumulates enough votes to constitute a quorum.
+    /// - Neither `A` and `B` accumulate enough votes to constitute a quorum.
+    ///
+    /// In particular, the case where both `A` and `B` both constitute a quorum is impossible, because there
+    /// simply isn't enough remaining votes in "2/3rds + 1" to form two quorums. Critically, note that if
+    /// the quorum threshold were any lower (e.g., just 2/3rds), this case would be possible, and the
+    /// invariant would no longer hold.
     fn quorum(validator_set_power: TotalPower) -> TotalPower {
         const TOTAL_POWER_OVERFLOW: &str =
             "Validator set power exceeds u128::MAX/2. Read the itemdoc for Validator Set.";

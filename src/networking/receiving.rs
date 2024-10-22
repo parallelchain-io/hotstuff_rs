@@ -342,7 +342,7 @@ impl ProgressMessageBuffer {
 }
 
 /// A cacheable message can be inserted into the
-/// [progress message buffer](crate::networking::ProgressMessageStub).
+/// [progress message buffer](crate::networking::receiving::ProgressMessageStub).
 ///
 /// For this, we require that:
 /// 1. The message is associated with a view,

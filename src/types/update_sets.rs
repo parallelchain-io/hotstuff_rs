@@ -13,7 +13,7 @@ use super::{
 /// Generic set of key-value updates that are committed when a particular block is committed.
 ///
 /// This generic type currently forms the basis of two concrete types: [`AppStateUpdates`] and
-/// [`ValidatorSetUpdates`](super::validators::ValidatorSetUpdates).
+/// [`ValidatorSetUpdates`].
 ///
 /// # Uniqueness of Key between `inserts` and `deletes`
 #[derive(Clone, BorshSerialize, BorshDeserialize)]

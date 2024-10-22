@@ -3,13 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+#![allow(rustdoc::private_intra_doc_links)]
+
 //! A Rust Programming Language library for Byzantine Fault Tolerant (BFT) State Machine Replication
 //! (SMR), intended for production systems.
 //!
 //! # Features
 //!
 //! - **Pluggable components**: library users get to provide their own business logic
-//!   ([`app`](crate::app)), key-value storage ([`kv_store`](crate::state::kv_store)), and peer-to-peer
+//!   ([`app`]), key-value storage ([`kv_store`](crate::state::kv_store)), and peer-to-peer
 //!   networking ([`network`](crate::networking::network)). HotStuff-rs is agnostic to these details and
 //!   can therefore be adapted to many use-cases.
 //! - **Dynamic validator sets**: `App`s can control and change the set of replicas ("validators") that

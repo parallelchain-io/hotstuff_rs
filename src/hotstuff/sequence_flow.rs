@@ -1,7 +1,9 @@
 //! Specification of the sequence flow of the event-driven [`implementation`](super::implementation)
 //! of the HotStuff subprotocol.
 //!
-//! # Enter View
+//! # Event handlers
+//!
+//! ## Enter View
 //!
 //! ```ignore
 //! fn enter_view(view: ViewNum) {
@@ -29,50 +31,51 @@
 //!         block_tree.validator_sets_state(),
 //!     ) {
 //!
-//!     // 4.1. If a chain of consecutive views justifying a validator set updating block has been broken,
-//!     // re-propose the validator set updating block.
-//!     if let Some(block) = block_tree.repropose_block(view) {
-//!         let proposal = Proposal {
-//!             chain_id,
-//!             view,
-//!             block,
+//!         // 4.1. If a chain of consecutive views justifying a validator set updating block has been broken,
+//!         // re-propose the validator set updating block.
+//!         if let Some(block) = block_tree.repropose_block(view) {
+//!             let proposal = Proposal {
+//!                 chain_id,
+//!                 view,
+//!                 block,
+//!             }
+//!
+//!             network.broadcast(proposal);
 //!         }
 //!
-//!         network.broadcast(proposal);
-//!     }
+//!         // 4.2. Otherwise, decide whether to broadcast a new proposal, or a new nudge, according to phase of the highest PC.
+//!         else {
+//!             match block_tree.highest_pc().phase {
 //!
-//!     // 4.2. Otherwise, decide whether to broadcast a new proposal, or a new nudge, according to phase of the highest PC.
-//!     else {
-//!         match block_tree.highest_pc().phase {
+//!                 // 4.2.1. If the phase of the highest PC is Generic or Decide, create a new Proposal and broadcast it.
+//!                 Phase::Generic | Phase::Decide => {
+//!                     let block = app.produce_block(&block_tree, block_tree.highest_pc());
+//!                     let proposal = Proposal {
+//!                         chain_id,
+//!                         view,
+//!                         block,
+//!                     }
 //!
-//!             // 4.2.1. If the phase of the highest PC is Generic or Decide, create a new Proposal and broadcast it.
-//!             Phase::Generic | Phase::Decide => {
-//!                 let block = app.produce_block(&block_tree, block_tree.highest_pc());
-//!                 let proposal = Proposal {
-//!                     chain_id,
-//!                     view,
-//!                     block,
+//!                     network.broadcast(proposal);
+//!                 },
+//!
+//!                 // 4.2.2. If the phase of the highest PC is Prepare, Precommit, or Commit, create a new Nudge and broadcast it.
+//!                 Phase::Prepare | Phase::Precommit | Phase::Commit => {
+//!                     let nudge = Nudge {
+//!                         chain_id,
+//!                         view,
+//!                         justify: block_tree.highest_pc(),
+//!                     }
+//!
+//!                     network.broadcast(nudge);
 //!                 }
-//!
-//!                 network.broadcast(proposal);
-//!             },
-//!
-//!             // 4.2.2. If the phase of the highest PC is Prepare, Precommit, or Commit, create a new Nudge and broadcast it.
-//!             Phase::Prepare | Phase::Precommit | Phase::Commit => {
-//!                 let nudge = Nudge {
-//!                     chain_id,
-//!                     view,
-//!                     justify: block_tree.highest_pc(),
-//!                 }
-//!
-//!                 network.broadcast(nudge);
 //!             }
 //!         }
 //!     }
 //! }
 //! ```
 //!
-//! # On Receive Proposal
+//! ## On Receive Proposal
 //!
 //! ```ignore
 //! fn on_receive_proposal(proposal: Proposal, origin: VerifyingKey) {
@@ -126,7 +129,7 @@
 //! }
 //! ```
 //!
-//! # On Receive Nudge
+//! ## On Receive Nudge
 //!
 //! ```ignore
 //! fn on_receive_nudge(nudge: Nudge, origin: VerifyingKey) {
@@ -206,7 +209,7 @@
 //! }
 //! ```
 //!
-//! # On Receive New View
+//! ## On Receive New View
 //!
 //! ```ignore
 //! fn on_receive_new_view(new_view: NewView, origin: VerifyingKey) {

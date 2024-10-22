@@ -301,7 +301,7 @@ impl AddAssign<Power> for TotalPower {
 }
 
 /// An ordered list of [`SignatureBytes`] from the same
-/// [`ValidatorSet`](super::validators::ValidatorSet).
+/// [`ValidatorSet`](super::validator_set::ValidatorSet).
 ///
 /// # Ordering
 ///
@@ -310,7 +310,7 @@ impl AddAssign<Power> for TotalPower {
 ///
 /// Specifically, this means that if `signature_bytes` was created by a `validator` in a
 /// `validator_set`, then it should appear in `SignatureSet`s corresponding to `validator_set` in the
-/// [`self.validator_set.position(validator)`](super::validators::ValidatorSet::position) position.
+/// [`self.validator_set.position(validator)`](super::validator_set::ValidatorSet::position) position.
 ///
 /// Users of this type are responsible for enforcing this order **manually**, in particular, every
 /// time they call [`set`](Self::set) to insert a signature into `SignatureSet`. Failing to uphold this

@@ -58,8 +58,7 @@ use super::roles::phase_vote_recipient;
 /// are:
 /// 1. [`enter_view`](Self::enter_view): called when
 ///    [`Pacemaker`](crate::pacemaker::protocol::Pacemaker) causes the replica to enter a new view.
-/// 2. [`on_receive_msg`](Self::on_receive_msg): called when a new [`HotStuffMessage`](HotStuffMessage)
-///    is received.
+/// 2. [`on_receive_msg`](Self::on_receive_msg): called when a new [`HotStuffMessage`] is received.
 ///
 /// Besides these two, HotStuff has one more crate-public method, namely
 /// [`is_view_outdated`](Self::is_view_outdated). This should be called after querying `Pacemaker` for
@@ -125,7 +124,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// # Specification
     ///
-    /// [Enter View](super::specification#enter-view).
+    /// [Enter View](super::sequence_flow#enter-view).
     pub(crate) fn enter_view<K: KVStore>(
         &mut self,
         new_view_info: ViewInfo,
@@ -337,7 +336,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// # Specification
     ///
-    /// [On Receive Proposal](super::specification#on-receive-proposal).
+    /// [On Receive Proposal](super::sequence_flow#on-receive-proposal).
     fn on_receive_proposal<K: KVStore>(
         &mut self,
         proposal: Proposal,
@@ -466,7 +465,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// # Specification
     ///
-    /// [On Receive Nudge](super::specification#on-receive-nudge).
+    /// [On Receive Nudge](super::sequence_flow#on-receive-nudge).
     fn on_receive_nudge<K: KVStore>(
         &mut self,
         nudge: Nudge,
@@ -570,7 +569,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// # Specification
     ///
-    /// [On Receive Phase Vote](super::specification#on-receive-phase-vote).
+    /// [On Receive Phase Vote](super::sequence_flow#on-receive-phase-vote).
     fn on_receive_phase_vote<K: KVStore>(
         &mut self,
         phase_vote: PhaseVote,
@@ -626,7 +625,7 @@ impl<N: Network> HotStuff<N> {
     ///
     /// # Specification
     ///
-    /// [On Receive New View](super::specification#on-receive-new-view).
+    /// [On Receive New View](super::sequence_flow#on-receive-new-view).
     fn on_receive_new_view<K: KVStore>(
         &mut self,
         new_view: NewView,

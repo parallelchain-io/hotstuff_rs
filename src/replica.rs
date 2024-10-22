@@ -143,7 +143,7 @@ use std::sync::mpsc::{self, Sender};
 
 /// Stores the user-defined parameters required to start the replica, that is:
 /// 1. The replica's [keypair](ed25519_dalek::SigningKey).
-/// 2. The [chain ID](crate::types::basic::ChainID) of the target blockchain.
+/// 2. The [chain ID](crate::types::data_types::ChainID) of the target blockchain.
 /// 3. The sync request limit, which determines how many blocks should the replica request from its peer
 ///    when syncing.
 /// 4. The sync response timeout (in seconds), which defines the maximum amount of time after which the
@@ -160,8 +160,8 @@ use std::sync::mpsc::{self, Sender};
 ///
 /// ## Chain ID
 ///
-/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::basic::ChainID). This
-/// is included in votes and other messages so that replicas don't mistake messages and blocks for
+/// Each HotStuff-rs blockchain should be identified by a [chain ID](crate::types::data_types::ChainID).
+/// This is included in votes and other messages so that replicas don't mistake messages and blocks for
 /// one HotStuff-rs blockchain does not get mistaken for those for another blockchain. In most cases,
 /// having a chain ID that collides with another blockchain is harmless. But if your application is a
 /// Proof of Stake public blockchain, this may cause a slashable offence if you operate validators in
@@ -566,8 +566,8 @@ pub struct Replica<K: KVStore> {
 
 impl<K: KVStore> Replica<K> {
     /// Initializes the replica's [Block Tree](crate::state::block_tree::BlockTree) with the intial
-    /// [app state updates](crate::types::basic::AppStateUpdates) and
-    /// [validator set updates](crate::types::validators::ValidatorSetUpdates).
+    /// [app state updates](crate::types::update_sets::AppStateUpdates) and
+    /// [validator set updates](crate::types::update_sets::ValidatorSetUpdates).
     pub fn initialize(
         kv_store: K,
         initial_app_state: AppStateUpdates,
@@ -579,8 +579,8 @@ impl<K: KVStore> Replica<K> {
             .expect("Block Tree initialization failed!")
     }
 
-    /// Returns a [`BlockTreeCamera`](crate::state::block_tree_camera::BlockTreeCamera) which can be used
-    /// to peek into the [`BlockTree`](crate::state::block_tree::BlockTree).
+    /// Returns a [`BlockTreeCamera`] which can be used
+    /// to peek into the [`BlockTree`].
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }

@@ -32,10 +32,9 @@ use crate::{events::*, logging::Logger};
 /// Pointer to a handler closure, parametrised by the argument (for our use case, event) type.
 pub(crate) type HandlerPtr<T> = Box<dyn Fn(&T) + Send>;
 
-/// Stores the two optional handlers enabled for an event type that implements the
-/// [`Logger`](crate::logging::Logger) trait, namely one logging handler, defined in
-/// [`logging`](crate::logging), and one user-defined handler, passed to
-/// [`ReplicaSpec`](crate::replica::ReplicaSpec).
+/// Stores the two optional handlers enabled for an event type that implements the [`Logger`] trait,
+/// namely one logging handler, defined in [`logging`](crate::logging), and one user-defined handler,
+/// passed to [`ReplicaSpec`](crate::replica::ReplicaSpec).
 ///
 /// Note that the user-defined handler is expected to include all expected event-handling
 /// functionalities per event.

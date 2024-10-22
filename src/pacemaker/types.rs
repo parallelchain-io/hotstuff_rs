@@ -21,10 +21,8 @@ use crate::{
     },
 };
 
-/// Proof that at least a quorum of validators have sent a
-/// [`TimeoutVote`][crate::pacemaker::messages::TimeoutVote] for the same view.
-/// Required for advancing to a new epoch as part of the
-/// [pacemaker][crate::pacemaker::protocol::Pacemaker] protocol.
+/// Proof that at least a quorum of validators have sent a [`TimeoutVote`] for the same view. Required
+/// for advancing to a new epoch as part of the [`pacemaker`][crate::pacemaker] protocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TimeoutCertificate {
     pub chain_id: ChainID,
