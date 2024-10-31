@@ -46,7 +46,7 @@ jobs:
               name: Compute path to the subfolder the docs should be in 
               run: |
                 subfolder_path=$GITHUB_REF_TYPE/$GITHUB_REF_NAME/
-                echo "subfolder_path=$subfolder_path" >> $GITHUB_ENV
+                echo "subfolder_path=$subfolder_path" >> $GITHUB_OUTPUT
               env:
                   GITHUB_REF_TYPE: "${{ github.ref_type }}"
                   GITHUB_REF_NAME: "${{ github.ref_name }}"
