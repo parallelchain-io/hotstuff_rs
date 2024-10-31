@@ -15,7 +15,7 @@ on:
 jobs:
     build_docs:
         name: Build rustdocs
-        runs-on: ubuntu_latest
+        runs-on: ubuntu-latest
         steps:
             - name: Install Rust toolchain
               uses: actions-rust-lang/setup-rust-toolchain@v1 
