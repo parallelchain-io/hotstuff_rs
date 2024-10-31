@@ -24,7 +24,7 @@ jobs:
               uses: actions/checkout@v4
 
             - name: Generate complete rustdocs 
-              uses: cargo doc --document-private-items --no-deps 
+              run: cargo doc --document-private-items --no-deps 
 
             - name: Upload rustdocs as `complete_docs` artifact
               uses: actions/upload-artifact@v4
