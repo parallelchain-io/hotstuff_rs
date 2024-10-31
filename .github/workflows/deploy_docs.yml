@@ -56,9 +56,10 @@ jobs:
                 if [ -d $SUBFOLDER_PATH ]; then
                     echo "Subfolder `$SUB_FOLDER_PATH` already exists, clearing its contents"
                     rm -rf "${SUBFOLDER_PATH:?}/"*
-                else if
+                else
                     echo "Subfolder `$SUBFOLDER_PATH` doesn't exist yet. Creating it"
                     mkdir -p "$SUBFOLDER_PATH"
+                fi
               env:
                 SUBFOLDER_PATH: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
             
