@@ -1,0 +1,85 @@
+name: Deploy complete Rustdocs
+run-name: Deploy docs for branch/release `${{ github.ref }}` to GitHub Pages.
+
+# List of events that trigger the deploying of Rustdocs.
+on:
+    # Receiving a push to any branch.
+    push:
+
+    # Releasing a prerelease or stable release.
+    release:
+        types:
+            - prereleased
+            - released
+
+jobs:
+    build_docs:
+        name: Build rustdocs
+        runs-on: ubuntu_latest
+        steps:
+            - name: Install Rust toolchain
+              uses: actions-rust-lang/setup-rust-toolchain@v1 
+
+            - name: Checkout updated `hotstuff_rs` ref 
+              uses: actions/checkout@v4
+
+            - name: Generate complete rustdocs 
+              uses: cargo doc --document-private-items --no-deps 
+
+            - name: Upload rustdocs as `complete_docs` artifact
+              uses: actions/upload-artifact@v4
+              with:
+                name: complete_docs
+                path: target/doc/
+
+    push_docs:
+        name: Push rustdocs to `hotstuff_rs_docs` repository
+        runs-on: ubuntu_latest
+        steps:
+            - name: Checkout latest `hotstuff_rs_docs`
+              uses: actions/checkout@v4
+              with:
+                repository: parallelchain-io/hotstuff_rs_docs
+
+            - id: compute_subfolder_path
+              name: Compute path to the subfolder the docs should be in 
+              run: |
+                subfolder_path=$GITHUB_REF_TYPE/$GITHUB_REF_NAME/
+                echo "subfolder_path=$subfolder_path" >> $GITHUB_ENV
+              env:
+                  GITHUB_REF_TYPE: "${{ github.ref_type }}"
+                  GITHUB_REF_NAME: "${{ github.ref_name }}"
+
+            - name: Prepare the subfolder
+              run: |
+                if [ -d $SUBFOLDER_PATH ]; then
+                    echo "Subfolder `$SUB_FOLDER_PATH` already exists, clearing its contents"
+                    rm -rf "${SUBFOLDER_PATH:?}/"*
+                else if
+                    echo "Subfolder `$SUBFOLDER_PATH` doesn't exist yet. Creating it"
+                    mkdir -p "$SUBFOLDER_PATH"
+              env:
+                SUBFOLDER_PATH: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
+            
+            - name: Download `complete_docs` artifact to the subfolder
+              uses: actions/download-artifact@v4 
+              with:
+                name: complete_docs
+                path: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
+
+            - name: Stage the changes to `hotstuff_rs_docs`
+              run: git add .
+
+            - name: Commit the changes to `hotstuff_rs_docs`
+              run: |
+                git config --global user.name "github-actions[bot]"
+                git config --global user.email "github-actions[bot]@users.noreply.github.com"
+                git commit -m "$COMMIT_MESSAGE"
+              env: 
+                COMMIT_MESSAGE: "add docs for branch/release `${{ github.ref }}`"
+            
+            - name: Push the changes to `hotstuff_rs_docs` to the remote
+              run: |
+                git push "https://${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git" HEAD:main
+              env:
+                PAT: "${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}"
