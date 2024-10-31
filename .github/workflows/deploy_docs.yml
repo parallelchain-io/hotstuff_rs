@@ -34,7 +34,7 @@ jobs:
 
     push_docs:
         name: Push rustdocs to `hotstuff_rs_docs` repository
-        runs-on: ubuntu_latest
+        runs-on: ubuntu-latest
         needs: build_docs
         steps:
             - name: Checkout latest `hotstuff_rs_docs`
