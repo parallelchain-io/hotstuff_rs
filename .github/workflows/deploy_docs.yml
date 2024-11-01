@@ -82,6 +82,6 @@ jobs:
             
             - name: Push the changes to `hotstuff_rs_docs` to the remote
               run: |
-                git push "https://${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git" HEAD:master
+                git push "https://github-actions[bot]:${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git" HEAD:master
               env:
                 PAT: "${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}"
