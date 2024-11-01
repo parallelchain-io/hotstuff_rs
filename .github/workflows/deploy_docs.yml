@@ -69,20 +69,16 @@ jobs:
                 name: complete_docs
                 path: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
 
-            - name: Stage the changes to `hotstuff_rs_docs`
-              run: git add .
-
-            - name: Commit the changes to `hotstuff_rs_docs`
+            - name: Stage and commit the changes to `hotstuff_rs_docs`
               run: |
                 git config --global user.name "github-actions[bot]"
                 git config --global user.email "github-actions[bot]@users.noreply.github.com"
-                git commit -m "$COMMIT_MESSAGE"
+                git commit -a -m "$COMMIT_MESSAGE"
               env: 
                 COMMIT_MESSAGE: "add docs for branch/release `${{ github.ref }}`"
-            
+
             - name: Push the changes to `hotstuff_rs_docs` to the remote
-              run: |
-                git remote set-url origin "https://${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git"
-                git push origin HEAD:master
-              env:
-                PAT: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
+              uses: ad-m/github-push-action@master
+              with:
+                github_token: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
+                repository: parallelchain-io/hotstuff_rs_docs
