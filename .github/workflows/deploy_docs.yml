@@ -82,7 +82,7 @@ jobs:
             
             - name: Push the changes to `hotstuff_rs_docs` to the remote
               run: |
-                git remote set-url origin "https://github-actions[bot]:${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git"
+                git remote set-url origin "https://${PAT}@github.com/parallelchain-io/hotstuff_rs_docs.git"
                 git push origin HEAD:master
               env:
-                PAT: "${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}"
+                PAT: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
