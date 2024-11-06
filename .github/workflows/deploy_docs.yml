@@ -1,3 +1,8 @@
+# GitHub Actions Workflow that generates Rustdocs for HotStuff-rs every time a commit is pushed to a branch
+# or a stable release or pre-release is released, and then pushes this Rustdocs to the master branch of the
+# [hotstuff_rs_docs](https://github.com/parallelchain-io/hotstuff_rs_docs) repository so that it may
+# automatically be deployed to GitHub Pages.
+
 name: Deploy complete Rustdocs
 run-name: Deploy docs for branch/release `${{ github.ref }}` to GitHub Pages.
 
