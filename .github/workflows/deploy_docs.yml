@@ -75,6 +75,12 @@ jobs:
               with:
                 name: complete_docs
                 path: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
+              
+            - name: Test multi-line step with an empty line in the middle
+              run: |
+                echo "hello"
+
+                echo "world"
 
             - name: Stage and commit the changes (if there are any) to `hotstuff_rs_docs`
               id: commit_changes
