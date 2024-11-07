@@ -80,16 +80,20 @@ jobs:
               id: commit_changes
               run: |
                 git diff --exit-code
+                git_diff_exit_code=$?
+
                 # If there are changes to the Rustdocs, then commit these changes.
-                if [ $? -eq 1 ]; then
+                if [ $git_diff_exit_code -eq 1 ]; then
                   echo "docs_changed=true" >> $GITHUB_OUTPUT
                   git config --global user.name "github-actions[bot]"
                   git config --global user.email "github-actions[bot]@users.noreply.github.com"
                   git add .
                   git commit -a -m "$COMMIT_MESSAGE"
+
                 # If there are no changes to the Rustdocs, skip the next (push) step.
-                elif [ $? -eq 0 ]; then
+                elif [ $git_diff_exit_code -eq 0 ]; then
                   echo "docs_changed=false" >> $GITHUB_OUTPUT
+
                 # If something unexpected happened during 'git diff', fail the job and therefore the workflow.
                 else
                   echo "unhandled error when executing 'git diff'"
