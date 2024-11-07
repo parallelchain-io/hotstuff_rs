@@ -6,12 +6,12 @@
 name: Deploy complete Rustdocs
 run-name: Deploy docs for branch/release `${{ github.ref }}` to GitHub Pages.
 
-# List of events that trigger the deploying of Rustdocs.
+# List of event types that trigger the deploying of Rustdocs.
 on:
-    # Receiving a push to any branch.
+    # 1. Receiving a push to any branch.
     push:
 
-    # Releasing a prerelease or stable release.
+    # 2. Releasing a prerelease or stable release.
     release:
         types:
             - prereleased
@@ -49,8 +49,8 @@ jobs:
                 fetch-depth: 0
                 token: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
 
-            - id: compute_subfolder_path
-              name: Compute path to the subfolder the docs should be in 
+            - name: Compute path to the subfolder the docs should be in 
+              id: compute_subfolder_path
               run: |
                 subfolder_path=$GITHUB_REF_TYPE/$GITHUB_REF_NAME/
                 echo "subfolder_path=$subfolder_path" >> $GITHUB_OUTPUT
@@ -76,16 +76,34 @@ jobs:
                 name: complete_docs
                 path: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
 
-            - name: Stage and commit the changes to `hotstuff_rs_docs`
+            - name: Stage and commit the changes (if there are any) to `hotstuff_rs_docs`
+              id: commit_changes
               run: |
-                git config --global user.name "github-actions[bot]"
-                git config --global user.email "github-actions[bot]@users.noreply.github.com"
-                git add .
-                git commit -a -m "$COMMIT_MESSAGE"
+                git diff --quiet --exit-code
+
+                # If there are changes to the Rustdocs, then commit these changes.
+                if [ $? = 1 ]; then
+                  echo "docs_changed=true" >> $GITHUB_OUTPUT
+                  git config --global user.name "github-actions[bot]"
+                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+                  git add .
+                  git commit -a -m "$COMMIT_MESSAGE"
+
+                # If there are no changes to the Rustdocs, skip the next (push) step.
+                elif [ $? = 0 ]; then
+                  echo "docs_changed=false" >> $GITHUB_OUTPUT
+
+                # If something unexpected happened during `git diff`, fail the job and therefore the workflow.
+                else
+                  echo "unhandled error when executing `git diff`"
+                  exit 1
+                fi
+                
               env: 
                 COMMIT_MESSAGE: "add docs for branch/release `${{ github.ref }}`"
 
-            - name: Push the changes to `hotstuff_rs_docs` to the remote
+            - if: ${{ steps.commit_changes.outputs.docs_changed }}
+              name: Push the changes to `hotstuff_rs_docs` to the remote
               uses: ad-m/github-push-action@master
               with:
                 github_token: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
