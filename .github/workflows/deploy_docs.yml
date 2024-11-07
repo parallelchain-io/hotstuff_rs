@@ -76,16 +76,11 @@ jobs:
                 name: complete_docs
                 path: ${{ steps.compute_subfolder_path.outputs.subfolder_path }}
               
-            - name: Test multi-line step with an empty line in the middle
-              run: |
-                echo "hello"
-
-                echo "world"
-
             - name: Stage and commit the changes (if there are any) to `hotstuff_rs_docs`
               id: commit_changes
               run: |
                 git diff --exit-code
+                echo $?
 
                 # If there are changes to the Rustdocs, then commit these changes.
                 if [ $? = 1 ]; then
