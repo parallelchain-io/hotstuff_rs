@@ -93,9 +93,9 @@ jobs:
                 elif [ $? = 0 ]; then
                   echo "docs_changed=false" >> $GITHUB_OUTPUT
 
-                # If something unexpected happened during `git diff`, fail the job and therefore the workflow.
+                # If something unexpected happened during 'git diff', fail the job and therefore the workflow.
                 else
-                  echo "unhandled error when executing `git diff`"
+                  echo "unhandled error when executing 'git diff'"
                   exit 1
                 fi
                 
