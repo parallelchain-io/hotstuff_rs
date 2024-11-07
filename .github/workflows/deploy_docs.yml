@@ -80,7 +80,6 @@ jobs:
               id: commit_changes
               run: |
                 git diff --exit-code
-
                 # If there are changes to the Rustdocs, then commit these changes.
                 if [ $? = 1 ]; then
                   echo "docs_changed=true" >> $GITHUB_OUTPUT
