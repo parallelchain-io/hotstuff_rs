@@ -79,7 +79,7 @@ jobs:
             - name: Stage and commit the changes (if there are any) to `hotstuff_rs_docs`
               id: commit_changes
               run: |
-                git diff --quiet --exit-code
+                git diff --exit-code
 
                 # If there are changes to the Rustdocs, then commit these changes.
                 if [ $? = 1 ]; then
