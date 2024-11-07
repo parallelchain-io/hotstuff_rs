@@ -103,7 +103,7 @@ jobs:
               env: 
                 COMMIT_MESSAGE: "add docs for branch/release `${{ github.ref }}`"
 
-            - if: ${{ steps.commit_changes.outputs.docs_changed }}
+            - if: ${{ steps.commit_changes.outputs.docs_changed == 'true' }}
               name: Push the changes to `hotstuff_rs_docs` to the remote
               uses: ad-m/github-push-action@master
               with:
