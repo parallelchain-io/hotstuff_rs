@@ -1,12 +1,16 @@
-# GitHub Actions Workflow that generates Rustdocs for HotStuff-rs every time a commit is pushed to a branch
-# or a stable release or pre-release is released, and then pushes this Rustdocs to the master branch of the
-# [hotstuff_rs_docs](https://github.com/parallelchain-io/hotstuff_rs_docs) repository so that it may
-# automatically be deployed to GitHub Pages.
+# GitHub Actions Workflow that generates Rustdocs for HotStuff-rs every time a commit is pushed to a 
+# branch or a stable release or pre-release is released, and then pushes this Rustdocs to the master
+# branch of the [hotstuff_rs_docs](https://github.com/parallelchain-io/hotstuff_rs_docs) repository so
+# that it may automatically be deployed to GitHub Pages.
+#
+# The jobs and steps in this workflow are quite straightforward, and the high-level flow should be
+# understandable just by reading the `name` keys of each step in turn. Additional context and 
+# explanation is provided by the comments in the YAML.
 
 name: Deploy complete Rustdocs
 run-name: Deploy docs for branch/release `${{ github.ref }}` to GitHub Pages.
 
-# List of event types that trigger the deploying of Rustdocs.
+# Event types that trigger the deploying of Rustdocs.
 on:
   # 1. Receiving a push to any branch.
   push:
@@ -17,11 +21,17 @@ on:
       - prereleased
       - released
 
+# Jobs that are triggered by events with the listed types.
 jobs:
+
+  # Check out the latest update to the `hotstuff_rs` repo, run `cargo doc` on it, and upload the
+  # generated docs as an artifact.
   build_docs:
     name: Build rustdocs
     runs-on: ubuntu-latest
     steps:
+      # We must check out before we run setup-rust-toolchain, because setup-rust-toolchain runs `cargo 
+      # metadata`, which looks for a `Cargo.toml` in the working directory.
       - name: Checkout updated `hotstuff_rs` ref 
         uses: actions/checkout@v4
     
@@ -37,6 +47,8 @@ jobs:
           name: complete_docs
           path: target/doc/
 
+  # Download the generated docs artifact, then check whether the docs have changed compared to the
+  # latest `hotstuff_rs_docs` commit. If so, then commit the changes and push it to the remote.
   push_docs:
     name: Push rustdocs to `hotstuff_rs_docs` repository
     runs-on: ubuntu-latest
@@ -49,14 +61,34 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.HOTSTUFF_RS_DOCS_PUSHER }}
 
-      - name: Compute path to the subfolder the docs should be placed in 
+      - name: Compute the path of the subfolder that the docs for this branch/tag should be placed in 
         id: compute_subfolder_path
+        # We first have to sanitize GITHUB_REF_NAME so that it does not contain any characters that will
+        # affect the folder structure of `hotstuff_rs_docs` in unwanted ways.
+        #
+        # To illustrate the necessity of sanitization, consider what could happen if we **do not** sanitize
+        # the refname "dev/v0.4". In this case, the folder structure will contain the following subtree:
+        # - dev/
+        #   - v0.4/
+        #       - Rustdocs for "dev/v0.4"
+        # 
+        # If, in this scenario, someone pushes a commit to a branch called "dev", the "Prepare the subfolder"
+        # step will clear the entirity of "dev/" before placing the Rustdocs for "dev" under it, resulting in
+        # the following, undesired folder structure:
+        # - dev/
+        #    - Rustdocs for "dev/"
+        #    - (The Rustdocs for "dev/v0.4" have been accidentally deleted!)
+        #
+        # The sanitization step below ensures that the folder structure in the scenario becomes the following
+        # instead:
+        # - dev/
+        #     - Rustdocs for "dev/"
+        # - dev/%2Fv0.4
+        #     - Rustdocs for "dev/v0.4"
         run: |
-          subfolder_path=$GITHUB_REF_TYPE/$GITHUB_REF_NAME/
+          sanitized_ref_name=$(python3 -c "import urllib.parse; print(urllib.parse.quote(${GITHUB_REF_NAME}, safe='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.'))")
+          subfolder_path=$GITHUB_REF_TYPE/$sanitized_ref_name/
           echo "subfolder_path=$subfolder_path" >> $GITHUB_OUTPUT
-        env:
-            GITHUB_REF_TYPE: "${{ github.ref_type }}"
-            GITHUB_REF_NAME: "${{ github.ref_name }}"
 
       - name: Prepare the subfolder
         run: |
@@ -90,9 +122,12 @@ jobs:
             git add .
             git commit -a -m "$COMMIT_MESSAGE"
 
-          # If there are no changes to the Rustdocs, skip the next (push) step.
+          # If there are no changes to the Rustdocs, we do not commit, and we skip the next (push) step.
+          #
+          # If we had **instead** committed, then the `git commit` will "fail" with a non-zero exit code,
+          # causing the job to display as "failed" in the GitHub Actions UI.
           elif [ $git_diff_exit_code -eq 0 ]; then
-            echo "The Rustdocs weren't changed, so we should skip the next (push) step."
+            echo "The Rustdocs weren't changed, so we do not commit, and we skip the next (push) step.
             echo "docs_changed=false" >> $GITHUB_OUTPUT
 
           # If something unexpected happened during 'git diff', fail the job and therefore the workflow.
