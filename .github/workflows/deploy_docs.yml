@@ -8,7 +8,7 @@
 # explanation is provided by the comments in the YAML.
 
 name: Deploy complete Rustdocs
-run-name: Deploy docs for branch/release `${{ github.ref }}` to GitHub Pages.
+run-name: Deploy docs for `${{ github.ref }}` to GH Pages.
 
 # Event types that trigger the deploying of Rustdocs.
 on:
@@ -86,7 +86,7 @@ jobs:
         # - dev/%2Fv0.4
         #     - Rustdocs for "dev/v0.4"
         run: |
-          sanitized_ref_name=$(python3 -c "import urllib.parse; print(urllib.parse.quote(${GITHUB_REF_NAME}, safe='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.'))")
+          sanitized_ref_name=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITHUB_REF_NAME}', safe='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.'))")
           subfolder_path=$GITHUB_REF_TYPE/$sanitized_ref_name/
           echo "subfolder_path=$subfolder_path" >> $GITHUB_OUTPUT
 
