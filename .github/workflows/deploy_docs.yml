@@ -111,6 +111,8 @@ jobs:
       - name: Stage and commit the changes (if there are any) to `hotstuff_rs_docs`
         id: commit_changes
         run: |
+          pwd
+          ls -l
           git diff --exit-code
           git_diff_exit_code=$?
 
