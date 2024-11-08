@@ -127,7 +127,7 @@ jobs:
           # If we had **instead** committed, then the `git commit` will "fail" with a non-zero exit code,
           # causing the job to display as "failed" in the GitHub Actions UI.
           elif [ $git_diff_exit_code -eq 0 ]; then
-            echo "The Rustdocs weren't changed, so we do not commit, and we skip the next (push) step.
+            echo "The Rustdocs weren't changed, so we do not commit, and we skip the next (push) step."
             echo "docs_changed=false" >> $GITHUB_OUTPUT
 
           # If something unexpected happened during 'git diff', fail the job and therefore the workflow.
