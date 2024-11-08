@@ -113,7 +113,8 @@ jobs:
         run: |
           pwd
           ls -l
-          git diff --exit-code
+          ls -l branch/ 
+          git diff --quiet --exit-code
           git_diff_exit_code=$?
 
           # If there are changes to the Rustdocs, then commit these changes.
