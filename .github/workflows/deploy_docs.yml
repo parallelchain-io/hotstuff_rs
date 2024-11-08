@@ -7,8 +7,8 @@
 # understandable just by reading the `name` keys of each step in turn. Additional context and 
 # explanation is provided by the comments in the YAML.
 
-name: Deploy complete Rustdocs to GH Pages.
-run-name: Deploy docs for `${{ github.ref }}`.
+name: Deploy complete Rustdocs to GH Pages
+run-name: Deploy docs for `${{ github.ref }}`
 
 # Event types that trigger the deploying of Rustdocs.
 on:
