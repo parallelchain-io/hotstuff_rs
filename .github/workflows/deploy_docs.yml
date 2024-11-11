@@ -112,7 +112,7 @@ jobs:
         id: commit_changes
         run: |
           git add .
-          git diff --quiet --exit-code
+          git diff --cached --quiet --exit-code
           git_diff_exit_code=$?
 
           # If there are changes to the Rustdocs, then commit these changes.
