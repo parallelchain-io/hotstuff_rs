@@ -114,13 +114,14 @@ jobs:
           git add .
           git diff --cached --quiet --exit-code
           git_diff_exit_code=$?
+          echo "git_diff_exit_code=$git_diff_exit_code"
 
           # If there are changes to the Rustdocs, then commit these changes.
           if [ $git_diff_exit_code -eq 1 ]; then
             echo "docs_changed=true" >> $GITHUB_OUTPUT
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -a -m "$COMMIT_MESSAGE"
+            git commit -m "$COMMIT_MESSAGE"
 
           # If there are no changes to the Rustdocs, we do not commit, and we skip the next (push) step.
           #
