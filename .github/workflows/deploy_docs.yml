@@ -112,11 +112,8 @@ jobs:
         id: commit_changes
         run: |
           git add .
-          echo "breakpoint 0"
-          git diff --cached --quiet --exit-code
-          echo "breakpoint 1"
-          git_diff_exit_code=$?
-          echo "git_diff_exit_code=$git_diff_exit_code"
+          # Run git diff and store its exit code without failing the job.
+          { git diff --cached --quiet --exit-code; git_diff_exit_code=$?; } || true 
 
           # If there are changes to the Rustdocs, then commit these changes.
           if [ $git_diff_exit_code -eq 1 ]; then
