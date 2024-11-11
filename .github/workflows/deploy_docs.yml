@@ -86,7 +86,7 @@ jobs:
         # - dev/%2Fv0.4
         #     - Rustdocs for "dev/v0.4"
         run: |
-          sanitized_ref_name=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITHUB_REF_NAME}', safe='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.'))")
+          sanitized_ref_name=$(echo "${GITHUB_REF_NAME}" | sed 's/[^a-zA-Z0-9._-]/_/g')
           subfolder_path=$GITHUB_REF_TYPE/$sanitized_ref_name/
           echo "subfolder_path=$subfolder_path" >> $GITHUB_OUTPUT
 
