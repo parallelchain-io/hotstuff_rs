@@ -112,7 +112,9 @@ jobs:
         id: commit_changes
         run: |
           git add .
+          echo "breakpoint 0"
           git diff --cached --quiet --exit-code
+          echo "breakpoint 1"
           git_diff_exit_code=$?
           echo "git_diff_exit_code=$git_diff_exit_code"
 
