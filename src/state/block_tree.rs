@@ -5,73 +5,7 @@
 
 //! Internal read-and-write handle used by the algorithm thread to mutate the Block Tree.
 //!
-//! The Block Tree may be stored in any key-value store of the library user's own choosing, as long as that
-//! KV store can provide a type that implements [`KVStore`]. This state can be mutated through an instance
-//! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
-//! [`BlockTreeCamera`](crate::state::block_tree_snapshot::BlockTreeCamera).
-//!
-//! # Mutating the Block Tree directly from user code
-//!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the `BlockTree`, while
-//! users can get a `BlockTreeCamera` through which they can read from the block tree by calling replica's
-//! [`block_tree_camera`](crate::replica::Replica::block_tree_camera) method.
-//!
-//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
-//! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
-//! instance of BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding
-//! [`BlockTreeWriteBatch`] using [`BlockTreeWriteBatch::new_unsafe`].
-//!
-//! # State variables
-//!
-//! HotStuff-rs structures its state into 17 separate conceptual "variables" that are stored in tuples
-//! that sit at [specific key paths](super::paths) in the library user's chosen
-//! KV store. These 17 variables are listed below, grouped into 4 categories for ease of understanding:
-//!
-//! ## Blocks
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Blocks|[`CryptoHash`] -> [`Block`]|Mapping between a block's hash and the block itself. This mapping contains all blocks that have been inserted into the block tree, excluding blocks that have been pruned.|
-//! |Block at Height|[`BlockHeight`] -> [`CryptoHash`]|Mapping between a block's height and its block hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
-//! |Block to Children|[`CryptoHash`] -> [`ChildrenList`]|Mapping between a block's hash and the list of children it has in the block tree. A block may have multiple children if they have not been committed.|
-//!
-//! ## App State
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Committed App State|[`Vec<u8>`] -> [`Vec<u8>`]|All key value pairs in the current committed app state. Produced by applying all app state updates in sequence from the genesis block up to the highest committed block.|
-//! |Pending App State Updates|[`CryptoHash`] -> [`AppStateUpdates`]|Mapping between a block's hash and its app state updates. This is empty for an existing block if at least one of the following two cases is true: <ol><li>The block does not update the app state.</li> <li>The block has been committed.</li></ol>|
-//!
-//! ## Validator Set
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Committed Validator Set|[`ValidatorSet`]|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
-//! |Previous Validator Set|[`ValidatorSet`]|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "decided" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
-//! |Validator Set Update Decided|[`bool`]|A flag that indicates the most recently committed validator set update has been decided.|
-//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recent committed (but perhaps not decided) validator set update.|
-//! |Validator Set Updates Status|[`CryptoHash`] -> [`ValidatorSetUpdatesStatus`]|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
-//!
-//! ## Safety
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Locked Phase Certificate|[`PhaseCertificate`]|The currently locked PC. [Read more](invariants#locking)|
-//! |Highest View Phase-Voted|[`ViewNumber`]|The highest view that this validator has phase-voted in.|
-//! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
-//! |Highest Phase Certificate|[`PhaseCertificate`]|Among the phase certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Timeout Certificate|[`TimeoutCertificate`]|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Committed Block|[`CryptoHash`]|The hash of the committed block that has the highest height.|
-//! |Newest Block|[`CryptoHash`]|The hash of the most recent block to be inserted into the block tree.|
-//!
-//! ## Persistence in KV Store
-//!
-//! The location of each of these variables in a KV store is defined in [paths](crate::state::paths).
-//! Note that the fields of a block are itself stored in different tuples. This is so that user code
-//! can get a subset of a block's data without loading the entire block from storage (which can be
-//! expensive). The key suffixes on which each of block's fields are stored are also defined in paths.
-//!
-//! # Initial state
+//! # Initializing the Block Tree
 //!
 //! All variables in the Block Tree start out empty except eight. These eight variables, which must be
 //! initialized using the [`initialize`](BlockTree::initialize) function before doing anything else with
@@ -87,6 +21,17 @@
 //! |Locked PC|The [Genesis PC](crate::hotstuff::types::PhaseCertificate::genesis_pc)|
 //! |Highest View Entered|0|
 //! |Highest Phase Certificate|The [Genesis PC](crate::hotstuff::types::PhaseCertificate::genesis_pc)|
+//!
+//! # Mutating the Block Tree directly from user code
+//!
+//! In normal operation, HotStuff-rs code will internally be making all writes to the `BlockTree`, while
+//! users can get a `BlockTreeCamera` through which they can read from the block tree by calling replica's
+//! [`block_tree_camera`](crate::replica::Replica::block_tree_camera) method.
+//!
+//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
+//! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
+//! instance of BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding
+//! [`BlockTreeWriteBatch`] using [`BlockTreeWriteBatch::new_unsafe`].
 
 use std::{cmp::max, iter::successors, sync::mpsc::Sender, time::SystemTime};
 
