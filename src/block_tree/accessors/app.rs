@@ -12,7 +12,7 @@ use crate::{
 
 use super::super::pluggables::KVStore;
 
-use super::internal::{BlockTree, BlockTreeError};
+use super::internal::{BlockTreeError, BlockTreeSingleton};
 
 /// View of the block tree made available to [method calls](crate::app::App#required-methods) on `App`s.
 ///
@@ -36,7 +36,7 @@ use super::internal::{BlockTree, BlockTreeError};
 /// To create an instance of `AppBlockTreeView`, use [`BlockTree::app_view`].
 pub struct AppBlockTreeView<'a, K: KVStore> {
     // Reference to the block tree.
-    pub(super) block_tree: &'a BlockTree<K>,
+    pub(super) block_tree: &'a BlockTreeSingleton<K>,
 
     // The pending `AppStateUpdates` in the chain preceding the block this `AppBlockTreeView` is supposed
     // to see the block tree from the perspective of.

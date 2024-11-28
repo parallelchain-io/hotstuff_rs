@@ -16,7 +16,7 @@
 //!   2. The setters of the `ReplicaSpecBuilder`, and
 //!   3. The `ReplicaSpecBuilder::build` method to construct a [`ReplicaSpec`],
 //! - The function to [start](ReplicaSpec::start) a [`Replica`] given its specification,
-//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::state::block_tree),
+//! - The function to [initialize](Replica::initialize) the replica's [Block Tree](crate::block_tree),
 //! - [The type](Replica) which keeps the replica alive.
 //!
 //! # Kinds of replicas
@@ -127,7 +127,7 @@ use crate::{
         server::{BlockSyncServer, BlockSyncServerConfiguration},
     },
     block_tree::{
-        accessors::{internal::BlockTree, public::BlockTreeCamera},
+        accessors::{internal::BlockTreeSingleton, public::BlockTreeCamera},
         pluggables::KVStore,
     },
     event_bus::*,
@@ -338,15 +338,15 @@ impl
 pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     // Required parameters
     #[builder(setter(
-        doc = "Set the application code to be run on the blockchain. The argument must implement the [App](crate::app::App) trait. Required."
+        doc = "Set the application code to be run on the blockchain. The argument must implement the [`App`](crate::app::App) trait. Required."
     ))]
     app: A,
     #[builder(setter(
-        doc = "Set the implementation of peer-to-peer networking. The argument must implement the [Network](crate::network::Network) trait. Required."
+        doc = "Set the implementation of peer-to-peer networking. The argument must implement the [`Network`](crate::networking::network::Network) trait. Required."
     ))]
     network: N,
     #[builder(setter(
-        doc = "Set the implementation of the replica's Key-Value store. The argument must implement the [KVStore](crate::state::KVStore) trait. Required."
+        doc = "Set the implementation of the replica's Key-Value store. The argument must implement the [`KVStore`](crate::block_tree::pluggables::KVStore) trait. Required."
     ))]
     kv_store: K,
     #[builder(setter(
@@ -355,13 +355,13 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
     configuration: Configuration,
     // Optional parameters
     #[builder(default, setter(transform = |handler: impl Fn(&InsertBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<InsertBlockEvent>),
-    doc = "Register a handler closure to be invoked after a block is inserted to the replica's [Block Tree](crate::state::BlockTree). Optional."))]
+    doc = "Register a handler closure to be invoked after a block is inserted to the replica's block tree. Optional."))]
     on_insert_block: Option<HandlerPtr<InsertBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&CommitBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<CommitBlockEvent>),
     doc = "Register a handler closure to be invoked after a block is committed. Optional."))]
     on_commit_block: Option<HandlerPtr<CommitBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&PruneBlockEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<PruneBlockEvent>),
-    doc = "Register a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's [Block Tree](crate::state::BlockTree). Optional."))]
+    doc = "Register a handler closure to be invoked after a block is pruned, i.e., its siblings are removed from the replica's block tree. Optional."))]
     on_prune_block: Option<HandlerPtr<PruneBlockEvent>>,
     #[builder(default, setter(transform = |handler: impl Fn(&UpdateHighestPCEvent) + Send + 'static| Some(Box::new(handler) as HandlerPtr<UpdateHighestPCEvent>),
     doc = "Register a handler closure to be invoked after the replica updates its highest PC. Optional."))]
@@ -440,7 +440,7 @@ pub struct ReplicaSpec<K: KVStore, A: App<K> + 'static, N: Network + 'static> {
 impl<K: KVStore, A: App<K> + 'static, N: Network + 'static> ReplicaSpec<K, A, N> {
     /// Starts all threads and channels associated with running a replica, and returns the handles to them in a [Replica] struct.
     pub fn start(mut self) -> Replica<K> {
-        let block_tree = BlockTree::new(self.kv_store.clone());
+        let block_tree = BlockTreeSingleton::new(self.kv_store.clone());
         self.network.init_validator_set(
             block_tree
                 .committed_validator_set()
@@ -568,7 +568,7 @@ pub struct Replica<K: KVStore> {
 }
 
 impl<K: KVStore> Replica<K> {
-    /// Initializes the replica's [Block Tree](crate::state::block_tree::BlockTree) with the intial
+    /// Initializes the replica's [block tree](crate::block_tree) with the intial
     /// [app state updates](crate::types::update_sets::AppStateUpdates) and
     /// [validator set updates](crate::types::update_sets::ValidatorSetUpdates).
     pub fn initialize(
@@ -576,14 +576,13 @@ impl<K: KVStore> Replica<K> {
         initial_app_state: AppStateUpdates,
         initial_validator_set_state: ValidatorSetState,
     ) {
-        let mut block_tree = BlockTree::new(kv_store);
+        let mut block_tree = BlockTreeSingleton::new(kv_store);
         block_tree
             .initialize(&initial_app_state, &initial_validator_set_state)
             .expect("Block Tree initialization failed!")
     }
 
-    /// Returns a [`BlockTreeCamera`] which can be used
-    /// to peek into the [`BlockTree`].
+    /// Get a [`BlockTreeCamera`].
     pub fn block_tree_camera(&self) -> &BlockTreeCamera<K> {
         &self.block_tree_camera
     }

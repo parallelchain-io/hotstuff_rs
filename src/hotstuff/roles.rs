@@ -108,7 +108,7 @@ pub(crate) fn is_proposer(
 ///
 /// ## Preconditions
 ///
-/// `justify` satisfies [`safe_pc`](crate::state::invariants::safe_pc) and
+/// `justify` satisfies [`safe_pc`](crate::block_tree::invariants::safe_pc) and
 /// [`is_correct`](crate::types::signed_messages::Certificate::is_correct), and the block tree updates
 /// associated with this `justify` have already been applied.
 pub(crate) fn is_phase_voter(

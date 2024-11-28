@@ -19,9 +19,10 @@
 //!
 //! # Mutating the Block Tree directly from user code
 //!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the `BlockTree`, while
-//! users can get a `BlockTreeCamera` through which they can read from the block tree by calling replica's
-//! [`block_tree_camera`](crate::replica::Replica::block_tree_camera) method.
+//! In normal operation, HotStuff-rs code will internally be making all writes to the
+//! `BlockTreeSingleton`, while users can get a `BlockTreeCamera` through which they can read from the
+//! block tree by calling `Replica`'s [`block_tree_camera`](crate::replica::Replica::block_tree_camera)
+//! method.
 //!
 //! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
 //! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
@@ -62,31 +63,31 @@ use super::{app::AppBlockTreeView, public::BlockTreeSnapshot};
 ///
 /// ## Categories of methods
 ///
-/// `BlockTree` has a large number of methods. To improve understandability, these methods are grouped
+/// `BlockTreeSingleton` has a large number of methods. To improve understandability, these methods are grouped
 /// into five categories, with methods in each separate category being defined in a separate `impl`
 /// block. These five categories are:
-/// 1. [Lifecycle methods](#impl-BlockTree<K>).
-/// 2. [Top-level state updaters](#impl-BlockTree<K>-1).
-/// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTree<K>-2).
-/// 4. [Basic state getters](#impl-BlockTree<K>-3).
-/// 5. [Extra state getters](#impl-BlockTree<K>-4).
-pub struct BlockTree<K: KVStore>(K);
+/// 1. [Lifecycle methods](#impl-BlockTreeSingleton<K>).
+/// 2. [Top-level state updaters](#impl-BlockTreeSingleton<K>-1).
+/// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTreeSingleton<K>-2).
+/// 4. [Basic state getters](#impl-BlockTreeSingleton<K>-3).
+/// 5. [Extra state getters](#impl-BlockTreeSingleton<K>-4).
+pub struct BlockTreeSingleton<K: KVStore>(K);
 
 /// Lifecycle methods.
 ///
-/// These are methods for creating and initializing a `BlockTree`, as well as for using it to create and
+/// These are methods for creating and initializing a `BlockTreeSingleton`, as well as for using it to create and
 /// consume other block tree-related types, namely, [`BlockTreeSnapshot`], [`BlockTreeWriteBatch`], and
 /// [`AppBlockTreeView`].
-impl<K: KVStore> BlockTree<K> {
-    /// Create a new instance of `BlockTree` on top of `kv_store`.
+impl<K: KVStore> BlockTreeSingleton<K> {
+    /// Create a new instance of `BlockTreeSingleton` on top of `kv_store`.
     ///
-    /// This constructor is private (`pub(crate)`). To create an instance of `BlockTree` as a library user,
-    /// use [`new_unsafe`](Self::new_unsafe).
+    /// This constructor is private (`pub(crate)`). To create an instance of `BlockTreeSingleton` as a
+    /// library user, use [`new_unsafe`](Self::new_unsafe).
     pub(crate) fn new(kv_store: K) -> Self {
-        BlockTree(kv_store)
+        BlockTreeSingleton(kv_store)
     }
 
-    /// Create a new instance of `BlockTree` on top of `kv_store`.
+    /// Create a new instance of `BlockTreeSingleton` on top of `kv_store`.
     ///
     /// ## Safety
     ///
@@ -98,8 +99,9 @@ impl<K: KVStore> BlockTree<K> {
 
     /// Initialize the block tree variables listed in [initial state](#initial-state).
     ///
-    /// This function must be called exactly once on a `BlockTree` with an empty backing `kv_store`, before
-    /// any of the other functions (except the constructors `new` or `new_unsafe`) are called.
+    /// This function must be called exactly once on a `BlockTreeSingleton` with an empty backing
+    /// `kv_store`, before any of the other functions (except the constructors `new` or `new_unsafe`) are
+    /// called.
     pub fn initialize(
         &mut self,
         initial_app_state: &AppStateUpdates,
@@ -137,7 +139,7 @@ impl<K: KVStore> BlockTree<K> {
         BlockTreeSnapshot::new(self.0.snapshot())
     }
 
-    /// Atomically write the changes in `write_batch` into the `BlockTree`.
+    /// Atomically write the changes in `write_batch` into the `BlockTreeSingleton`.
     pub fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
         self.0.write(write_batch.0)
     }
@@ -216,7 +218,7 @@ impl<K: KVStore> BlockTree<K> {
 /// subprotocols (i.e., [`hotstuff`](crate::hotstuff), [`block_sync`](crate::block_sync), and
 /// [`pacemaker`](crate::pacemaker)). Mutating methods outside of this `impl` and the lifecycle methods
 /// `impl` above are only used internally in this module.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Insert into the block tree a `block` that will cause the provided `app_state_updates` and
     /// `validator_set_updates` to be applied when it is committed in the future.
     ///
@@ -372,7 +374,7 @@ impl<K: KVStore> BlockTree<K> {
 }
 
 /// Helper functions called by [BlockTree::update].
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Commit `block` and all of its ancestors, if they have not already been committed.
     ///
     /// ## Return value
@@ -547,11 +549,12 @@ impl<K: KVStore> BlockTree<K> {
         branch.into_iter()
     }
 
-    /// Publish all events resulting from calling [`update`](Self::update). These events have to do with changing
-    /// persistent state, and  possibly include: [`UpdateHighestPCEvent`], [`UpdateLockedPCEvent`],
+    /// Publish all events resulting from calling [`update`](Self::update). These events have to do with
+    /// changing persistent state, and  possibly include: [`UpdateHighestPCEvent`], [`UpdateLockedPCEvent`],
     /// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
     ///
-    /// Invariant: this method is invoked immediately after the corresponding changes are written to the [`BlockTree`].
+    /// Invariant: this method must only be invoked after the associated changes are persistently written to
+    /// the [`BlockTreeSingleton`].
     fn publish_update_block_tree_events(
         event_publisher: &Option<Sender<Event>>,
         update_highest_pc: Option<PhaseCertificate>,
@@ -605,7 +608,7 @@ impl<K: KVStore> BlockTree<K> {
 /// return whatever they return.
 ///
 /// The exact same set of basic state getters are also defined on `BlockTreeSnapshot`.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {
         Ok(self.0.block(block)?)
     }
@@ -705,7 +708,7 @@ impl<K: KVStore> BlockTree<K> {
 /// they return into forms that are more convenient to use.
 ///
 /// Unlike basic state getters, these functions are not defined on `BlockTreeSnapshot`.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Check whether `block` exists on the block tree.
     pub fn contains(&self, block: &CryptoHash) -> bool {
         self.block(block).is_ok_and(|block_opt| block_opt.is_some())
@@ -740,7 +743,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Errors that may be encountered when reading or writing to the [`BlockTree`].
+/// Errors that may be encountered when reading or writing to the [`BlockTreeSingleton`].
 #[derive(Debug)]
 pub enum BlockTreeError {
     /// Error when trying to get a value from the block tree's underlying [key value store][KVStore].

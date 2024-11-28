@@ -13,7 +13,7 @@ use ed25519_dalek::Verifier;
 use super::messages::PhaseVote;
 use crate::{
     block_tree::{
-        accessors::internal::{BlockTree, BlockTreeError},
+        accessors::internal::{BlockTreeError, BlockTreeSingleton},
         pluggables::KVStore,
     },
     types::{
@@ -45,7 +45,10 @@ impl Certificate for PhaseCertificate {
     /// signatures in the certificate are correct and form a quorum given this validator set.
     ///
     /// A special case is if the PC is the Genesis PC, in which case it is automatically correct.
-    fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+    fn is_correct<K: KVStore>(
+        &self,
+        block_tree: &BlockTreeSingleton<K>,
+    ) -> Result<bool, BlockTreeError> {
         if self.is_genesis_pc() {
             return Ok(true);
         };

@@ -90,7 +90,7 @@ impl Sub<BlockHeight> for BlockHeight {
 /// [`justify`](crate::types::block::Block::justify) links.
 ///
 /// Instances of this type are stored in the block tree's
-/// ["Block to Children"](crate::state::block_tree#blocks) state variable.
+/// ["Block to Children"](crate::block_tree::variables#blocks) state variable.
 ///
 /// # Uniqueness
 ///
@@ -184,11 +184,11 @@ impl SignatureBytes {
 /// # Querying only a part of `Data`
 ///
 /// Library users can choose between two methods of
-/// [`BlockTreeSnapshot`](crate::state::block_tree_snapshot::BlockTreeSnapshot) to get a `Block`'s
+/// [`BlockTreeSnapshot`](crate::block_tree::accessors::public::BlockTreeSnapshot) to get a `Block`'s
 /// `Data`:
-/// 1. [`block_data`](crate::state::block_tree_snapshot::BlockTreeSnapshot::block_data) gets the whole of
+/// 1. [`block_data`](crate::block_tree::accessors::public::BlockTreeSnapshot::block_data) gets the whole of
 ///    `block.data` in a single call.
-/// 2. [`block_datum`](crate::state::block_tree_snapshot::BlockTreeSnapshot::block_datum) gets only
+/// 2. [`block_datum`](crate::block_tree::accessors::public::BlockTreeSnapshot::block_datum) gets only
 ///    `block.datum.vec()[datum_index]` in a single call.
 ///
 /// The first method is simple, but may be overkill and cause unnecessary I/O operations if a use case
@@ -236,8 +236,7 @@ impl DataLen {
     }
 }
 
-/// Unit of [`Data`] that can be queried individually from the
-/// [block tree](crate::state::block_tree).
+/// Unit of [`Data`] that can be queried individually from the [block tree](crate::block_tree).
 ///
 /// Read [Querying only a part of `Data`](Data#querying-only-a-part-of-data) for the rationale behind
 /// why `Data` is split into `Datum`s.

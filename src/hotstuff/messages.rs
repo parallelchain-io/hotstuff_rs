@@ -134,7 +134,7 @@ pub struct Proposal {
 /// two places:
 /// 1. When a validator creates a `Nudge` using [`new`](Self::new).
 /// 2. When a replica receives a `Nudge` and checks the
-///    [`safe_nudge`](crate::state::invariants::safe_nudge) predicate.
+///    [`safe_nudge`](crate::block_tree::invariants::safe_nudge) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Nudge {
     /// `ChainID` of the block tree that `justify.block` is part of.

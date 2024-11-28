@@ -109,42 +109,40 @@ pub struct InsertBlockEvent {
     pub block: Block,
 }
 
-/// A block, identifiable by its [`CryptoHash`], was committed. This involves persistent changes to the
+/// A `block` was committed. This involves persistent changes to the
 /// Block Tree.
 pub struct CommitBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
 }
 
-/// A block, identified by its [`CryptoHash`], was "pruned" (i.e., the block's siblings were permanently
+/// A `block` was "pruned" (i.e., the block's siblings were permanently
 /// deleted from the Block Tree).
 pub struct PruneBlockEvent {
     pub timestamp: SystemTime,
     pub block: CryptoHash,
 }
 
-/// The Highest `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
-/// was updated.
+/// The "Highest `PhaseCertificate`" stored in the block tree was updated.
 pub struct UpdateHighestPCEvent {
     pub timestamp: SystemTime,
     pub highest_pc: PhaseCertificate,
 }
 
-/// The Locked `PhaseCertificate`, stored in the [`Block Tree`](crate::state::block_tree::BlockTree),
-/// was updated.
+/// The "Locked `PhaseCertificate`" stored in the block tree was updated.
 pub struct UpdateLockedPCEvent {
     pub timestamp: SystemTime,
     pub locked_pc: PhaseCertificate,
 }
 
-/// The Highest Timeout Certificate, stored in the [`BlockTree`](crate::state::block_tree::BlockTree),
-/// was updated. Includes the new Highest [`TimeoutCertificate`].
+/// The "Highest `TimeoutCertificate`" stored in the block tree was updated.
 pub struct UpdateHighestTCEvent {
     pub timestamp: SystemTime,
     pub highest_tc: TimeoutCertificate,
 }
 
-/// The committed validator set, stored in the [Block Tree](crate::state::block_tree::BlockTree), was updated.
+/// The "Committed Validator Set" stored in the block tree, was updated.
+///
 /// Includes the [hash](crate::types::data_types::CryptoHash) of the block with which the updates are
 /// associated, and the information about the
 /// [validator set updates](crate::types::update_sets::ValidatorSetUpdates), i.e., the insertions and
@@ -279,7 +277,7 @@ pub struct StartSyncEvent {
 
 /// The replica exited sync mode, during which it tried to sync with a given peer identifiable by its
 /// [public key](ed25519_dalek::VerifyingKey), and inserted a given number of blocks received from the
-/// peer into its [Block Tree](crate::state::block_tree::BlockTree).
+/// peer into its block tree.
 pub struct EndSyncEvent {
     pub timestamp: SystemTime,
     pub peer: VerifyingKey,

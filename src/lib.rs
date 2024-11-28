@@ -11,7 +11,7 @@
 //! # Features
 //!
 //! - **Pluggable components**: library users get to provide their own business logic
-//!   ([`app`]), key-value storage ([`kv_store`](crate::state::kv_store)), and peer-to-peer
+//!   ([`app`]), key-value storage ([`kv_store`](crate::block_tree::pluggables::KVStore)), and peer-to-peer
 //!   networking ([`network`](crate::networking::network)). HotStuff-rs is agnostic to these details and
 //!   can therefore be adapted to many use-cases.
 //! - **Dynamic validator sets**: `App`s can control and change the set of replicas ("validators") that
@@ -92,11 +92,11 @@
 //! If the block is valid, then the replica will create a [`PhaseVote`](hotstuff::messages::PhaseVote)
 //! by signing a message with its  [`SigningKey`](types::crypto_primitives::SigningKey), and send this
 //! to the [`phase_vote_recipient`](hotstuff::roles::phase_vote_recipient). Then, it will insert the
-//! block to its [Block Tree](state::block_tree), which the library stores in the
-//! [`KVStore`](state::kv_store) provided by the user.
+//! block to its [Block Tree](block_tree), which the library stores in the
+//! [`KVStore`](block_tree::pluggables::KVStore) provided by the user.
 //!
 //! The overall result is an immutable "block chain" that is guaranteed to satisfy safety and liveness
-//! [`invariants`](state::invariants) as long as no more than 1/3rd of the
+//! [`invariants`](block_tree::invariants) as long as no more than 1/3rd of the
 //! [`TotalPower`](types::data_types::TotalPower) of a
 //! [`ValidatorSet`](types::validator_set::ValidatorSet) is faulty.
 //!

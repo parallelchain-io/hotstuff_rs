@@ -35,7 +35,7 @@
 //! with them inside a single interface, which simplifies usage.
 
 use crate::block_tree::{
-    accessors::internal::{BlockTree, BlockTreeError},
+    accessors::internal::{BlockTreeError, BlockTreeSingleton},
     pluggables::KVStore,
 };
 
@@ -94,7 +94,10 @@ pub(crate) trait Certificate {
     ///    Validator Set, or against both.
     /// 3. Call [`is_correctly_signed`](Certificate::is_correctly_signed) on the certificate, passing the
     ///    committed validator set, the previous validator set, or both (in separate calls).
-    fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError>;
+    fn is_correct<K: KVStore>(
+        &self,
+        block_tree: &BlockTreeSingleton<K>,
+    ) -> Result<bool, BlockTreeError>;
 
     /// Check whether the certificate is correctly signed by a quorum of validators in the given
     /// `validator_set`.

@@ -15,7 +15,7 @@ use crate::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
     block_tree::{
-        accessors::internal::{BlockTree, BlockTreeError},
+        accessors::internal::{BlockTreeError, BlockTreeSingleton},
         invariants::{repropose_block, safe_block, safe_nudge, safe_pc},
         pluggables::KVStore,
     },
@@ -128,7 +128,7 @@ impl<N: Network> HotStuff<N> {
     pub(crate) fn enter_view<K: KVStore>(
         &mut self,
         new_view_info: ViewInfo,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
         let validator_set_state = block_tree.validator_set_state()?;
@@ -293,7 +293,7 @@ impl<N: Network> HotStuff<N> {
         &mut self,
         msg: HotStuffMessage,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
         // 1. If Proposal or Nudge received, check if the sender is a proposer for this view,
@@ -341,7 +341,7 @@ impl<N: Network> HotStuff<N> {
         &mut self,
         proposal: Proposal,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), HotStuffError> {
         Event::ReceiveProposal(ReceiveProposalEvent {
@@ -470,7 +470,7 @@ impl<N: Network> HotStuff<N> {
         &mut self,
         nudge: Nudge,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), HotStuffError> {
         Event::ReceiveNudge(ReceiveNudgeEvent {
             timestamp: SystemTime::now(),
@@ -574,7 +574,7 @@ impl<N: Network> HotStuff<N> {
         &mut self,
         phase_vote: PhaseVote,
         signer: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), HotStuffError> {
         Event::ReceivePhaseVote(ReceivePhaseVoteEvent {
             timestamp: SystemTime::now(),
@@ -630,7 +630,7 @@ impl<N: Network> HotStuff<N> {
         &mut self,
         new_view: NewView,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), HotStuffError> {
         Event::ReceiveNewView(ReceiveNewViewEvent {
             timestamp: SystemTime::now(),

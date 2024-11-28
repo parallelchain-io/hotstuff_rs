@@ -82,7 +82,7 @@ use crate::{
         AdvertiseBlock, AdvertisePC, BlockSyncAdvertiseMessage, BlockSyncRequest,
     },
     block_tree::{
-        accessors::internal::{BlockTree, BlockTreeError},
+        accessors::internal::{BlockTreeError, BlockTreeSingleton},
         invariants::{safe_block, safe_pc},
         pluggables::KVStore,
     },
@@ -134,7 +134,7 @@ impl<N: Network> BlockSyncClient<N> {
         &mut self,
         msg: BlockSyncAdvertiseMessage,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
         match msg {
@@ -151,7 +151,7 @@ impl<N: Network> BlockSyncClient<N> {
     /// timeout.
     pub(crate) fn tick<K: KVStore>(
         &mut self,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
         // 1. Check if any blacklistings have expired, and if so remove the expired blacklistings
@@ -183,7 +183,7 @@ impl<N: Network> BlockSyncClient<N> {
         &mut self,
         advertise_block: AdvertiseBlock,
         origin: &VerifyingKey,
-        block_tree: &BlockTree<K>,
+        block_tree: &BlockTreeSingleton<K>,
     ) -> Result<(), BlockSyncClientError> {
         // 1. Check if the advertise block message has the correct chain id, and is correctly signed.
         if advertise_block.chain_id != self.config.chain_id || !advertise_block.is_correct(origin) {
@@ -219,7 +219,7 @@ impl<N: Network> BlockSyncClient<N> {
         &mut self,
         advertise_pc: AdvertisePC,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
         let highest_view_entered = block_tree.highest_view_entered()?;
@@ -254,7 +254,7 @@ impl<N: Network> BlockSyncClient<N> {
     /// Sync with a randomly selected peer.
     fn sync<K: KVStore>(
         &mut self,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
         let highest_committed_block_height = block_tree.highest_committed_block_height()?;
@@ -281,7 +281,7 @@ impl<N: Network> BlockSyncClient<N> {
     fn sync_with<K: KVStore>(
         &mut self,
         peer: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
         app: &mut impl App<K>,
     ) -> Result<(), BlockSyncClientError> {
         Event::StartSync(StartSyncEvent {
@@ -601,7 +601,7 @@ impl From<BlockTreeError> for BlockSyncClientError {
 /// though rather conservative solution to the problem of sybil attacks.
 fn is_sync_server_address<K: KVStore>(
     verifying_key: &VerifyingKey,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
 ) -> Result<bool, BlockSyncClientError> {
     let committed_validator_set = block_tree.committed_validator_set()?;
     if committed_validator_set.contains(verifying_key) {

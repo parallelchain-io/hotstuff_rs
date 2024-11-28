@@ -52,7 +52,7 @@ use ed25519_dalek::VerifyingKey;
 
 use crate::{
     block_tree::{
-        accessors::internal::{BlockTree, BlockTreeError, BlockTreeWriteBatch},
+        accessors::internal::{BlockTreeError, BlockTreeSingleton, BlockTreeWriteBatch},
         pluggables::KVStore,
     },
     events::{
@@ -85,7 +85,7 @@ use crate::{
 ///    whether the view should be updated,
 /// 3. [Pacemaker::tick]: updates the internal state of the Pacemaker and broadcasts a message if needed
 ///    in response to a time measurement,
-/// 4. [Pacemaker::on_receive_msg]: updates the [`PacemakerState`] and possibly the [`BlockTree`], as well
+/// 4. [Pacemaker::on_receive_msg]: updates the [`PacemakerState`] and possibly the block tree, as well
 ///    as broadcasts messages, in response to a received [`PacemakerMessage`].
 ///
 /// If any of these actions fail, a [`PacemakerError`] is returned.
@@ -143,7 +143,7 @@ impl<N: Network> Pacemaker<N> {
     /// timeout vote collectors accordingly.
     pub(crate) fn tick<K: KVStore>(
         &mut self,
-        block_tree: &BlockTree<K>,
+        block_tree: &BlockTreeSingleton<K>,
     ) -> Result<(), PacemakerError> {
         let cur_view = self.view_info.view;
         let validator_set_state = block_tree.validator_set_state()?;
@@ -223,7 +223,7 @@ impl<N: Network> Pacemaker<N> {
         &mut self,
         msg: PacemakerMessage,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), PacemakerError> {
         match msg {
             PacemakerMessage::TimeoutVote(timeout_vote) => {
@@ -252,7 +252,7 @@ impl<N: Network> Pacemaker<N> {
         &mut self,
         timeout_vote: TimeoutVote,
         signer: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), PacemakerError> {
         Event::ReceiveTimeoutVote(ReceiveTimeoutVoteEvent {
             timestamp: SystemTime::now(),
@@ -362,7 +362,7 @@ impl<N: Network> Pacemaker<N> {
         &mut self,
         advance_view: AdvanceView,
         origin: &VerifyingKey,
-        block_tree: &mut BlockTree<K>,
+        block_tree: &mut BlockTreeSingleton<K>,
     ) -> Result<(), PacemakerError> {
         Event::ReceiveAdvanceView(ReceiveAdvanceViewEvent {
             timestamp: SystemTime::now(),
