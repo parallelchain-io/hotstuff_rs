@@ -33,7 +33,7 @@
 //!
 //! The two states that an application can mutate in response to a block are the App State, and the
 //! Validator Set. Both states are stored in the block tree, which itself is stored in the pluggable
-//! [`KVStore`](crate::state::kv_store) provided to HotStuff-rs by the library user.
+//! [`KVStore`](crate::block_tree::pluggables::KVStore) provided to HotStuff-rs by the library user.
 //!
 //! The **App State** is a set of key-value mappings, in which the keys and values are be arbitrary byte
 //! strings. The library user is completely free to decide the structure and contents of this mapping
@@ -50,7 +50,7 @@
 //! returning these changes from calls to its three methods.
 
 use crate::{
-    state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
+    block_tree::{accessors::app::AppBlockTreeView, pluggables::KVStore},
     types::{
         block::Block,
         data_types::{CryptoHash, Data, ViewNumber},
@@ -233,7 +233,7 @@ pub struct ProduceBlockResponse {
 
 /// Request for the app to validate a proposed block. Contains information about the proposed
 /// [block](crate::types::block::Block), and the relevant
-/// [state of the Block Tree](crate::state::app_block_tree_view::AppBlockTreeView).
+/// [state of the Block Tree](crate::block_tree::accessors::app::AppBlockTreeView).
 pub struct ValidateBlockRequest<'a, 'b, K: KVStore> {
     proposed_block: &'a Block,
     block_tree_view: AppBlockTreeView<'b, K>,

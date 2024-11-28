@@ -42,9 +42,9 @@ use std::{
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
+    block_tree::{accessors::public::BlockTreeCamera, pluggables::KVStore},
     events::{Event, ReceiveSyncRequestEvent, SendSyncResponseEvent},
     networking::{network::Network, receiving::BlockSyncServerStub, sending::SenderHandle},
-    state::{block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
         crypto_primitives::Keypair,
         data_types::{BlockHeight, ChainID},

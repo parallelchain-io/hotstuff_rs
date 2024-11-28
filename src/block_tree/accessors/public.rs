@@ -1,7 +1,3 @@
-/*
-    Copyright © 2023, ParallelChain Lab
-    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-*/
 //! General purpose, read-only interface for querying the Block Tree.
 
 use crate::{
@@ -15,10 +11,9 @@ use crate::{
     },
 };
 
-use super::{
-    block_tree::BlockTreeError,
-    kv_store::{KVGet, KVStore},
-};
+use super::super::pluggables::{KVGet, KVStore};
+
+use super::internal::BlockTreeError;
 
 /// A factory for [`BlockTreeSnapshot`]s.
 #[derive(Clone)]

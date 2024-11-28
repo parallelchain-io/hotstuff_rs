@@ -1,11 +1,4 @@
-/*
-    Copyright © 2023, ParallelChain Lab
-    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-*/
-//! Pluggable key-value storage.
-//!
-//! Given a method to obtain the value for a given key in bytes, this module also provides methods to
-//! obtain the variables stored in the key-value store, as described in [`crate::state::block_tree`].
+//! Traits for pluggable Block Tree persistence.
 
 use std::fmt::Display;
 
@@ -25,10 +18,7 @@ use crate::{
     },
 };
 
-use super::{
-    paths::{self, combine},
-    write_batch::WriteBatch,
-};
+use super::variables::{self, concat};
 
 pub trait KVStore: KVGet + Clone + Send + 'static {
     type WriteBatch: WriteBatch;
@@ -79,8 +69,8 @@ pub trait KVGet {
     }
 
     fn block_height(&self, block: &CryptoHash) -> Result<Option<BlockHeight>, KVGetError> {
-        let block_key = combine(&paths::BLOCKS, &block.bytes());
-        let block_height_key = combine(&block_key, &paths::BLOCK_HEIGHT);
+        let block_key = concat(&variables::BLOCKS, &block.bytes());
+        let block_height_key = concat(&block_key, &variables::BLOCK_HEIGHT);
         if let Some(bytes) = self.get(&block_height_key) {
             Ok(Some(
                 BlockHeight::deserialize(&mut bytes.as_slice()).map_err(|err| {
@@ -100,9 +90,9 @@ pub trait KVGet {
     fn block_justify(&self, block: &CryptoHash) -> Result<PhaseCertificate, KVGetError> {
         PhaseCertificate::deserialize(
             &mut &*self
-                .get(&combine(
-                    &paths::BLOCKS,
-                    &combine(&block.bytes(), &paths::BLOCK_JUSTIFY),
+                .get(&concat(
+                    &variables::BLOCKS,
+                    &concat(&block.bytes(), &variables::BLOCK_JUSTIFY),
                 ))
                 .ok_or(KVGetError::ValueExpectedButNotFound {
                     key: Key::BlockJustify {
@@ -119,9 +109,9 @@ pub trait KVGet {
     }
 
     fn block_data_hash(&self, block: &CryptoHash) -> Result<Option<CryptoHash>, KVGetError> {
-        if let Some(bytes) = self.get(&combine(
-            &paths::BLOCKS,
-            &combine(&block.bytes(), &paths::BLOCK_DATA_HASH),
+        if let Some(bytes) = self.get(&concat(
+            &variables::BLOCKS,
+            &concat(&block.bytes(), &variables::BLOCK_DATA_HASH),
         )) {
             Ok(Some(CryptoHash::deserialize(&mut &*bytes).map_err(
                 |err| KVGetError::DeserializeValueError {
@@ -137,9 +127,9 @@ pub trait KVGet {
     }
 
     fn block_data_len(&self, block: &CryptoHash) -> Result<Option<DataLen>, KVGetError> {
-        if let Some(bytes) = self.get(&combine(
-            &paths::BLOCKS,
-            &combine(&block.bytes(), &paths::BLOCK_DATA_LEN),
+        if let Some(bytes) = self.get(&concat(
+            &variables::BLOCKS,
+            &concat(&block.bytes(), &variables::BLOCK_DATA_LEN),
         )) {
             Ok(Some(DataLen::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
@@ -174,9 +164,11 @@ pub trait KVGet {
     }
 
     fn block_datum(&self, block: &CryptoHash, datum_index: u32) -> Option<Datum> {
-        let block_data_prefix =
-            combine(&paths::BLOCKS, &combine(&block.bytes(), &paths::BLOCK_DATA));
-        self.get(&combine(
+        let block_data_prefix = concat(
+            &variables::BLOCKS,
+            &concat(&block.bytes(), &variables::BLOCK_DATA),
+        );
+        self.get(&concat(
             &block_data_prefix,
             &datum_index.try_to_vec().unwrap(),
         ))
@@ -186,7 +178,7 @@ pub trait KVGet {
     /* ↓↓↓ Block Height to Block ↓↓↓ */
 
     fn block_at_height(&self, height: BlockHeight) -> Result<Option<CryptoHash>, KVGetError> {
-        let block_hash_key = combine(&paths::BLOCK_AT_HEIGHT, &height.to_le_bytes());
+        let block_hash_key = concat(&variables::BLOCK_AT_HEIGHT, &height.to_le_bytes());
         if let Some(bytes) = self.get(&block_hash_key) {
             Ok(Some(
                 CryptoHash::deserialize(&mut bytes.as_slice()).map_err(|err| {
@@ -206,7 +198,7 @@ pub trait KVGet {
     fn children(&self, block: &CryptoHash) -> Result<ChildrenList, KVGetError> {
         ChildrenList::deserialize(
             &mut &*self
-                .get(&combine(&paths::BLOCK_TO_CHILDREN, &block.bytes()))
+                .get(&concat(&variables::BLOCK_TO_CHILDREN, &block.bytes()))
                 .ok_or(KVGetError::ValueExpectedButNotFound {
                     key: Key::BlockChildren {
                         block: block.clone(),
@@ -224,7 +216,7 @@ pub trait KVGet {
     /* ↓↓↓ Committed App State ↓↓↓ */
 
     fn committed_app_state(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.get(&combine(&paths::COMMITTED_APP_STATE, key))
+        self.get(&concat(&variables::COMMITTED_APP_STATE, key))
     }
 
     /* ↓↓↓ Pending App State Updates ↓↓↓ */
@@ -233,7 +225,10 @@ pub trait KVGet {
         &self,
         block: &CryptoHash,
     ) -> Result<Option<AppStateUpdates>, KVGetError> {
-        if let Some(bytes) = self.get(&combine(&paths::PENDING_APP_STATE_UPDATES, &block.bytes())) {
+        if let Some(bytes) = self.get(&concat(
+            &variables::PENDING_APP_STATE_UPDATES,
+            &block.bytes(),
+        )) {
             Ok(Some(AppStateUpdates::deserialize(&mut &*bytes).map_err(
                 |err| KVGetError::DeserializeValueError {
                     key: Key::PendingAppStateUpdates {
@@ -251,7 +246,7 @@ pub trait KVGet {
 
     fn committed_validator_set(&self) -> Result<ValidatorSet, KVGetError> {
         let committed_validator_set_bytes = ValidatorSetBytes::deserialize(
-            &mut &*self.get(&paths::COMMITTED_VALIDATOR_SET).ok_or(
+            &mut &*self.get(&variables::COMMITTED_VALIDATOR_SET).ok_or(
                 KVGetError::ValueExpectedButNotFound {
                     key: Key::CommittedValidatorSet,
                 },
@@ -275,8 +270,8 @@ pub trait KVGet {
         &self,
         block: &CryptoHash,
     ) -> Result<ValidatorSetUpdatesStatus, KVGetError> {
-        let validator_set_updates_status_bytes = match self.get(&combine(
-            &paths::VALIDATOR_SET_UPDATES_STATUS,
+        let validator_set_updates_status_bytes = match self.get(&concat(
+            &variables::VALIDATOR_SET_UPDATES_STATUS,
             &block.bytes(),
         )) {
             None => ValidatorSetUpdatesStatusBytes::None,
@@ -306,7 +301,7 @@ pub trait KVGet {
     fn locked_pc(&self) -> Result<PhaseCertificate, KVGetError> {
         PhaseCertificate::deserialize(
             &mut &*self
-                .get(&paths::LOCKED_PC)
+                .get(&variables::LOCKED_PC)
                 .ok_or(KVGetError::ValueExpectedButNotFound { key: Key::LockedPC })?,
         )
         .map_err(|err| KVGetError::DeserializeValueError {
@@ -318,7 +313,7 @@ pub trait KVGet {
     /* ↓↓↓ Highest View Entered ↓↓↓ */
 
     fn highest_view_entered(&self) -> Result<ViewNumber, KVGetError> {
-        ViewNumber::deserialize(&mut &*self.get(&paths::HIGHEST_VIEW_ENTERED).ok_or(
+        ViewNumber::deserialize(&mut &*self.get(&variables::HIGHEST_VIEW_ENTERED).ok_or(
             KVGetError::ValueExpectedButNotFound {
                 key: Key::HighestViewEntered,
             },
@@ -332,7 +327,7 @@ pub trait KVGet {
     /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
 
     fn highest_pc(&self) -> Result<PhaseCertificate, KVGetError> {
-        PhaseCertificate::deserialize(&mut &*self.get(&paths::HIGHEST_PC).ok_or(
+        PhaseCertificate::deserialize(&mut &*self.get(&variables::HIGHEST_PC).ok_or(
             KVGetError::ValueExpectedButNotFound {
                 key: Key::HighestPC,
             },
@@ -346,7 +341,7 @@ pub trait KVGet {
     /* ↓↓↓ Highest Committed Block ↓↓↓ */
 
     fn highest_committed_block(&self) -> Result<Option<CryptoHash>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::HIGHEST_COMMITTED_BLOCK) {
+        if let Some(bytes) = self.get(&variables::HIGHEST_COMMITTED_BLOCK) {
             let highest_committed_block = CryptoHash::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
                     key: Key::HighestCommittedBlock,
@@ -362,7 +357,7 @@ pub trait KVGet {
     /* ↓↓↓ Newest Block ↓↓↓ */
 
     fn newest_block(&self) -> Result<Option<CryptoHash>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::NEWEST_BLOCK) {
+        if let Some(bytes) = self.get(&variables::NEWEST_BLOCK) {
             let newest_block = CryptoHash::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
                     key: Key::NewestBlock,
@@ -378,7 +373,7 @@ pub trait KVGet {
     /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
 
     fn highest_tc(&self) -> Result<Option<TimeoutCertificate>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::HIGHEST_TC) {
+        if let Some(bytes) = self.get(&variables::HIGHEST_TC) {
             let tc = TimeoutCertificate::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
                     key: Key::HighestTC,
@@ -394,16 +389,17 @@ pub trait KVGet {
     /* ↓↓↓ Previous Validator Set ↓↓↓ */
 
     fn previous_validator_set(&self) -> Result<ValidatorSet, KVGetError> {
-        let previous_validator_set_bytes =
-            ValidatorSetBytes::deserialize(&mut &*self.get(&paths::PREVIOUS_VALIDATOR_SET).ok_or(
+        let previous_validator_set_bytes = ValidatorSetBytes::deserialize(
+            &mut &*self.get(&variables::PREVIOUS_VALIDATOR_SET).ok_or(
                 KVGetError::ValueExpectedButNotFound {
                     key: Key::CommittedValidatorSet,
                 },
-            )?)
-            .map_err(|err| KVGetError::DeserializeValueError {
-                key: Key::CommittedValidatorSet,
-                source: err,
-            })?;
+            )?,
+        )
+        .map_err(|err| KVGetError::DeserializeValueError {
+            key: Key::CommittedValidatorSet,
+            source: err,
+        })?;
         ValidatorSet::try_from(previous_validator_set_bytes).map_err(|err| {
             KVGetError::Ed25519DalekError {
                 key: Key::CommittedValidatorSet,
@@ -415,7 +411,7 @@ pub trait KVGet {
     /* ↓↓↓ Validator Set Update Block Height ↓↓↓ */
 
     fn validator_set_update_block_height(&self) -> Result<Option<BlockHeight>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT) {
+        if let Some(bytes) = self.get(&variables::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT) {
             let block_height = BlockHeight::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
                     key: Key::ValidatorSetUpdateHeight,
@@ -430,11 +426,13 @@ pub trait KVGet {
 
     /* ↓↓↓ Validator Set Update Complete ↓↓↓ */
     fn validator_set_update_complete(&self) -> Result<bool, KVGetError> {
-        bool::deserialize(&mut &*self.get(&paths::VALIDATOR_SET_UPDATE_DECIDED).ok_or(
-            KVGetError::ValueExpectedButNotFound {
-                key: Key::ValidatorSetUpdateDecided,
-            },
-        )?)
+        bool::deserialize(
+            &mut &*self.get(&variables::VALIDATOR_SET_UPDATE_DECIDED).ok_or(
+                KVGetError::ValueExpectedButNotFound {
+                    key: Key::ValidatorSetUpdateDecided,
+                },
+            )?,
+        )
         .map_err(|err| KVGetError::DeserializeValueError {
             key: Key::ValidatorSetUpdateDecided,
             source: err,
@@ -455,7 +453,7 @@ pub trait KVGet {
     /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
 
     fn highest_view_phase_voted(&self) -> Result<Option<ViewNumber>, KVGetError> {
-        if let Some(bytes) = self.get(&paths::HIGHEST_VIEW_PHASE_VOTED) {
+        if let Some(bytes) = self.get(&variables::HIGHEST_VIEW_PHASE_VOTED) {
             let view_number = ViewNumber::deserialize(&mut &*bytes).map_err(|err| {
                 KVGetError::DeserializeValueError {
                     key: Key::HighestViewPhaseVoted,
@@ -544,4 +542,10 @@ impl Display for Key {
             &Key::HighestViewPhaseVoted => write!(f, "Highest View Phase-Voted"),
         }
     }
+}
+
+pub trait WriteBatch {
+    fn new() -> Self;
+    fn set(&mut self, key: &[u8], value: &[u8]);
+    fn delete(&mut self, key: &[u8]);
 }

@@ -41,10 +41,11 @@
 //!
 //! The methods in this module each help enforce a combination of local and global block tree
 //! invariants. Specifically, they do this by ensuring that every block tree *update*, i.e., set of
-//! state mutations done by the [top-level updater methods](BlockTree#impl-BlockTree<K>-1) defined on
-//! the `BlockTree` struct, is invariant-preserving. This idea can be summarized in simple formulaic
-//! terms as: a block tree that satisfies invariants + a invariant-preserving update = an updated block
-//! tree that also satisfies invariants.
+//! state mutations done by the
+//! [top-level updater methods](BlockTreeSingleton#impl-BlockTreeSingleton<K>-1) defined on the
+//! `BlockTreeSingleton` struct, is invariant-preserving. This idea can be summarized in simple
+//! formulaic terms as: a block tree that satisfies invariants + a invariant-preserving update = an
+//! updated block tree that also satisfies invariants.
 //!
 //! Each method works to ensure that every update is invariant-preserving in one of two different ways:
 //! 1. By checking **whether** an event (like receiving a `Proposal` or collecting a `PhaseCertificate`)
@@ -304,8 +305,8 @@ use crate::{
 };
 
 use super::{
-    block_tree::{BlockTree, BlockTreeError},
-    kv_store::KVStore,
+    accessors::internal::{BlockTreeError, BlockTreeSingleton},
+    pluggables::KVStore,
 };
 
 /// Check whether `block` can safely cause updates to `block_tree`, given the replica's `chain_id`.
@@ -321,7 +322,7 @@ use super::{
 /// [`is_correct`](Block::is_correct) is `true` for `block`.
 pub(crate) fn safe_block<K: KVStore>(
     block: &Block,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
     chain_id: ChainID,
 ) -> Result<bool, BlockTreeError> {
     Ok(
@@ -349,7 +350,7 @@ pub(crate) fn safe_block<K: KVStore>(
 /// [`is_correct`](crate::types::signed_messages::Certificate::is_correct) is `true` for `block.justify`.
 pub(crate) fn safe_pc<K: KVStore>(
     pc: &PhaseCertificate,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
     chain_id: ChainID,
 ) -> Result<bool, BlockTreeError> {
     Ok(
@@ -380,7 +381,7 @@ pub(crate) fn safe_pc<K: KVStore>(
 pub fn safe_nudge<K: KVStore>(
     nudge: &Nudge,
     current_view: ViewNumber,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
     chain_id: ChainID,
 ) -> Result<bool, BlockTreeError> {
     Ok(
@@ -419,7 +420,7 @@ pub fn safe_nudge<K: KVStore>(
 /// module-level docs.
 pub(crate) fn pc_to_lock<K: KVStore>(
     justify: &PhaseCertificate,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
 ) -> Result<Option<PhaseCertificate>, BlockTreeError> {
     // Special case: if `justify` is the Genesis PC, there is no PC to lock.
     if justify.is_genesis_pc() {
@@ -489,7 +490,7 @@ pub(crate) fn pc_to_lock<K: KVStore>(
 /// ["Committing"](super::invariants#committing) section of `safety`'s module-level docs.
 pub(crate) fn block_to_commit<K: KVStore>(
     justify: &PhaseCertificate,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
 ) -> Result<Option<CryptoHash>, BlockTreeError> {
     // Special case: if `justify` is the Genesis PC, there is no block to commit.
     if justify.is_genesis_pc() {
@@ -584,7 +585,7 @@ pub(crate) fn block_to_commit<K: KVStore>(
 /// ["Committing"](super::invariants#committing) section of `safety`'s module-level docs.
 pub(crate) fn repropose_block<K: KVStore>(
     current_view: ViewNumber,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
 ) -> Result<Option<CryptoHash>, BlockTreeError> {
     let highest_pc = block_tree.highest_pc()?;
     match highest_pc.phase {
@@ -605,7 +606,7 @@ pub(crate) fn repropose_block<K: KVStore>(
 /// parent, or its grandparent. We do not need to check deeper.
 fn extends_locked_pc_block<K: KVStore>(
     pc: &PhaseCertificate,
-    block_tree: &BlockTree<K>,
+    block_tree: &BlockTreeSingleton<K>,
 ) -> Result<bool, BlockTreeError> {
     let locked_pc = block_tree.locked_pc()?;
     let block = pc.block;

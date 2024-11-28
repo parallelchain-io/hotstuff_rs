@@ -8,11 +8,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    hotstuff::types::PhaseCertificate,
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
+    block_tree::{
+        accessors::internal::{BlockTreeError, BlockTreeSingleton},
+        pluggables::KVStore,
     },
+    hotstuff::types::PhaseCertificate,
     types::{
         crypto_primitives::{CryptoHasher, Digest},
         data_types::*,
@@ -30,7 +30,7 @@ use super::signed_messages::Certificate;
 /// `block.justify.phase` must be `Generic` or `Decide`. This invariant is enforced in two places:
 /// 1. When a validator creates a `Block` using [`new`](Self::new).
 /// 2. When a replica receives a `Proposal` containing `block` and checks the
-///    [`safe_block`](crate::state::invariants::safe_block) predicate.
+///    [`safe_block`](crate::block_tree::invariants::safe_block) predicate.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Block {
     pub height: BlockHeight,
@@ -85,7 +85,7 @@ impl Block {
     /// Checks if hash and justify are cryptographically correct.
     pub fn is_correct<K: KVStore>(
         &self,
-        block_tree: &BlockTree<K>,
+        block_tree: &BlockTreeSingleton<K>,
     ) -> Result<bool, BlockTreeError> {
         Ok(
             self.hash == Block::hash(self.height, &self.justify, &self.data_hash)

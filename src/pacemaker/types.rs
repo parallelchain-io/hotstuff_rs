@@ -9,11 +9,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
 use crate::{
-    pacemaker::messages::TimeoutVote,
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
+    block_tree::{
+        accessors::internal::{BlockTreeError, BlockTreeSingleton},
+        pluggables::KVStore,
     },
+    pacemaker::messages::TimeoutVote,
     types::{
         data_types::*,
         signed_messages::{Certificate, Collector},
@@ -38,7 +38,10 @@ impl Certificate for TimeoutCertificate {
     /// During the speculation phase, i.e., when the new validator set has been committed, but the old
     /// validator set is still active, a TC is correct if it is correctly signed by a quorum from either
     /// of the two validator sets.
-    fn is_correct<K: KVStore>(&self, block_tree: &BlockTree<K>) -> Result<bool, BlockTreeError> {
+    fn is_correct<K: KVStore>(
+        &self,
+        block_tree: &BlockTreeSingleton<K>,
+    ) -> Result<bool, BlockTreeError> {
         let validator_set_state = block_tree.validator_set_state()?;
         if validator_set_state.update_decided() {
             Ok(self.is_correctly_signed(validator_set_state.committed_validator_set()))

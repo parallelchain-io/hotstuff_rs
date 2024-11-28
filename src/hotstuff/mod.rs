@@ -4,8 +4,9 @@
 //!
 //! The HotStuff subprotocol is the core of HotStuff-rs BFT SMR.
 //!
-//! As the rustdocs for `state::invariants` [explains](crate::state::invariants#committing-a-block),
-//! the block tree commits a block when its [`update`](crate::state::block_tree::BlockTree::update)
+//! As the rustdocs for `block_tree::invariants`
+//! [explains](crate::block_tree::invariants#committing-a-block), the block tree commits a block when
+//! the [`BlockTreeSingleton::update`](crate::block_tree::accessors::internal::BlockTreeSingleton::update)
 //! method creates a “3-Chain” extending the block. Fundamentally, the role of the HotStuff subprotocol
 //! is to drive this process by orchestrating validators to work together to *create* the building
 //! blocks of 3-Chains, namely `PhaseCertificate`s. Prerequisite to the HotStuff subprotocol being able
@@ -47,7 +48,7 @@
 //!
 //! Even worse, while 3-Chain is a necessary requirement for a block to become committed, it is not a
 //! sufficient requirement. In particular, commitment in Chained HotStuff additionally requires
-//! ["consecutive views"](crate::state::invariants#committing-a-block), and because `justify`-links
+//! ["consecutive views"](crate::block_tree::invariants#committing-a-block), and because `justify`-links
 //! between consecutive blocks do not, by default, have consecutive views, implementing dynamic
 //! validator set updates directly on Chained HotStuff would make it so that there is no upper bound
 //! on how many blocks have to follow a validator-set-updating block in order for its validator set
@@ -132,7 +133,7 @@
 //!
 //! Validator set speculation is implemented in HotStuff-rs by keeping track of both the committed
 //! validator set and the previous validator set in the block tree's
-//! [validator set state](crate::state::block_tree#validator-set).
+//! [validator set state](crate::block_tree::variables#validator-set).
 //!
 //! ## The `Decide` phase
 //!

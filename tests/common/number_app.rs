@@ -11,7 +11,7 @@ use hotstuff_rs::{
     app::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
-    state::{block_tree_snapshot::BlockTreeSnapshot, kv_store::KVGet},
+    block_tree::{accessors::public::BlockTreeSnapshot, pluggables::KVGet},
     types::{
         crypto_primitives::{CryptoHasher, Digest, VerifyingKey},
         data_types::{CryptoHash, Data, Datum, Power},

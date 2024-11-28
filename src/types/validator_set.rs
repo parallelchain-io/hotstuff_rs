@@ -298,8 +298,8 @@ impl ValidatorSetState {
 /// Wraps around [`ValidatorSetUpdates`], providing additional information on whether the updates have
 /// already been applied or not.
 ///
-/// The ["Validator Set Updates Status" state variable](crate::state::block_tree#validator-set) in the
-/// `BlockTree` stores a mapping from blocks to their associated `ValidatorSetUpdatesStatus`.
+/// The ["Validator Set Updates Status" state variable](crate::block_tree::variables#validator-set) in
+/// the block tree stores a mapping from blocks to their associated `ValidatorSetUpdatesStatus`.
 pub enum ValidatorSetUpdatesStatus {
     /// The block does not update the validator set.
     None,

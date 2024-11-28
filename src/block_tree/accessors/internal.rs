@@ -1,77 +1,6 @@
-/*
-    Copyright © 2023, ParallelChain Lab
-    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-*/
-
 //! Internal read-and-write handle used by the algorithm thread to mutate the Block Tree.
 //!
-//! The Block Tree may be stored in any key-value store of the library user's own choosing, as long as that
-//! KV store can provide a type that implements [`KVStore`]. This state can be mutated through an instance
-//! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
-//! [`BlockTreeCamera`](crate::state::block_tree_snapshot::BlockTreeCamera).
-//!
-//! # Mutating the Block Tree directly from user code
-//!
-//! In normal operation, HotStuff-rs code will internally be making all writes to the `BlockTree`, while
-//! users can get a `BlockTreeCamera` through which they can read from the block tree by calling replica's
-//! [`block_tree_camera`](crate::replica::Replica::block_tree_camera) method.
-//!
-//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
-//! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
-//! instance of BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding
-//! [`BlockTreeWriteBatch`] using [`BlockTreeWriteBatch::new_unsafe`].
-//!
-//! # State variables
-//!
-//! HotStuff-rs structures its state into 17 separate conceptual "variables" that are stored in tuples
-//! that sit at [specific key paths](super::paths) in the library user's chosen
-//! KV store. These 17 variables are listed below, grouped into 4 categories for ease of understanding:
-//!
-//! ## Blocks
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Blocks|[`CryptoHash`] -> [`Block`]|Mapping between a block's hash and the block itself. This mapping contains all blocks that have been inserted into the block tree, excluding blocks that have been pruned.|
-//! |Block at Height|[`BlockHeight`] -> [`CryptoHash`]|Mapping between a block's height and its block hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
-//! |Block to Children|[`CryptoHash`] -> [`ChildrenList`]|Mapping between a block's hash and the list of children it has in the block tree. A block may have multiple children if they have not been committed.|
-//!
-//! ## App State
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Committed App State|[`Vec<u8>`] -> [`Vec<u8>`]|All key value pairs in the current committed app state. Produced by applying all app state updates in sequence from the genesis block up to the highest committed block.|
-//! |Pending App State Updates|[`CryptoHash`] -> [`AppStateUpdates`]|Mapping between a block's hash and its app state updates. This is empty for an existing block if at least one of the following two cases is true: <ol><li>The block does not update the app state.</li> <li>The block has been committed.</li></ol>|
-//!
-//! ## Validator Set
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Committed Validator Set|[`ValidatorSet`]|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
-//! |Previous Validator Set|[`ValidatorSet`]|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "decided" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
-//! |Validator Set Update Decided|[`bool`]|A flag that indicates the most recently committed validator set update has been decided.|
-//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recent committed (but perhaps not decided) validator set update.|
-//! |Validator Set Updates Status|[`CryptoHash`] -> [`ValidatorSetUpdatesStatus`]|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
-//!
-//! ## Safety
-//!
-//! |Variable|Type|Description|
-//! |---|---|---|
-//! |Locked Phase Certificate|[`PhaseCertificate`]|The currently locked PC. [Read more](invariants#locking)|
-//! |Highest View Phase-Voted|[`ViewNumber`]|The highest view that this validator has phase-voted in.|
-//! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
-//! |Highest Phase Certificate|[`PhaseCertificate`]|Among the phase certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Timeout Certificate|[`TimeoutCertificate`]|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Committed Block|[`CryptoHash`]|The hash of the committed block that has the highest height.|
-//! |Newest Block|[`CryptoHash`]|The hash of the most recent block to be inserted into the block tree.|
-//!
-//! ## Persistence in KV Store
-//!
-//! The location of each of these variables in a KV store is defined in [paths](crate::state::paths).
-//! Note that the fields of a block are itself stored in different tuples. This is so that user code
-//! can get a subset of a block's data without loading the entire block from storage (which can be
-//! expensive). The key suffixes on which each of block's fields are stored are also defined in paths.
-//!
-//! # Initial state
+//! # Initializing the Block Tree
 //!
 //! All variables in the Block Tree start out empty except eight. These eight variables, which must be
 //! initialized using the [`initialize`](BlockTree::initialize) function before doing anything else with
@@ -87,8 +16,22 @@
 //! |Locked PC|The [Genesis PC](crate::hotstuff::types::PhaseCertificate::genesis_pc)|
 //! |Highest View Entered|0|
 //! |Highest Phase Certificate|The [Genesis PC](crate::hotstuff::types::PhaseCertificate::genesis_pc)|
+//!
+//! # Mutating the Block Tree directly from user code
+//!
+//! In normal operation, HotStuff-rs code will internally be making all writes to the
+//! `BlockTreeSingleton`, while users can get a `BlockTreeCamera` through which they can read from the
+//! block tree by calling `Replica`'s [`block_tree_camera`](crate::replica::Replica::block_tree_camera)
+//! method.
+//!
+//! Sometimes, however, users may want to manually mutate the Block Tree, for example, to recover from
+//! an error that has corrupted some of its invariants. For this purpose, one can unsafe-ly get an
+//! instance of BlockTree using [`BlockTree::new_unsafe`] and an instance of the corresponding
+//! [`BlockTreeWriteBatch`] using [`BlockTreeWriteBatch::new_unsafe`].
 
 use std::{cmp::max, iter::successors, sync::mpsc::Sender, time::SystemTime};
+
+use borsh::BorshSerialize;
 
 use crate::{
     events::{
@@ -101,47 +44,50 @@ use crate::{
         block::Block,
         data_types::{BlockHeight, ChildrenList, CryptoHash, Data, DataLen, Datum, ViewNumber},
         update_sets::{AppStateUpdates, ValidatorSetUpdates},
-        validator_set::{ValidatorSet, ValidatorSetState, ValidatorSetUpdatesStatus},
+        validator_set::{
+            ValidatorSet, ValidatorSetBytes, ValidatorSetState, ValidatorSetUpdatesStatus,
+            ValidatorSetUpdatesStatusBytes,
+        },
     },
 };
 
-use super::{
-    app_block_tree_view::AppBlockTreeView,
-    block_tree_snapshot::BlockTreeSnapshot,
+use super::super::{
     invariants,
-    kv_store::{KVGetError, KVStore},
-    write_batch::{BlockTreeWriteBatch, KVSetError},
+    pluggables::{KVGetError, KVStore, Key, WriteBatch},
+    variables::{self, concat},
 };
+
+use super::{app::AppBlockTreeView, public::BlockTreeSnapshot};
 
 /// Read and write handle into the block tree that should be owned exclusively by the algorithm thread.
 ///
 /// ## Categories of methods
 ///
-/// `BlockTree` has a large number of methods. To improve understandability, these methods are grouped
+/// `BlockTreeSingleton` has a large number of methods. To improve understandability, these methods are grouped
 /// into five categories, with methods in each separate category being defined in a separate `impl`
 /// block. These five categories are:
-/// 1. [Lifecycle methods](#impl-BlockTree<K>).
-/// 2. [Top-level state updaters](#impl-BlockTree<K>-1).
-/// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTree<K>-2).
-/// 4. [Basic state getters](#impl-BlockTree<K>-3).
-/// 5. [Extra state getters](#impl-BlockTree<K>-4).
-pub struct BlockTree<K: KVStore>(K);
+/// 1. [Lifecycle methods](#impl-BlockTreeSingleton<K>).
+/// 2. [Top-level state updaters](#impl-BlockTreeSingleton<K>-1).
+/// 3. [Helper functions called by `BlockTree::update`](#impl-BlockTreeSingleton<K>-2).
+/// 4. [Basic state getters](#impl-BlockTreeSingleton<K>-3).
+/// 5. [Extra state getters](#impl-BlockTreeSingleton<K>-4).
+pub struct BlockTreeSingleton<K: KVStore>(K);
 
 /// Lifecycle methods.
 ///
-/// These are methods for creating and initializing a `BlockTree`, as well as for using it to create and
+/// These are methods for creating and initializing a `BlockTreeSingleton`, as well as for using it to create and
 /// consume other block tree-related types, namely, [`BlockTreeSnapshot`], [`BlockTreeWriteBatch`], and
 /// [`AppBlockTreeView`].
-impl<K: KVStore> BlockTree<K> {
-    /// Create a new instance of `BlockTree` on top of `kv_store`.
+impl<K: KVStore> BlockTreeSingleton<K> {
+    /// Create a new instance of `BlockTreeSingleton` on top of `kv_store`.
     ///
-    /// This constructor is private (`pub(crate)`). To create an instance of `BlockTree` as a library user,
-    /// use [`new_unsafe`](Self::new_unsafe).
+    /// This constructor is private (`pub(crate)`). To create an instance of `BlockTreeSingleton` as a
+    /// library user, use [`new_unsafe`](Self::new_unsafe).
     pub(crate) fn new(kv_store: K) -> Self {
-        BlockTree(kv_store)
+        BlockTreeSingleton(kv_store)
     }
 
-    /// Create a new instance of `BlockTree` on top of `kv_store`.
+    /// Create a new instance of `BlockTreeSingleton` on top of `kv_store`.
     ///
     /// ## Safety
     ///
@@ -153,8 +99,9 @@ impl<K: KVStore> BlockTree<K> {
 
     /// Initialize the block tree variables listed in [initial state](#initial-state).
     ///
-    /// This function must be called exactly once on a `BlockTree` with an empty backing `kv_store`, before
-    /// any of the other functions (except the constructors `new` or `new_unsafe`) are called.
+    /// This function must be called exactly once on a `BlockTreeSingleton` with an empty backing
+    /// `kv_store`, before any of the other functions (except the constructors `new` or `new_unsafe`) are
+    /// called.
     pub fn initialize(
         &mut self,
         initial_app_state: &AppStateUpdates,
@@ -192,7 +139,7 @@ impl<K: KVStore> BlockTree<K> {
         BlockTreeSnapshot::new(self.0.snapshot())
     }
 
-    /// Atomically write the changes in `write_batch` into the `BlockTree`.
+    /// Atomically write the changes in `write_batch` into the `BlockTreeSingleton`.
     pub fn write(&mut self, write_batch: BlockTreeWriteBatch<K::WriteBatch>) {
         self.0.write(write_batch.0)
     }
@@ -271,7 +218,7 @@ impl<K: KVStore> BlockTree<K> {
 /// subprotocols (i.e., [`hotstuff`](crate::hotstuff), [`block_sync`](crate::block_sync), and
 /// [`pacemaker`](crate::pacemaker)). Mutating methods outside of this `impl` and the lifecycle methods
 /// `impl` above are only used internally in this module.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Insert into the block tree a `block` that will cause the provided `app_state_updates` and
     /// `validator_set_updates` to be applied when it is committed in the future.
     ///
@@ -427,7 +374,7 @@ impl<K: KVStore> BlockTree<K> {
 }
 
 /// Helper functions called by [BlockTree::update].
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Commit `block` and all of its ancestors, if they have not already been committed.
     ///
     /// ## Return value
@@ -602,11 +549,12 @@ impl<K: KVStore> BlockTree<K> {
         branch.into_iter()
     }
 
-    /// Publish all events resulting from calling [`update`](Self::update). These events have to do with changing
-    /// persistent state, and  possibly include: [`UpdateHighestPCEvent`], [`UpdateLockedPCEvent`],
+    /// Publish all events resulting from calling [`update`](Self::update). These events have to do with
+    /// changing persistent state, and  possibly include: [`UpdateHighestPCEvent`], [`UpdateLockedPCEvent`],
     /// [`PruneBlockEvent`], [`CommitBlockEvent`], [`UpdateValidatorSetEvent`].
     ///
-    /// Invariant: this method is invoked immediately after the corresponding changes are written to the [`BlockTree`].
+    /// Invariant: this method must only be invoked after the associated changes are persistently written to
+    /// the [`BlockTreeSingleton`].
     fn publish_update_block_tree_events(
         event_publisher: &Option<Sender<Event>>,
         update_highest_pc: Option<PhaseCertificate>,
@@ -660,7 +608,7 @@ impl<K: KVStore> BlockTree<K> {
 /// return whatever they return.
 ///
 /// The exact same set of basic state getters are also defined on `BlockTreeSnapshot`.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     pub fn block(&self, block: &CryptoHash) -> Result<Option<Block>, BlockTreeError> {
         Ok(self.0.block(block)?)
     }
@@ -760,7 +708,7 @@ impl<K: KVStore> BlockTree<K> {
 /// they return into forms that are more convenient to use.
 ///
 /// Unlike basic state getters, these functions are not defined on `BlockTreeSnapshot`.
-impl<K: KVStore> BlockTree<K> {
+impl<K: KVStore> BlockTreeSingleton<K> {
     /// Check whether `block` exists on the block tree.
     pub fn contains(&self, block: &CryptoHash) -> bool {
         self.block(block).is_ok_and(|block_opt| block_opt.is_some())
@@ -795,7 +743,7 @@ impl<K: KVStore> BlockTree<K> {
     }
 }
 
-/// Errors that may be encountered when reading or writing to the [`BlockTree`].
+/// Errors that may be encountered when reading or writing to the [`BlockTreeSingleton`].
 #[derive(Debug)]
 pub enum BlockTreeError {
     /// Error when trying to get a value from the block tree's underlying [key value store][KVStore].
@@ -819,4 +767,422 @@ impl From<KVSetError> for BlockTreeError {
     fn from(value: KVSetError) -> Self {
         BlockTreeError::KVSetError(value)
     }
+}
+
+pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
+
+impl<W: WriteBatch> BlockTreeWriteBatch<W> {
+    pub(crate) fn new() -> BlockTreeWriteBatch<W> {
+        BlockTreeWriteBatch(W::new())
+    }
+
+    pub fn new_unsafe() -> BlockTreeWriteBatch<W> {
+        Self::new()
+    }
+
+    /* ↓↓↓ Block ↓↓↓  */
+
+    pub fn set_block(&mut self, block: &Block) -> Result<(), BlockTreeError> {
+        let block_prefix = concat(&variables::BLOCKS, &block.hash.bytes());
+
+        self.0.set(
+            &concat(&block_prefix, &variables::BLOCK_HEIGHT),
+            &block
+                .height
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockHeight {
+                        block: block.hash.clone(),
+                    },
+                    source: err,
+                })?,
+        );
+        self.0.set(
+            &concat(&block_prefix, &variables::BLOCK_JUSTIFY),
+            &block
+                .justify
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockJustify {
+                        block: block.hash.clone(),
+                    },
+                    source: err,
+                })?,
+        );
+        self.0.set(
+            &concat(&block_prefix, &variables::BLOCK_DATA_HASH),
+            &block
+                .data_hash
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockDataHash {
+                        block: block.hash.clone(),
+                    },
+                    source: err,
+                })?,
+        );
+        self.0.set(
+            &concat(&block_prefix, &variables::BLOCK_DATA_LEN),
+            &block
+                .data
+                .len()
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockDataLength {
+                        block: block.hash.clone(),
+                    },
+                    source: err,
+                })?,
+        );
+
+        // Insert datums.
+        let block_data_prefix = concat(&block_prefix, &variables::BLOCK_DATA);
+        for (i, datum) in block.data.iter().enumerate() {
+            let datum_key = concat(
+                &block_data_prefix,
+                &(i as u32)
+                    .try_to_vec()
+                    .map_err(|err| KVSetError::SerializeValueError {
+                        key: Key::BlockData {
+                            block: block.hash.clone(),
+                        },
+                        source: err,
+                    })?,
+            );
+            self.0.set(&datum_key, datum.bytes());
+        }
+
+        Ok(())
+    }
+
+    pub fn delete_block(&mut self, block: &CryptoHash, data_len: DataLen) {
+        let block_prefix = concat(&variables::BLOCKS, &block.bytes());
+
+        self.0
+            .delete(&concat(&block_prefix, &variables::BLOCK_HEIGHT));
+        self.0
+            .delete(&concat(&block_prefix, &variables::BLOCK_JUSTIFY));
+        self.0
+            .delete(&concat(&block_prefix, &variables::BLOCK_DATA_HASH));
+        self.0
+            .delete(&concat(&block_prefix, &variables::BLOCK_DATA_LEN));
+
+        let block_data_prefix = concat(&block_prefix, &variables::BLOCK_DATA);
+        for i in 0..data_len.int() {
+            let datum_key = concat(&block_data_prefix, &i.try_to_vec().unwrap());
+            self.0.delete(&datum_key);
+        }
+    }
+
+    /* ↓↓↓ Block at Height ↓↓↓ */
+
+    pub fn set_block_at_height(
+        &mut self,
+        height: BlockHeight,
+        block: &CryptoHash,
+    ) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &concat(&variables::BLOCK_AT_HEIGHT, &height.try_to_vec().unwrap()),
+            &block
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockAtHeight { height },
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Block to Children ↓↓↓ */
+
+    pub fn set_children(
+        &mut self,
+        block: &CryptoHash,
+        children: &ChildrenList,
+    ) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &concat(&variables::BLOCK_TO_CHILDREN, &block.bytes()),
+            &children
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::BlockChildren {
+                        block: block.clone(),
+                    },
+                    source: err,
+                })?,
+        ))
+    }
+
+    pub fn delete_children(&mut self, block: &CryptoHash) {
+        self.0
+            .delete(&concat(&variables::BLOCK_TO_CHILDREN, &block.bytes()));
+    }
+
+    /* ↓↓↓ Committed App State ↓↓↓ */
+
+    pub fn set_committed_app_state(&mut self, key: &[u8], value: &[u8]) {
+        self.0
+            .set(&concat(&variables::COMMITTED_APP_STATE, key), value);
+    }
+
+    pub fn delete_committed_app_state(&mut self, key: &[u8]) {
+        self.0.delete(&concat(&variables::COMMITTED_APP_STATE, key));
+    }
+
+    /* ↓↓↓ Pending App State Updates ↓↓↓ */
+
+    pub fn set_pending_app_state_updates(
+        &mut self,
+        block: &CryptoHash,
+        app_state_updates: &AppStateUpdates,
+    ) -> Result<(), KVSetError> {
+        Ok(self.0.set(
+            &concat(&variables::PENDING_APP_STATE_UPDATES, &block.bytes()),
+            &app_state_updates
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::PendingAppStateUpdates {
+                        block: block.clone(),
+                    },
+                    source: err,
+                })?,
+        ))
+    }
+
+    pub fn apply_app_state_updates(&mut self, app_state_updates: &AppStateUpdates) {
+        for (key, value) in app_state_updates.inserts() {
+            self.set_committed_app_state(key, value);
+        }
+
+        for key in app_state_updates.deletes() {
+            self.delete_committed_app_state(key);
+        }
+    }
+
+    pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
+        self.0.delete(&concat(
+            &variables::PENDING_APP_STATE_UPDATES,
+            &block.bytes(),
+        ));
+    }
+
+    /* ↓↓↓ Commmitted Validator Set */
+
+    pub fn set_committed_validator_set(
+        &mut self,
+        validator_set: &ValidatorSet,
+    ) -> Result<(), BlockTreeError> {
+        let validator_set_bytes: ValidatorSetBytes = validator_set.into();
+        Ok(self.0.set(
+            &variables::COMMITTED_VALIDATOR_SET,
+            &validator_set_bytes
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::CommittedValidatorSet,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Pending Validator Set Updates */
+
+    pub fn set_pending_validator_set_updates(
+        &mut self,
+        block: &CryptoHash,
+        validator_set_updates: &ValidatorSetUpdates,
+    ) -> Result<(), BlockTreeError> {
+        let block_vs_updates_bytes =
+            ValidatorSetUpdatesStatusBytes::Pending(validator_set_updates.into());
+        Ok(self.0.set(
+            &concat(&variables::VALIDATOR_SET_UPDATES_STATUS, &block.bytes()),
+            &block_vs_updates_bytes.try_to_vec().map_err(|err| {
+                KVSetError::SerializeValueError {
+                    key: Key::ValidatorSetUpdatesStatus {
+                        block: block.clone(),
+                    },
+                    source: err,
+                }
+            })?,
+        ))
+    }
+
+    pub fn set_committed_validator_set_updates(
+        &mut self,
+        block: &CryptoHash,
+    ) -> Result<(), BlockTreeError> {
+        let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Committed;
+        Ok(self.0.set(
+            &concat(&variables::VALIDATOR_SET_UPDATES_STATUS, &block.bytes()),
+            &block_vs_updates_bytes.try_to_vec().map_err(|err| {
+                KVSetError::SerializeValueError {
+                    key: Key::ValidatorSetUpdatesStatus {
+                        block: block.clone(),
+                    },
+                    source: err,
+                }
+            })?,
+        ))
+    }
+
+    pub fn delete_block_validator_set_updates(&mut self, block: &CryptoHash) {
+        self.0.delete(&concat(
+            &variables::VALIDATOR_SET_UPDATES_STATUS,
+            &block.bytes(),
+        ))
+    }
+
+    /* ↓↓↓ Locked PC ↓↓↓ */
+
+    pub fn set_locked_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::LOCKED_PC,
+            &pc.try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::LockedPC,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Highest View Entered ↓↓↓ */
+
+    pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::HIGHEST_VIEW_ENTERED,
+            &view
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::HighestTC,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Highest Phase Certificate ↓↓↓ */
+
+    pub fn set_highest_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::HIGHEST_PC,
+            &pc.try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::HighestTC,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Highest Committed Block ↓↓↓ */
+
+    pub fn set_highest_committed_block(
+        &mut self,
+        block: &CryptoHash,
+    ) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::HIGHEST_COMMITTED_BLOCK,
+            &block
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::HighestCommittedBlock,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Newest Block ↓↓↓ */
+
+    pub fn set_newest_block(&mut self, block: &CryptoHash) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::NEWEST_BLOCK,
+            &block
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::NewestBlock,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Highest Timeout Certificate ↓↓↓ */
+
+    pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::HIGHEST_TC,
+            &tc.try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::HighestTC,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Previous Validator Set  ↓↓↓ */
+    pub fn set_previous_validator_set(
+        &mut self,
+        validator_set: &ValidatorSet,
+    ) -> Result<(), BlockTreeError> {
+        let validator_set_bytes: ValidatorSetBytes = validator_set.into();
+        Ok(self.0.set(
+            &variables::PREVIOUS_VALIDATOR_SET,
+            &validator_set_bytes
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::PreviousValidatorSet,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Validator Set Update Block Height ↓↓↓ */
+    pub fn set_validator_set_update_block_height(
+        &mut self,
+        height: BlockHeight,
+    ) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT,
+            &height
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::ValidatorSetUpdateHeight,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Validator Set Update Decided ↓↓↓ */
+
+    pub fn set_validator_set_update_decided(
+        &mut self,
+        update_complete: bool,
+    ) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::VALIDATOR_SET_UPDATE_DECIDED,
+            &update_complete
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::ValidatorSetUpdateDecided,
+                    source: err,
+                })?,
+        ))
+    }
+
+    /* ↓↓↓ Highest View Phase-Voted ↓↓↓ */
+
+    pub fn set_highest_view_phase_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
+        Ok(self.0.set(
+            &variables::HIGHEST_VIEW_PHASE_VOTED,
+            &view
+                .try_to_vec()
+                .map_err(|err| KVSetError::SerializeValueError {
+                    key: Key::HighestViewPhaseVoted,
+                    source: err,
+                })?,
+        ))
+    }
+}
+
+/// Error when writing a key-value pair to the [write batch][BlockTreeWriteBatch].
+/// The error may arise when the value cannot be serialized, and hence cannot be
+/// written to the write batch.
+#[derive(Debug)]
+pub enum KVSetError {
+    SerializeValueError { key: Key, source: std::io::Error },
 }
