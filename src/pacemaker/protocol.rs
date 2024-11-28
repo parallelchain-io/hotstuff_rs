@@ -51,6 +51,10 @@ use std::{
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError, BlockTreeWriteBatch},
+        pluggables::KVStore,
+    },
     events::{
         AdvanceViewEvent, CollectTCEvent, Event, ReceiveAdvanceViewEvent, ReceiveTimeoutVoteEvent,
         TimeoutVoteEvent, UpdateHighestTCEvent, ViewTimeoutEvent,
@@ -60,11 +64,6 @@ use crate::{
     pacemaker::{
         messages::{AdvanceView, PacemakerMessage, ProgressCertificate, TimeoutVote},
         types::TimeoutVoteCollector,
-    },
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
-        write_batch::BlockTreeWriteBatch,
     },
     types::{
         crypto_primitives::Keypair,

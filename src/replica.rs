@@ -126,12 +126,15 @@ use crate::{
         client::BlockSyncClientConfiguration,
         server::{BlockSyncServer, BlockSyncServerConfiguration},
     },
+    block_tree::{
+        accessors::{internal::BlockTree, public::BlockTreeCamera},
+        pluggables::KVStore,
+    },
     event_bus::*,
     events::*,
     hotstuff::implementation::HotStuffConfiguration,
     networking::{network::Network, receiving::start_polling},
     pacemaker::protocol::PacemakerConfiguration,
-    state::{block_tree::BlockTree, block_tree_snapshot::BlockTreeCamera, kv_store::KVStore},
     types::{
         crypto_primitives::Keypair,
         data_types::{BufferSize, ChainID, EpochLength},

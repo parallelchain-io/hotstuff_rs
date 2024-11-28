@@ -5,10 +5,9 @@
 
 //! This module defines the [`WriteBatch`] trait for batching writes to the key-value store, and its
 //! implementation for the [block tree](crate::state::block_tree::BlockTree), the [`BlockTreeWriteBatch`].
-pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
 
 use borsh::BorshSerialize;
-use state_variables::*;
+use variables::*;
 
 use crate::{
     hotstuff::types::PhaseCertificate,
@@ -24,7 +23,7 @@ use crate::{
 use super::{
     block_tree::BlockTreeError,
     kv_store::Key,
-    state_variables::{self, combine},
+    variables::{self, combine},
 };
 
 pub trait WriteBatch {
@@ -32,6 +31,8 @@ pub trait WriteBatch {
     fn set(&mut self, key: &[u8], value: &[u8]);
     fn delete(&mut self, key: &[u8]);
 }
+
+pub struct BlockTreeWriteBatch<W: WriteBatch>(pub(super) W);
 
 impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     pub(crate) fn new() -> BlockTreeWriteBatch<W> {
@@ -45,10 +46,10 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     /* ↓↓↓ Block ↓↓↓  */
 
     pub fn set_block(&mut self, block: &Block) -> Result<(), BlockTreeError> {
-        let block_prefix = combine(&state_variables::BLOCKS, &block.hash.bytes());
+        let block_prefix = combine(&variables::BLOCKS, &block.hash.bytes());
 
         self.0.set(
-            &combine(&block_prefix, &state_variables::BLOCK_HEIGHT),
+            &combine(&block_prefix, &variables::BLOCK_HEIGHT),
             &block
                 .height
                 .try_to_vec()
@@ -60,7 +61,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
                 })?,
         );
         self.0.set(
-            &combine(&block_prefix, &state_variables::BLOCK_JUSTIFY),
+            &combine(&block_prefix, &variables::BLOCK_JUSTIFY),
             &block
                 .justify
                 .try_to_vec()
@@ -72,7 +73,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
                 })?,
         );
         self.0.set(
-            &combine(&block_prefix, &state_variables::BLOCK_DATA_HASH),
+            &combine(&block_prefix, &variables::BLOCK_DATA_HASH),
             &block
                 .data_hash
                 .try_to_vec()
@@ -84,7 +85,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
                 })?,
         );
         self.0.set(
-            &combine(&block_prefix, &state_variables::BLOCK_DATA_LEN),
+            &combine(&block_prefix, &variables::BLOCK_DATA_LEN),
             &block
                 .data
                 .len()
@@ -172,7 +173,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn delete_children(&mut self, block: &CryptoHash) {
         self.0.delete(&combine(
-            &state_variables::BLOCK_TO_CHILDREN,
+            &variables::BLOCK_TO_CHILDREN,
             &block.bytes(),
         ));
     }
@@ -181,12 +182,12 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_committed_app_state(&mut self, key: &[u8], value: &[u8]) {
         self.0
-            .set(&combine(&state_variables::COMMITTED_APP_STATE, key), value);
+            .set(&combine(&variables::COMMITTED_APP_STATE, key), value);
     }
 
     pub fn delete_committed_app_state(&mut self, key: &[u8]) {
         self.0
-            .delete(&combine(&state_variables::COMMITTED_APP_STATE, key));
+            .delete(&combine(&variables::COMMITTED_APP_STATE, key));
     }
 
     /* ↓↓↓ Pending App State Updates ↓↓↓ */
@@ -197,7 +198,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         app_state_updates: &AppStateUpdates,
     ) -> Result<(), KVSetError> {
         Ok(self.0.set(
-            &combine(&state_variables::PENDING_APP_STATE_UPDATES, &block.bytes()),
+            &combine(&variables::PENDING_APP_STATE_UPDATES, &block.bytes()),
             &app_state_updates
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -221,7 +222,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn delete_pending_app_state_updates(&mut self, block: &CryptoHash) {
         self.0.delete(&combine(
-            &state_variables::PENDING_APP_STATE_UPDATES,
+            &variables::PENDING_APP_STATE_UPDATES,
             &block.bytes(),
         ));
     }
@@ -234,7 +235,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     ) -> Result<(), BlockTreeError> {
         let validator_set_bytes: ValidatorSetBytes = validator_set.into();
         Ok(self.0.set(
-            &state_variables::COMMITTED_VALIDATOR_SET,
+            &variables::COMMITTED_VALIDATOR_SET,
             &validator_set_bytes
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -255,7 +256,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
             ValidatorSetUpdatesStatusBytes::Pending(validator_set_updates.into());
         Ok(self.0.set(
             &combine(
-                &state_variables::VALIDATOR_SET_UPDATES_STATUS,
+                &variables::VALIDATOR_SET_UPDATES_STATUS,
                 &block.bytes(),
             ),
             &block_vs_updates_bytes.try_to_vec().map_err(|err| {
@@ -276,7 +277,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         let block_vs_updates_bytes = ValidatorSetUpdatesStatusBytes::Committed;
         Ok(self.0.set(
             &combine(
-                &state_variables::VALIDATOR_SET_UPDATES_STATUS,
+                &variables::VALIDATOR_SET_UPDATES_STATUS,
                 &block.bytes(),
             ),
             &block_vs_updates_bytes.try_to_vec().map_err(|err| {
@@ -292,7 +293,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn delete_block_validator_set_updates(&mut self, block: &CryptoHash) {
         self.0.delete(&combine(
-            &state_variables::VALIDATOR_SET_UPDATES_STATUS,
+            &variables::VALIDATOR_SET_UPDATES_STATUS,
             &block.bytes(),
         ))
     }
@@ -301,7 +302,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_locked_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::LOCKED_PC,
+            &variables::LOCKED_PC,
             &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
                     key: Key::LockedPC,
@@ -314,7 +315,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_highest_view_entered(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::HIGHEST_VIEW_ENTERED,
+            &variables::HIGHEST_VIEW_ENTERED,
             &view
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -328,7 +329,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_highest_pc(&mut self, pc: &PhaseCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::HIGHEST_PC,
+            &variables::HIGHEST_PC,
             &pc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
                     key: Key::HighestTC,
@@ -344,7 +345,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         block: &CryptoHash,
     ) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::HIGHEST_COMMITTED_BLOCK,
+            &variables::HIGHEST_COMMITTED_BLOCK,
             &block
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -358,7 +359,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_newest_block(&mut self, block: &CryptoHash) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::NEWEST_BLOCK,
+            &variables::NEWEST_BLOCK,
             &block
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -372,7 +373,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_highest_tc(&mut self, tc: &TimeoutCertificate) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::HIGHEST_TC,
+            &variables::HIGHEST_TC,
             &tc.try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
                     key: Key::HighestTC,
@@ -388,7 +389,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
     ) -> Result<(), BlockTreeError> {
         let validator_set_bytes: ValidatorSetBytes = validator_set.into();
         Ok(self.0.set(
-            &state_variables::PREVIOUS_VALIDATOR_SET,
+            &variables::PREVIOUS_VALIDATOR_SET,
             &validator_set_bytes
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -404,7 +405,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         height: BlockHeight,
     ) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT,
+            &variables::VALIDATOR_SET_UPDATE_BLOCK_HEIGHT,
             &height
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -421,7 +422,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
         update_complete: bool,
     ) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::VALIDATOR_SET_UPDATE_DECIDED,
+            &variables::VALIDATOR_SET_UPDATE_DECIDED,
             &update_complete
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {
@@ -435,7 +436,7 @@ impl<W: WriteBatch> BlockTreeWriteBatch<W> {
 
     pub fn set_highest_view_phase_voted(&mut self, view: ViewNumber) -> Result<(), BlockTreeError> {
         Ok(self.0.set(
-            &state_variables::HIGHEST_VIEW_PHASE_VOTED,
+            &variables::HIGHEST_VIEW_PHASE_VOTED,
             &view
                 .try_to_vec()
                 .map_err(|err| KVSetError::SerializeValueError {

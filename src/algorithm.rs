@@ -19,6 +19,7 @@ use crate::{
         client::{BlockSyncClient, BlockSyncClientConfiguration},
         messages::BlockSyncResponse,
     },
+    block_tree::{accessors::internal::BlockTree, pluggables::KVStore},
     events::*,
     hotstuff::implementation::{HotStuff, HotStuffConfiguration},
     networking::{
@@ -28,11 +29,9 @@ use crate::{
         sending::SenderHandle,
     },
     pacemaker::protocol::{Pacemaker, PacemakerConfiguration},
-    state::*,
+    // state::*,
     types::data_types::{BufferSize, ChainID, ViewNumber},
 };
-
-use self::{block_tree::BlockTree, kv_store::KVStore};
 
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,

@@ -12,9 +12,9 @@ use ed25519_dalek::Verifier;
 
 use super::messages::PhaseVote;
 use crate::{
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError},
+        pluggables::KVStore,
     },
     types::{
         data_types::*,

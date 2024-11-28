@@ -8,11 +8,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    hotstuff::types::PhaseCertificate,
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError},
+        pluggables::KVStore,
     },
+    hotstuff::types::PhaseCertificate,
     types::{
         crypto_primitives::{CryptoHasher, Digest},
         data_types::*,

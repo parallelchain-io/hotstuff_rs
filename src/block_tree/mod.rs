@@ -1,22 +1,22 @@
 //! The persistent state of a replica.
-//! 
+//!
 //! # The Block Tree
-//! 
+//!
 //! -  
-//! 
-//! 
-//! 
+//!
+//!
+//!
 //! # Pluggable persistence
-//! 
-//! These are traits that implement the basic functionality of a transactional key-value store... 
-//! 
+//!
+//! These are traits that implement the basic functionality of a transactional key-value store...
+//!
 //! - Traits:
 //!     - KVStore
 //!         - KVGet
-//!         - KVWriteBatch 
-//! 
+//!         - KVWriteBatch
+//!
 //! # Accessing the Block Tree
-//! 
+//!
 //! Wrapping the pluggable persistence traits are traits that implement the semantics of the block tree...
 //!
 //! The Block Tree may be stored in any key-value store of the library user's own choosing, as long as that
@@ -24,10 +24,10 @@
 //! of [`BlockTree`], and read through an instance of [`BlockTreeSnapshot`], which can be created using
 //! [`BlockTreeCamera`](crate::state::block_tree_snapshot::BlockTreeCamera).
 
-pub mod app_block_tree_view;
-pub mod block_tree;
-pub mod block_tree_snapshot;
+pub mod accessors;
+
 pub mod invariants;
-pub mod kv_store;
+
 pub mod variables;
-pub mod write_batch;
+
+pub mod pluggables;

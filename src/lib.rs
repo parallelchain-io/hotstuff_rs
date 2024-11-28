@@ -129,7 +129,7 @@ pub mod pacemaker;
 
 pub mod hotstuff;
 
-pub mod state;
+pub mod block_tree;
 
 pub mod networking;
 

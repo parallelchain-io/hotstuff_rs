@@ -5,10 +5,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use hotstuff_rs::state::{
-    kv_store::{KVGet, KVStore},
-    write_batch::WriteBatch,
-};
+use hotstuff_rs::block_tree::pluggables::{KVGet, KVStore, WriteBatch};
 
 /// An in-memory implementation of [`KVStore`].
 #[derive(Clone)]

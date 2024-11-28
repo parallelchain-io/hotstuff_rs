@@ -50,7 +50,7 @@
 //! returning these changes from calls to its three methods.
 
 use crate::{
-    state::{app_block_tree_view::AppBlockTreeView, kv_store::KVStore},
+    block_tree::{accessors::app::AppBlockTreeView, pluggables::KVStore},
     types::{
         block::Block,
         data_types::{CryptoHash, Data, ViewNumber},

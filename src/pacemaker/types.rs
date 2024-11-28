@@ -9,11 +9,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
 
 use crate::{
-    pacemaker::messages::TimeoutVote,
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        kv_store::KVStore,
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError},
+        pluggables::KVStore,
     },
+    pacemaker::messages::TimeoutVote,
     types::{
         data_types::*,
         signed_messages::{Certificate, Collector},

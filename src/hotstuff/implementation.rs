@@ -14,6 +14,11 @@ use crate::{
     app::{
         App, ProduceBlockRequest, ProduceBlockResponse, ValidateBlockRequest, ValidateBlockResponse,
     },
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError},
+        invariants::{repropose_block, safe_block, safe_nudge, safe_pc},
+        pluggables::KVStore,
+    },
     events::{
         CollectPCEvent, Event, InsertBlockEvent, NewViewEvent, NudgeEvent, PhaseVoteEvent,
         ProposeEvent, ReceiveNewViewEvent, ReceiveNudgeEvent, ReceivePhaseVoteEvent,
@@ -29,11 +34,6 @@ use crate::{
         sending::SenderHandle,
     },
     pacemaker::protocol::ViewInfo,
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        invariants::{repropose_block, safe_block, safe_nudge, safe_pc},
-        kv_store::KVStore,
-    },
     types::{
         block::Block,
         crypto_primitives::Keypair,

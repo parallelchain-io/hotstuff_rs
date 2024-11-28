@@ -81,16 +81,16 @@ use crate::{
     block_sync::messages::{
         AdvertiseBlock, AdvertisePC, BlockSyncAdvertiseMessage, BlockSyncRequest,
     },
+    block_tree::{
+        accessors::internal::{BlockTree, BlockTreeError},
+        invariants::{safe_block, safe_pc},
+        pluggables::KVStore,
+    },
     events::{EndSyncEvent, Event, InsertBlockEvent, StartSyncEvent},
     networking::{
         network::{Network, ValidatorSetUpdateHandle},
         receiving::{BlockSyncClientStub, BlockSyncResponseReceiveError},
         sending::SenderHandle,
-    },
-    state::{
-        block_tree::{BlockTree, BlockTreeError},
-        invariants::{safe_block, safe_pc},
-        kv_store::KVStore,
     },
     types::{
         block::Block,
