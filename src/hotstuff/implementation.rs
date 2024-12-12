@@ -5,6 +5,8 @@
 
 //! Event-driven implementation of the HotStuff subprotocol, as specified in
 //! [`sequence_flow`](super::sequence_flow).
+//!
+//! Main type: [`HotStuff`].
 
 use std::{sync::mpsc::Sender, time::SystemTime};
 
@@ -33,7 +35,7 @@ use crate::{
         network::{Network, ValidatorSetUpdateHandle},
         sending::SenderHandle,
     },
-    pacemaker::protocol::ViewInfo,
+    pacemaker::implementation::ViewInfo,
     types::{
         block::Block,
         crypto_primitives::Keypair,
@@ -45,7 +47,7 @@ use crate::{
 
 use super::roles::phase_vote_recipient;
 
-/// A participant in the HotStuff subprotocol.
+/// A single participant in the HotStuff subprotocol.
 ///
 /// ## Usage
 ///
@@ -665,15 +667,14 @@ impl<N: Network> HotStuff<N> {
     }
 }
 
-/// Immutable parameters that define the behaviour of the [`HotStuff`] struct and should never change
-/// after a replica starts.
+/// Configuration parameters for the [`HotStuff`] struct.
 #[derive(Clone)]
 pub(crate) struct HotStuffConfiguration {
     pub(crate) chain_id: ChainID,
     pub(crate) keypair: Keypair,
 }
 
-/// The different ways calls to methods of the `HotStuff` struct can fail.
+/// The different ways a call to a method of the `HotStuff` struct can fail.
 #[derive(Debug)]
 pub enum HotStuffError {
     BlockTreeError(BlockTreeError),

@@ -106,13 +106,22 @@ impl Into<ProgressMessage> for PacemakerMessage {
     }
 }
 
-/// A vote in favour of terminating a given view and moving to the next view. The signature is over
-/// chain id and view.
+/// Vote in favor of terminating a given `view` and moving on to the next view, created by a replica's
+/// Pacemaker if it times out when waiting for progress in the last view of an Epoch (i.e.,
+/// the "epoch-change view").
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct TimeoutVote {
+    /// `ChainID` of the block tree that the replica's validator set extends.
     pub chain_id: ChainID,
+
+    /// The view that this timeout vote seeks to terminate.
     pub view: ViewNumber,
+
+    /// Signature over `chain_id` and `view` made using the sending replica's keypair.
     pub signature: SignatureBytes,
+
+    /// The current highest timeout certificate of the sending replica, i.e., the the one with the highest
+    /// [`view`](TimeoutCertificate::view).
     pub highest_tc: Option<TimeoutCertificate>,
 }
 

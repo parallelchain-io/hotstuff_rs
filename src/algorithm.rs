@@ -28,7 +28,7 @@ use crate::{
         receiving::{BlockSyncClientStub, ProgressMessageReceiveError, ProgressMessageStub},
         sending::SenderHandle,
     },
-    pacemaker::protocol::{Pacemaker, PacemakerConfiguration},
+    pacemaker::implementation::{Pacemaker, PacemakerConfiguration},
     types::data_types::{BufferSize, ChainID, ViewNumber},
 };
 

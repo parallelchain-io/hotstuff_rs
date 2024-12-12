@@ -33,14 +33,6 @@
 //! 1. Epoch length is configurable, rather than equal to f+1. This is to enable dynamic validator sets.
 //! 2. [`TimeoutVote`]s include a highest_tc the sender knows. This provides a fallback mechanism for
 //!    helping validators lagging behind on epoch number catch up with the validators ahead.
-//!
-//! ## Leader Selection
-//!
-//! Leaders are selected according to Interleaved Weighted Round Robin algorithm. This ensures that:
-//! 1. The frequency with which a validator is selected as a leader is proportional to the validator's
-//!    power,
-//! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power
-//!    than any other validator, it will never act as a leader for more than one consecutive view.
 
 use std::{
     collections::BTreeMap,

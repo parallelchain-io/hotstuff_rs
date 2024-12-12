@@ -8,7 +8,7 @@
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
-    pacemaker::protocol::select_leader,
+    pacemaker::implementation::select_leader,
     types::{data_types::ViewNumber, validator_set::ValidatorSetState},
 };
 
