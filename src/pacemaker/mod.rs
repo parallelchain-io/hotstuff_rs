@@ -1,5 +1,9 @@
 //! Subprotocol for Byzantine view synchronization and leader selection.
 //!
+//! The documentation for this module is divided into two sections, each describing how the Pacemaker
+//! subprotocol provides [Byzantine View Synchronization](#byzantine-view-synchronization) and
+//! [Leader Selection](#leader-selection) functionality, respectively, for HotStuff-rs.
+//!
 //! # Byzantine View Synchronization
 //!
 //! SMR protocols like [HotStuff](super::hotstuff) can only make progress if a quorum of replicas spend
@@ -120,27 +124,47 @@
 //!
 //! ## Modifications on Lewis-Pye (2021)
 //!
+//! This module does not implement the protocol specified in Lewis-Pye (2021) exactly, but instead makes
+//! a few subtle modifications. These modifications are described in the subsections below alongside the
+//! justification for each.
 //!
+//! ### Modification 1: Terminological differences
 //!
-//! ### Terminological differences
+//! We call the "epoch e" messages defined in Lewis-Pye (2021) `TimeoutVote`s, and the
+//! "EpochCertificate" type as `TimeoutCertificate`s.
 //!
+//! This is so that the terminology used in the Pacemaker subprotocol aligns better with the terminology
+//! used in the HotStuff subprotocol, in which [`PhaseVote`](crate::hotstuff::messages::PhaseVote)s are
+//! aggregated into [`PhaseCertificate`](crate::hotstuff::types::PhaseCertificate)s.
 //!
+//! ### Modification 2: User-configurable epoch length
 //!
-//! 1. "epoch e" -> TimeoutVote
-//! 2. Epoch Certificate -> TimeoutCertificate
+//! A key part of Lewis-Pye (2021)'s correctness is the property that at **at least 1** validator in any
+//! in any epoch is honest (non-Byzantine).
 //!
-//! ### Configurable, constant epoch lengths
+//! Lewis-Pye (2021) guarantees this under **static validator sets** by setting the length of epochs
+//! (`N`) to be `f+1`, where `f` is the maximum number of validators that can be Byzantine at any
+//! moment. This makes it so that even in the "worst case" where all `f` faulty validators are selected
+//! to be leaders of the same epoch, said epoch will still contain `1` honest leader.
 //!
-//! - It's important to the safety and liveness guarantees of the Lewis-Pye view synchronization protocol for **at least 1** validator in any epoch to be an honest (i.e., non-faulty)
-//! replica.
-//! - With static validator sets, this is achieved by setting the length of epochs to be f+1. This means that even in the worst case where all f faulty replicas are selected to be leaders in an epoch, (f + 1) - f = 1 replica in the epoch will be safe.
-//! - With dynamic validator sets, "f" is not a constant. With this in mind, we need to choose between two options:
-//!     1. Make pacemaker dynamically change epoch lengths.
-//!     2. Set the epoch length to be a large constant.
+//! With **dynamic validator sets**, which HotStuff-rs
+//! [supports](crate::app#two-app-mutable-states-app-state-and-validator-set), `f` ceases to be a
+//! constant. To guarantee the property that at least 1 validator in any epoch is honest under this
+//! setting, two options come into mind:
+//! 1. Make the Pacemaker somehow dynamically change epoch lengths.
+//! 2. Make the epoch length user-configurable, and advise the user to set it to be a large enough value.
 //!
-//! A reasonable O(n) choice should not impair asymptotic complexity since O(f) = O(n).
+//! This Pacemaker goes with the **second option** for for completely pragmatic reasons: if we had gone
+//! for the first option, we’d have to create an algorithm that speculates not only about
+//! dynamically-changing validator sets, but also dynamically-changing epoch lengths, and it seems
+//! difficult to create one that satisfies safety and liveness while still remaining relatively simple.
 //!
-//! ### `AdvanceView` replaces View Certificates (VCs)
+//! A reasonable choice for `N` could be the expected maximum number of validators throughout the
+//! lifetime of the blockchain. This is large enough that `f` should remain well below `N` even if the
+//! number of validators in the network exceeds expectations, and small enough that it does not affect
+//! the asymptotic complexities of the algorithm.
+//!
+//! ### Modification 3: `AdvanceView` replaces View Certificates (VCs)
 //!
 //! - In the original Lewis-Pye 2021, there are two ways a replica can leave a view to enter a higher view: optimistic path and pessimistic path.
 //! - We still have the pessimistic path, but we optimize the optimistic path by not requiring a RTT to collect a view certificate.
@@ -148,7 +172,7 @@
 //! - We don't need a separate round of voting to produce a VC. We can just use the Phase Certificate.
 //! - We include this PhaseCertificate in AdvanceView.
 //!
-//! ### TimeoutVote includes the `highest_tc`
+//! ### Modification 4: TimeoutVote includes the `highest_tc`
 //!
 //! - In Lewis-Pye 2021, the leaders of the next view broadcast the TimeoutCertificate that they collect to everyone, bringing everyone to the same epoch.
 //! - This is guaranteed to work under the theoretical setting of Lewis-Pye (which is a partially synchronous network).
