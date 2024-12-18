@@ -1,8 +1,9 @@
 //! Subprotocol for Byzantine view synchronization and leader selection.
 //!
-//! The documentation for this module is divided into two sections, each describing how the Pacemaker
-//! subprotocol provides [Byzantine View Synchronization](#byzantine-view-synchronization) and
-//! [Leader Selection](#leader-selection) functionality, respectively, for HotStuff-rs.
+//! The documentation for this module is divided into two sections, the first describing how the
+//! Pacemaker subprotocol provides [Byzantine View Synchronization](#byzantine-view-synchronization)
+//! functionality for HotStuff-rs, and the second describing how it provides
+//! [Leader Selection](#leader-selection) functionality.
 //!
 //! # Byzantine View Synchronization
 //!
@@ -48,10 +49,10 @@
 //! - **Epoch-Change View**: the last view in every epoch (i.e., `{N-1, 2N-1, ...}`).
 //! - **Normal View**: every other view.
 //!
-//! The Pacemaker [`implementation`] works so that views progress in a monotonically increasing fashion:
-//! from a smaller view, to a higher view. However, the ways a replica can leave its current view to
-//! enter the next view differ fundamentally depending on what kind of view the current view is. After
-//! reading this documentation, you’ll understand how these different ways of leaving a view work
+//! The Pacemaker [`implementation`] works so that views progress in a monotonically increasing fashion,
+//! i.e., from a smaller view, to a higher view. However, the ways a replica can leave its current view
+//! to enter the next view differ fundamentally depending on what kind of view the current view is.
+//! After reading this documentation, you’ll understand how these different ways of leaving a view work
 //! together to guarantee the safety and liveness of the Pacemaker subprotocol, as well as HotStuff-rs
 //! as a whole.
 //!
@@ -154,10 +155,10 @@
 //! 1. Make the Pacemaker somehow dynamically change epoch lengths.
 //! 2. Make the epoch length user-configurable, and advise the user to set it to be a large enough value.
 //!
-//! This Pacemaker goes with the **second option** for for completely pragmatic reasons: if we had gone
-//! for the first option, we’d have to create an algorithm that speculates not only about
-//! dynamically-changing validator sets, but also dynamically-changing epoch lengths, and it seems
-//! difficult to create one that satisfies safety and liveness while still remaining relatively simple.
+//! HotStuff-rs' Pacemaker goes with the **second option** for for completely pragmatic reasons: if we
+//! had gone for the first option, we’d have to create an algorithm that speculates not only about
+//! dynamically-changing validator sets, but also dynamically-changing epoch lengths, and intuitively,
+//! it seems difficult to create one that satisfies safety and liveness while still remaining simple.
 //!
 //! A reasonable choice for `N` could be the expected maximum number of validators throughout the
 //! lifetime of the blockchain. This is large enough that `f` should remain well below `N` even if the
@@ -166,20 +167,41 @@
 //!
 //! ### Modification 3: `AdvanceView` replaces View Certificates (VCs)
 //!
-//! - In the original Lewis-Pye 2021, there are two ways a replica can leave a view to enter a higher view: optimistic path and pessimistic path.
-//! - We still have the pessimistic path, but we optimize the optimistic path by not requiring a RTT to collect a view certificate.
-//! - The insight here is that the decision that a View Certificate represents is subsumed by the decision that Phase Certificate represents.
-//! - We don't need a separate round of voting to produce a VC. We can just use the Phase Certificate.
-//! - We include this PhaseCertificate in AdvanceView.
+//! The "optimistic" mechanism for leaving a normal view in Lewis-Pye (2021) involves a dedicated voting
+//! round where replicas send a "view v" message to the leader of view v, and then waits to receive a
+//! View Certificate (VC) from said leader.
+//!
+//! The [corresponding mechanism](#leaving-a-normal-view) in HotStuff-rs replaces VCs with a new message
+//! type called `AdvanceView`. These contain existing `PhaseCertificate`s produced by the HotStuff
+//! subprotocol.
+//!
+//! This optimization is sound because the whole purpose of `ViewCertificate`s is to indicate that a
+//! quorum of validators are "done" with a specific view; and a `PhaseCertificate` serve this purpose
+//! just as well, and without requiring an extra voting round.
 //!
 //! ### Modification 4: TimeoutVote includes the `highest_tc`
 //!
-//! - In Lewis-Pye 2021, the leaders of the next view broadcast the TimeoutCertificate that they collect to everyone, bringing everyone to the same epoch.
-//! - This is guaranteed to work under the theoretical setting of Lewis-Pye (which is a partially synchronous network).
-//! - In the assumed network setting, messages can be arbitrarily delayed, but will eventually be received.
-//! - Practically however, internet infrastructure sometimes falls apart and messages can be lost.
-//! - To make the protocol robust to these kinds of failures, we add the highest TC into timeoutvote as well.
-//! - This way even if there are replicas who miss the timeout certificate broadcast ending a view, they can receive it later through a timeoutvote and end up in the same epoch as everyone.
+//! In Lewis-Pye (2021), [Epoch-Change views end](#leaving-an-epoch-change-view) with a leader of the
+//! next epoch broadcasting a newly-collected `TimeoutCertificate`.
+//!
+//! `TimeoutCertificate`s are also broadcasted at the end of an Epoch-Change view in HotStuff-rs's
+//! Pacemaker subprotocol, but are also **additionally** sent out in another message type:
+//! [`TimeoutVote`](messages::TimeoutVote)s. Specifically, `TimeoutVote` has a
+//! [`highest_tc`](messages::TimeoutVote::highest_tc) field not present in Lewis-Pye (2021). This is
+//! set by the sending validator to be the `TimeoutCertificate` with the highest view number it knows
+//! of.
+//!
+//! Theoretically speaking, including the `highest_tc` in `TimeoutVote`s is unnecessary: in the
+//! partially synchronous network model that Lewis-Pye (2021) assumes, message deliveries can be delayed
+//! arbitrarily before Global Stabilization Time (GST), but always eventually get delivered, and
+//! therefore the all-to-all broadcast of `TimeoutCertificate`s that happen at the end of every
+//! Epoch-Change View should be sufficient to keep a quorum of replicas up-to-date about the current
+//! epoch.
+//!
+//! Practically, however, network infrastructure does occasionally suffer catastrophic failures that
+//! cause the vast majority of messages between replicas to be lost. `highest_tc` helps Pacemaker be
+//! robust against these kinds of failures by giving replicas a "second chance" to receive a
+//! `TimeoutCertificate` if they had missed it during an all-to-all broadcast.
 //!
 //! # Leader Selection
 //!
