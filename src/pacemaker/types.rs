@@ -21,12 +21,17 @@ use crate::{
     },
 };
 
-/// Proof that at least a quorum of validators have sent a [`TimeoutVote`] for the same view. Required
-/// for advancing to a new epoch as part of the [`pacemaker`][crate::pacemaker] protocol.
+/// Cryptographic proof that at least a quorum of validators have sent a [`TimeoutVote`] for the same
+/// view.
 #[derive(Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TimeoutCertificate {
+    /// Chain ID of the blockchain that the validators that produced this `TimeoutCertificate` extends.
     pub chain_id: ChainID,
+
+    /// View Number of the view that timed out.
     pub view: ViewNumber,
+
+    /// Signatures of the `TimeoutVote`s that were collected to produce this `TimeoutCertificate`.
     pub signatures: SignatureSet,
 }
 
@@ -94,8 +99,8 @@ impl Certificate for TimeoutCertificate {
     }
 }
 
-/// Helps leaders incrementally form [`TimeoutCertificate`]s by combining votes for the same chain_id and
-/// view by replicas in a given [validator set](ValidatorSet).
+/// Helps leaders incrementally form `TimeoutCertificate`s by combining votes for the same `chain_id`
+/// and `view` by validators in the same `validator_set`.
 #[derive(Clone, PartialEq)]
 pub(crate) struct TimeoutVoteCollector {
     chain_id: ChainID,
