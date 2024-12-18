@@ -3,36 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of the Pacemaker protocol, based on the
-//! [Lewis-Pye View Synchronisation protocol](https://arxiv.org/pdf/2201.01107.pdf) and the Interleaved
-//! Weighted Round Robin leader selection mechanism.
+//! Event-driven implementation of the Pacemaker subprotocol.
 //!
-//! The liveness of the HotStuff protocol is dependent on the Pacemaker module, which regulates how and
-//! when a replica advances its view, as well as determines which validator shall act as the leader of
-//! a given view.
-//!
-//! ## View Synchronisation
-//!
-//! The goal is to ensure that at any point all honest replicas should eventually end up in the same
-//! view and stay there for long enough to enable consensus through forming a PC. Just like the HotStuff
-//! SMR, the Pacemaker protocol is Byzantine Fault Tolerant: eventual succesful view synchronization is
-//! guaranteed in the presence of n = 3f + 1 validators where at most f validators are Byzantine.
-//!
-//! The Lewis-Pye Pacemaker achieves view synchronisation by dividing the sequence of views into epochs.
-//! The mechanism for advancing the view depends on whether a view is advanced within the same epoch or
-//! involves epoch change:
-//! 1. All-to-all broadcast in every epoch-change view (i.e., last view of an epoch) upon which replicas
-//!    enter the next epoch and set their timeout deadlines for all views in the next epoch,
-//! 2. Advancing to a next view within the same epoch either on timeout or optimistically on receiving a
-//!    PC for their current view.
-//!
-//! The latter ensures synchronisation when timeouts are set in a uniform manner and when leaders are
-//! honest, and the former serves as a fallback mechanism in case views fall out of sync.
-//!
-//! This protocol deviates from Lewis-Pye in two fundamental ways:
-//! 1. Epoch length is configurable, rather than equal to f+1. This is to enable dynamic validator sets.
-//! 2. [`TimeoutVote`]s include a highest_tc the sender knows. This provides a fallback mechanism for
-//!    helping validators lagging behind on epoch number catch up with the validators ahead.
+//! Main type: [`Pacemaker`].
 
 use std::{
     collections::BTreeMap,
