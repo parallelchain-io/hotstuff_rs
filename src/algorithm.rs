@@ -83,7 +83,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         )
         .expect("Failed to create a new Pacemaker!");
 
-        let init_view_info = pacemaker.view_info();
+        let init_view_info = pacemaker.query();
 
         let hotstuff = HotStuff::new(
             hotstuff_config,
@@ -138,7 +138,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
                 .expect("Pacemaker failure!");
 
             // 3. Query the pacemaker for potential updates to the current view.
-            let view_info = self.pacemaker.view_info();
+            let view_info = self.pacemaker.query();
 
             // 4. In case the view has been updated, update HotStuff's internal view and perform
             // the necessary protocol steps.

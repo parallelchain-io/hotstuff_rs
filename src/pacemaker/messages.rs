@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Structured messages that are sent between replicas as part of the Pacemaker subprotocol.
+//! Messages sent between replicas as part of the Pacemaker subprotocol.
 
 use std::mem;
 

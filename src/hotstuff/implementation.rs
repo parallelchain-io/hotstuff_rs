@@ -49,7 +49,7 @@ use super::roles::phase_vote_recipient;
 
 /// A single participant in the HotStuff subprotocol.
 ///
-/// ## Usage
+/// # Usage
 ///
 /// The `HotStuff` struct is meant to be used in an "event-oriented" fashion (note that "event" here
 /// does not refer to the [`Event`] enum defined in the events module, but to "event" in the abstract
@@ -670,7 +670,10 @@ impl<N: Network> HotStuff<N> {
 /// Configuration parameters for the [`HotStuff`] struct.
 #[derive(Clone)]
 pub(crate) struct HotStuffConfiguration {
+    /// The Chain ID of the blockchain that the current replica is to track.
     pub(crate) chain_id: ChainID,
+
+    /// The keypair with which the HotStuff implementation should sign `PhaseVote`s.
     pub(crate) keypair: Keypair,
 }
 

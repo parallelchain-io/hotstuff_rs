@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions of types specific to the Pacemaker protocol.
+//! Types specific to the Pacemaker protocol.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::Verifier;
@@ -99,8 +99,8 @@ impl Certificate for TimeoutCertificate {
     }
 }
 
-/// Helps leaders incrementally form `TimeoutCertificate`s by combining votes for the same `chain_id`
-/// and `view` by validators in the same `validator_set`.
+/// Struct that incrementally forms [`TimeoutCertificate`]s by combining [`TimeoutVote`]s with the
+/// same specific `chain_id` and `view` and from the same `validator_set` into a [`SignatureSet`].
 #[derive(Clone, PartialEq)]
 pub(crate) struct TimeoutVoteCollector {
     chain_id: ChainID,
