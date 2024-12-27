@@ -9,10 +9,11 @@
 //! the [`BlockTreeSingleton::update`](crate::block_tree::accessors::internal::BlockTreeSingleton::update)
 //! method creates a “3-Chain” extending the block. Fundamentally, the role of the HotStuff subprotocol
 //! is to drive this process by orchestrating validators to work together to *create* the building
-//! blocks of 3-Chains, namely `PhaseCertificate`s. Prerequisite to the HotStuff subprotocol being able
-//! to reliably create new `PhaseCertificates` is for a quorum of validators to be in the same view for
-//! a "long enough" duration of time, which HotStuff-rs guarantees via the
-//! [`pacemaker`](crate::pacemaker) subprotocol.
+//! blocks of 3-Chains, namely `PhaseCertificate`s.
+//!
+//! Prerequisite to the HotStuff subprotocol being able to reliably create new `PhaseCertificates` is
+//! for a quorum of validators to be in the same view for a "long enough" duration of time, which
+//! HotStuff-rs guarantees via the [`pacemaker`](crate::pacemaker) subprotocol.
 //!
 //! The HotStuff subprotocol is based on the “HotStuff” SMR algorithm described in the
 //! [PODC ‘19 paper](https://dl.acm.org/doi/pdf/10.1145/3293611.3331591) by Yin, et al., but deviates

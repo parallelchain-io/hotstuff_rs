@@ -3,20 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definitions for structured messages that are sent between replicas as part of the
-//! [`Pacemaker`][crate::pacemaker::protocol::Pacemaker] protocol.
-//!
-//! ## Messages
-//!
-//! The Pacemaker protocol involves two types of messages:
-//! 1. [`TimeoutVote`], which a replica sends to signal to others that its epoch-change view has timed
-//!    out.
-//! 2. [`AdvanceView`], which a replica sends to prove to others that it is safe to move to the next
-//!    view. The proof consists of either:
-//!     - a `PhaseCertificate`, which serves as evidence that progress has been made in the current
-//!       view, or
-//!     - a `TimeoutCertificate`, which serves as evidence that a quorum of replicas have timed out in
-//!       the current view.
+//! Messages sent between replicas as part of the Pacemaker subprotocol.
 
 use std::mem;
 
@@ -34,21 +21,28 @@ use crate::{
 
 use super::types::TimeoutCertificate;
 
+/// Enum wrapper around any kind of message sent between replicas as part of the Pacemaker subprotocol.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum PacemakerMessage {
+    /// See [`TimeoutVote`].
     TimeoutVote(TimeoutVote),
+
+    /// See [`AdvanceView`].
     AdvanceView(AdvanceView),
 }
 
 impl PacemakerMessage {
+    /// Create a [`PacemakerMessage::TimeoutVote`] that indicates that the validator identified by `keypair`
+    /// which is currently replicating the `chain_id` blockchain would like to leave the specified
+    /// Epoch-Change `view`.
     pub(crate) fn timeout_vote(
-        me: &Keypair,
+        keypair: &Keypair,
         chain_id: ChainID,
         view: ViewNumber,
         highest_tc: Option<TimeoutCertificate>,
     ) -> PacemakerMessage {
         let message = &(chain_id, view).try_to_vec().unwrap();
-        let signature = me.sign(message);
+        let signature = keypair.sign(message);
 
         PacemakerMessage::TimeoutVote(TimeoutVote {
             chain_id,
@@ -58,12 +52,16 @@ impl PacemakerMessage {
         })
     }
 
+    /// Create a [`PacemakerMessage::AdvanceView`] which that to get other replicas to leave
+    /// [`progress_certificate.view()`](ProgressCertificate::view) and enter
+    /// `progress_certificate.view() + 1`.
     pub fn advance_view(progress_certificate: ProgressCertificate) -> PacemakerMessage {
         PacemakerMessage::AdvanceView(AdvanceView {
             progress_certificate,
         })
     }
 
+    /// Get the `ChainID` in the inner message.
     pub fn chain_id(&self) -> ChainID {
         match self {
             PacemakerMessage::TimeoutVote(TimeoutVote { chain_id, .. }) => *chain_id,
@@ -73,6 +71,7 @@ impl PacemakerMessage {
         }
     }
 
+    /// Get the `ViewNumber` in the inner message.
     pub fn view(&self) -> ViewNumber {
         match self {
             PacemakerMessage::TimeoutVote(TimeoutVote { view, .. }) => *view,
@@ -82,6 +81,7 @@ impl PacemakerMessage {
         }
     }
 
+    /// Get the size (in bytes) of the in-memory representation of the inner message.
     pub fn size(&self) -> u64 {
         match self {
             PacemakerMessage::TimeoutVote(_) => mem::size_of::<TimeoutVote>() as u64,
@@ -106,13 +106,20 @@ impl Into<ProgressMessage> for PacemakerMessage {
     }
 }
 
-/// A vote in favour of terminating a given view and moving to the next view. The signature is over
-/// chain id and view.
+/// Vote in favor of leaving a specified Epoch-Change `view` and moving on to the next view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct TimeoutVote {
+    /// `ChainID` of the block tree that the replica's validator set extends.
     pub chain_id: ChainID,
+
+    /// The view that this timeout vote seeks to terminate.
     pub view: ViewNumber,
+
+    /// Signature over `chain_id` and `view` made using the sending replica's keypair.
     pub signature: SignatureBytes,
+
+    /// The current highest timeout certificate of the sending replica, i.e., the the one with the highest
+    /// [`view`](TimeoutCertificate::view).
     pub highest_tc: Option<TimeoutCertificate>,
 }
 
@@ -136,16 +143,14 @@ impl Vote for TimeoutVote {
     }
 }
 
-/// A message containing a proof that the view can be advanced. The proof can be either a
-/// [`PhaseCertificate`] or a [`TimeoutCertificate`] for the view.
+/// Message containing cryptographic proof that a replica can safely advance to higher view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct AdvanceView {
     pub progress_certificate: ProgressCertificate,
 }
 
-/// Proof that either:
-/// 1. A quorum made a decision in the current view ([`PhaseCertificate`]), or
-/// 2. A quorum voted for terminating the current view on timing out ([`TimeoutCertificate`]).
+/// Enum wrapper around every kind of [`Certificate`](crate::types::signed_messages::Certificate) that
+/// can cause a replica to move to another view.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressCertificate {
     TimeoutCertificate(TimeoutCertificate),

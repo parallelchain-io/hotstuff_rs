@@ -134,7 +134,7 @@ use crate::{
     events::*,
     hotstuff::implementation::HotStuffConfiguration,
     networking::{network::Network, receiving::start_polling},
-    pacemaker::protocol::PacemakerConfiguration,
+    pacemaker::implementation::PacemakerConfiguration,
     types::{
         crypto_primitives::Keypair,
         data_types::{BufferSize, ChainID, EpochLength},

@@ -270,7 +270,7 @@ impl Phase {
     }
 }
 
-/// A struct that incrementally forms [`PhaseCertificate`]s by combining [`PhaseVote`]s with the same
+/// Struct that incrementally forms [`PhaseCertificate`]s by combining [`PhaseVote`]s with the same
 /// specific `chain_id` and `view` and from the same specific `validator_set` into [`SignatureSet`]s.
 ///
 /// ## Usage
