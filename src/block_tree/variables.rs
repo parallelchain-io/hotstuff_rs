@@ -16,46 +16,43 @@
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
-//! |Blocks|[`CryptoHash`] -> [`Block`]|Mapping between a block's hash and the block itself. This mapping contains all blocks that have been inserted into the block tree, excluding blocks that have been pruned.|
-//! |Block at Height|[`BlockHeight`] -> [`CryptoHash`]|Mapping between a block's height and its block hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
-//! |Block to Children|[`CryptoHash`] -> [`ChildrenList`]|Mapping between a block's hash and the list of children it has in the block tree. A block may have multiple children if they have not been committed.|
+//! |Blocks|[`CryptoHash`](crate::types::data_types::CryptoHash) -> [`Block`](crate::types::block::Block)|Mapping between a block's hash and the block itself. This mapping contains all blocks that have been inserted into the block tree, excluding blocks that have been pruned.|
+//! |Block at Height|[`BlockHeight`](crate::types::data_types::BlockHeight) -> [`CryptoHash`](crate::types::data_types::CryptoHash)|Mapping between a block's height and its block hash. This mapping only contains blocks that are committed, because if a block hasn't been committed, there may be multiple blocks at the same height.|
+//! |Block to Children|[`CryptoHash`](crate::types::data_types::CryptoHash) -> [`ChildrenList`](crate::types::data_types::ChildrenList)|Mapping between a block's hash and the list of children it has in the block tree. A block may have multiple children if they have not been committed.|
 //!
 //! ## App State
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
 //! |Committed App State|[`Vec<u8>`] -> [`Vec<u8>`]|All key value pairs in the current committed app state. Produced by applying all app state updates in sequence from the genesis block up to the highest committed block.|
-//! |Pending App State Updates|[`CryptoHash`] -> [`AppStateUpdates`]|Mapping between a block's hash and its app state updates. This is empty for an existing block if at least one of the following two cases is true: <ol><li>The block does not update the app state.</li> <li>The block has been committed.</li></ol>|
+//! |Pending App State Updates|[`CryptoHash`](crate::types::data_types::CryptoHash) -> [`AppStateUpdates`](crate::types::update_sets::AppStateUpdates)|Mapping between a block's hash and its app state updates. This is empty for an existing block if at least one of the following two cases is true: <ol><li>The block does not update the app state.</li> <li>The block has been committed.</li></ol>|
 //!
 //! ## Validator Set
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
-//! |Committed Validator Set|[`ValidatorSet`]|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
-//! |Previous Validator Set|[`ValidatorSet`]|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "decided" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
+//! |Committed Validator Set|[`ValidatorSet`](crate::types::validator_set::ValidatorSet)|The current committed validator set. Produced by applying all validator set updates in sequence from the genesis block up to the highest committed block.|
+//! |Previous Validator Set|[`ValidatorSet`](crate::types::validator_set::ValidatorSet)|The committed validator set before the latest validator set update was committed. <br/><br/>Until a validator set update is considered "decided" (as indicated by the next variable), the previous validator set remains "active". That is, leaders will continue broadcasting nudges for the previous validator set and replicas will continue voting for such nudges.|
 //! |Validator Set Update Decided|[`bool`]|A flag that indicates the most recently committed validator set update has been decided.|
-//! |Validator Set Update Block Height|[`BlockHeight`]|The height of the block that caused the most recent committed (but perhaps not decided) validator set update.|
-//! |Validator Set Updates Status|[`CryptoHash`] -> [`ValidatorSetUpdatesStatus`]|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
+//! |Validator Set Update Block Height|[`BlockHeight`](crate::types::data_types::BlockHeight)|The height of the block that caused the most recent committed (but perhaps not decided) validator set update.|
+//! |Validator Set Updates Status|[`CryptoHash`](crate::types::data_types::CryptoHash) -> [`ValidatorSetUpdatesStatus`](crate::types::validator_set::ValidatorSetUpdatesStatus)|Mapping between a block's hash and its validator set updates. <br/><br/>Unlike [pending app state updates](#app-state), this is an enum, and distinguishes between the case where the block does not update the validator set and the case where the block updates the validator set but has been committed.|
 //!
 //! ## Safety
 //!
 //! |Variable|Type|Description|
 //! |---|---|---|
-//! |Locked Phase Certificate|[`PhaseCertificate`]|The currently locked PC. [Read more](invariants#locking)|
-//! |Highest View Phase-Voted|[`ViewNumber`]|The highest view that this validator has phase-voted in.|
-//! |Highest View Entered|[`ViewNumber`]|The highest view that this validator has entered.|
-//! |Highest Phase Certificate|[`PhaseCertificate`]|Among the phase certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Timeout Certificate|[`TimeoutCertificate`]|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
-//! |Highest Committed Block|[`CryptoHash`]|The hash of the committed block that has the highest height.|
-//! |Newest Block|[`CryptoHash`]|The hash of the most recent block to be inserted into the block tree.|
+//! |Locked Phase Certificate|[`PhaseCertificate`](crate::hotstuff::types::PhaseCertificate)|The currently locked PC. [Read more](invariants#locking)|
+//! |Highest View Phase-Voted|[`ViewNumber`](crate::types::data_types::ViewNumber)|The highest view that this validator has phase-voted in.|
+//! |Highest View Entered|[`ViewNumber`](crate::types::data_types::ViewNumber)|The highest view that this validator has entered.|
+//! |Highest Phase Certificate|[`PhaseCertificate`](crate::hotstuff::types::PhaseCertificate)|Among the phase certificates this validator has seen and verified, the one with the highest view number.|
+//! |Highest Timeout Certificate|[`TimeoutCertificate`](crate::pacemaker::types::TimeoutCertificate)|Among the timeout certificates this validator has seen and verified, the one with the highest view number.|
+//! |Highest Committed Block|[`CryptoHash`](crate::types::data_types::CryptoHash)|The hash of the committed block that has the highest height.|
+//! |Newest Block|[`CryptoHash`](crate::types::data_types::CryptoHash)|The hash of the most recent block to be inserted into the block tree.|
 //!
 //! # Persistence of state variables
 //!
-//! As explained in the docs for the `block_tree` module, the block tree is comprised of 17
-//! [state variables](super::block_tree#state-variables).
-//!
-//! This module specifies how each state variable is persisted into user-provided
-//! [key-value stores (`KVStore`)](super::kv_store). Each variable is stored as **Borsh-serialized
+//! This section specifies how each state variable is persisted into user-provided
+//! [key-value stores (`KVStore`)](super::pluggables). Each variable is stored as **Borsh-serialized
 //! values** in one or more **keys** in the key-value store. These keys are formed by combining the
 //! [constants](#constants) defined in this module in specific ways, as described in the following three
 //! subsections:
@@ -75,7 +72,7 @@
 //! serialization of an instance of the `A` type.
 //!
 //! For example, to store a key-value pair into the app state directly using
-//! [`WriteBatch`](super::write_batch::WriteBatch), one would do:
+//! [`WriteBatch`](super::pluggables::WriteBatch), one would do:
 //!
 //! ```
 //! # use borsh::ser::BorshSerialize;
