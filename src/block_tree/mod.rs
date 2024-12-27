@@ -25,27 +25,32 @@
 //!
 //! # Beyond the Block Tree
 //!
-//! The main purpose of the `block_tree` module is to store and maintain the local replica's persistent
-//! block tree. However, the block tree is not the only persistent state in a replica.
+//! The main purpose of the definitions in the `block_tree` module is to store and maintain the local
+//! replica's persistent block tree. However, the block tree is not the only persistent state in a
+//! replica.
 //!
-//! The `block_tree` module also stores additional data fundamental to the operation of the HotStuff-rs.
-//! These data include data relating to the [two App-mutable
+//! In addition, The block tree module also stores additional data fundamental to the operation of the
+//! HotStuff-rs. These data include data relating to the [two App-mutable
 //! states](crate::app#two-app-mutable-states-app-state-and-validator-set), as well as state variables
 //! used by the [HotStuff](crate::hotstuff) and [Pacemaker](crate::pacemaker) subprotocols to make sure
 //! that the block tree is updated in a way that preserves its core [safety and liveness
 //! invariants](invariants).
 //!
-//! The documentation for the [`variables`] submodule lists everything stored by the `block_tree`
-//! module.
+//! The [List of State Variables](variables#list-of-state-variables) section of the `variables`
+//! submodule comprehensively lists everything stored by the block tree module.
 //!
 //! # Pluggable persistence
 //!
-//! - The block tree is kept in persistent storage, most probably in the host's filesystem.
-//! - Library users get to choose how exactly this is done.
-//! - HotStuff-rs merely requires that whatever the user provides as a persistence mechanism implements the abstract functionality of
-//!   a key-value store with atomic, batched writes.
-//! - This abstract functionality is made concrete by the traits defined in the `pluggables` module.
-//! - Implement this for whatever persistence mechanism you want and pass in the type to the constructor in `mod replica`.
+//! A key feature of HotStuff-rs is "pluggable persistence". The key enabler for pluggable persistence
+//! is the fact that the `block_tree` module does not care about how its state variables are stored in
+//! persistent storage, as long as whatever mechanism the library user chooses implements the abstract
+//! functionality of a key-value store with atomic, batched writes.
+//!
+//! The interface that `block_tree` code uses to interact with this functionality is expressed in the
+//! traits defined in the [`pluggables`] module. To plug a new persistence mechanism for use by a
+//! replica, the user simply needs to implement these traits and provide an implementation of the top-
+//! level [`KVStore`](pluggables::KVStore) trait to the `ReplicaSpecBuilder` by calling its
+//! [`builder`](crate::replica::ReplicaSpecBuilder::kv_store) method.
 //!
 //! # Accessing the Block Tree
 //!
