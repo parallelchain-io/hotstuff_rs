@@ -668,7 +668,10 @@ impl ViewInfo {
     }
 }
 
-/// Deterministically select a replica in `validator_set` to become the leader of `view`.
+/// Deterministically select a replica in `validator_set` to become the leader of `view` using the
+/// [Interleaved WRR](https://en.wikipedia.org/wiki/Weighted_round_robin#Interleaved_WRR) algorithm.
+///
+/// [Read more](super#leader-selection).
 pub fn select_leader(view: ViewNumber, validator_set: &ValidatorSet) -> VerifyingKey {
     // Length of the abstract array.
     let p_total = validator_set.total_power();
