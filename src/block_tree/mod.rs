@@ -52,12 +52,9 @@
 //! level [`KVStore`](pluggables::KVStore) trait to the `ReplicaSpecBuilder` by calling its
 //! [`builder`](crate::replica::ReplicaSpecBuilder::kv_store) method.
 //!
-//! # Accessing the Block Tree
-//!
-//! - The provided implementations of the pluggable persistence traits then get wrapped inside block tree `accessors`.
-//! - Implementations of the pluggable persistence traits then get wrapped inside block tree `accessors`.
-//! - These put the block tree++ variables in the right places in the KVStore and provide methods for reading and writing them both
-//!   from code internal to this library and in user code.
+//! Upon replica startup, the provided implementations of the pluggable persistence traits are wrapped
+//! inside types called block tree [`accessors`], which provide safe interfaces for accessing the block
+//! tree for both library-internal and public use.
 
 pub mod accessors;
 
