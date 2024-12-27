@@ -668,8 +668,7 @@ impl ViewInfo {
     }
 }
 
-/// Implements the [Interleaved Weighted Round Robin](https://en.wikipedia.org/wiki/Weighted_round_robin#Interleaved_WRR)
-/// algorithm for selecting a view leader. For internal use by the [`Pacemaker`] and [`PacemakerState`] methods.
+/// Deterministically select a replica in `validator_set` to become the leader of `view`.
 pub fn select_leader(view: ViewNumber, validator_set: &ValidatorSet) -> VerifyingKey {
     // Length of the abstract array.
     let p_total = validator_set.total_power();

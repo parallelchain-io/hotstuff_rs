@@ -32,6 +32,9 @@ use crate::{
     types::data_types::{BufferSize, ChainID, ViewNumber},
 };
 
+/// Instance of the algorithm thread.
+///
+/// This struct's `Drop` destructor gracefully shuts down the algorithm thread.
 pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'static> {
     chain_id: ChainID,
     pm_stub: ProgressMessageStub,
@@ -44,6 +47,7 @@ pub(crate) struct Algorithm<N: Network + 'static, K: KVStore, A: App<K> + 'stati
 }
 
 impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
+    /// Create an instance of the algorithm thread.
     pub(crate) fn new(
         chain_id: ChainID,
         hotstuff_config: HotStuffConfiguration,
@@ -117,6 +121,7 @@ impl<N: Network + 'static, K: KVStore, A: App<K> + 'static> Algorithm<N, K, A> {
         }
     }
 
+    /// Start an instance of the algorithm thread.
     pub(crate) fn start(self) -> JoinHandle<()> {
         thread::spawn(move || self.execute())
     }

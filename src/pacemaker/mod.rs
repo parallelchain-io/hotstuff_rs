@@ -205,11 +205,36 @@
 //!
 //! # Leader Selection
 //!
-//! Leaders are selected according to Interleaved Weighted Round Robin algorithm. This ensures that:
-//! 1. The frequency with which a validator is selected as a leader is proportional to the validator's
-//!    power,
-//! 2. Validators are selected as leaders in an interleaved manner: unless a validator has more power
-//!    than any other validator, it will never act as a leader for more than one consecutive view.
+//! The second of the two functionalities that Pacemaker provides to HotStuff-rs is called Leader
+//! Selection.
+//!
+//! The basic requirement that a Leader Selection Mechanism for a generic SMR algorithm must meet
+//! is that it must provide a mapping from *Views to Leaders*, i.e., a function with signature
+//! `ViewNumber -> VerifyingKey`.
+//!
+//! Leader Selection for HotStuff-rs, however, comes with three additional requirements:
+//! 1. **Support for Dynamic Validator Sets**: the validator set in that replicates a HotStuff-rs
+//!    blockchain can [change
+//!    dynamically](crate::app#two-app-mutable-states-app-state-and-validator-set) according to the
+//!    application's instructions. This means that the function that the Leader Selection mechanism
+//!    provides must have the signature `(ViewNumber, ValidatorSet) -> VerifyingKey`.
+//! 2. **Frequent rotation**: if a Byzantine replica were to become leader for an extended, continuous
+//!    sequence of views, it could harm the network in a variety of ways: ranging from the immediately
+//!    apparent (e.g., not proposing any blocks, thereby preventing the blockchain from growing), to
+//!    the more insiduous (e.g., refusing to include transactions from specific clients in the blocks
+//!    it proposes, i.e., censoring them). To prevent these kinds of service disruptions, our leader
+//!    selection mechanism should ensure that leadership of the validator set is rotated among all
+//!    validators, ensuring that a Byzantine replica cannot be leader for too long.
+//! 3. **Weighted selection**: In most popular Proof of Stake (PoS) blockchain systems, a validator’s stake
+//!    determines not only the weight of its votes in consensus decisions but also likelihood of being
+//!    selected as the leader for a given view. Likewise, we would like our leader selection mechanism to
+//!    generate a leader sequence where each validator appears with a frequency proportional to its Power
+//!    relative to the TotalPower of the validator set (i.e., if a validator makes up roughly X% of the
+//!    validator set’s total power, then it should be the leader of approximately X% of views).
+//!
+//! To meet these requirements, Pacemaker's leader selection implementation
+//! ([`select_leader`](implementation::select_leader)) uses the Interleaved Weighted Round-Robin
+//! ([Interleaved WRR](https://en.wikipedia.org/wiki/Weighted_round_robin#Interleaved_WRR)) algorithm.
 
 pub mod messages;
 
