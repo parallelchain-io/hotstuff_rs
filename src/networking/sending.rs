@@ -1,9 +1,13 @@
+//! Functions and types for sending messages to the P2P network.
+
 use ed25519_dalek::VerifyingKey;
 
 use super::{messages::Message, network::Network};
 
-/// Handle for sending and broadcasting messages to the [`Network`]. It can be used to send or broadcast
-/// instances of any type that implement the [`Into<Message>`] trait.
+/// Handle for sending and broadcasting messages to the [`Network`].
+///
+/// It can be used to send or broadcast instances of any type that implement the [`Into<Message>`]
+/// trait.
 #[derive(Clone)]
 pub(crate) struct SenderHandle<N: Network> {
     network: N,

@@ -1,3 +1,5 @@
+//! Functions and types for receiving messages from the P2P network.
+
 use std::{
     collections::{BTreeMap, VecDeque},
     mem,
@@ -18,8 +20,10 @@ use super::{
     network::Network,
 };
 
-/// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receivers
-/// for:
+/// Spawn the poller thread, which polls the [`Network`] for messages and distributes them into receiver
+/// handles.
+///
+/// The kinds of messages that the pollers poll are:
 /// 1. Progress messages (processed by the [`Algorithm`][crate::algorithm::Algorithm]'s execute loop), and
 /// 2. Block sync requests (processed by [`BlockSyncServer`][crate::block_sync::server::BlockSyncServer]),
 ///    and
@@ -72,7 +76,7 @@ pub(crate) fn start_polling<N: Network + 'static>(
     )
 }
 
-/// A receiving end for [`ProgressMessages`](ProgressMessage).
+/// A receiving end for [`ProgressMessage`](ProgressMessage)s.
 ///
 /// ## View-aware buffering
 ///
@@ -207,9 +211,10 @@ pub(crate) enum ProgressMessageReceiveError {
     Disconnected,
 }
 
-/// Message buffer intended for storing received [`ProgressMessage`]s for future views. Its size is
-/// bounded by its capacity, and when the capacity is reached messages for highest views may be
-/// removed.
+/// Message buffer intended for storing received [`ProgressMessage`]s for future views.
+///
+/// Its size is bounded by its capacity, and when the capacity is reached messages for highest views may
+/// be removed.
 struct ProgressMessageBuffer {
     buffer_capacity: BufferSize,
     buffer: BTreeMap<ViewNumber, VecDeque<(VerifyingKey, ProgressMessage)>>,
