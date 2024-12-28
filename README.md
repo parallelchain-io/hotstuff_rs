@@ -1,3 +1,5 @@
+![alt text](./readme_assets/HotStuff-rs%20v0.4%20logo.png)
+
 # HotStuff-rs 
 
 A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
