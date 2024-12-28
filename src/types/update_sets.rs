@@ -1,3 +1,5 @@
+//! Types that store updates to the App-mutable states.
+
 use std::{
     collections::{hash_map, hash_set, HashMap, HashSet},
     hash::Hash,

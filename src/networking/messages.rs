@@ -1,3 +1,5 @@
+//! Exhaustive enumerations around every message variant used in HotStuff-rs.
+
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
@@ -9,9 +11,13 @@ use crate::{
     types::data_types::{ChainID, ViewNumber},
 };
 
+/// All message variants used in HotStuff-rs.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum Message {
+    /// See: [`ProgressMessage`].
     ProgressMessage(ProgressMessage),
+
+    /// See: [`BlockSyncMessage`].
     BlockSyncMessage(BlockSyncMessage),
 }
 
@@ -45,19 +51,21 @@ impl From<BlockSyncAdvertiseMessage> for Message {
     }
 }
 
-/// A message that serves to advance the consensus process, which may involve:
-/// 1. Participating in consesus via a [`HotStuffMessage`],
-/// 2. Syncing views with other replicas via a [`PacemakerMessage`] (required for consensus),
-/// 3. Triggering block sync on seeing a [`BlockSyncAdvertiseMessage`], which indicates that
-///    the replica is lagging behind the others (required for consensus).
+/// Message variants sent or received by the [`algorithm`](crate::algorithm) thread.
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub enum ProgressMessage {
+    /// See [`HotStuffMessage`].
     HotStuffMessage(HotStuffMessage),
+
+    /// See [`PacemakerMessage`].
     PacemakerMessage(PacemakerMessage),
+
+    /// See [`BlockSyncAdvertiseMessage`],
     BlockSyncAdvertiseMessage(BlockSyncAdvertiseMessage),
 }
 
 impl ProgressMessage {
+    /// Get the `chain_id` field of the inner message.
     pub fn chain_id(&self) -> ChainID {
         match self {
             ProgressMessage::HotStuffMessage(msg) => msg.chain_id(),
@@ -66,6 +74,7 @@ impl ProgressMessage {
         }
     }
 
+    /// Get the `view` field of the inner message.
     pub fn view(&self) -> Option<ViewNumber> {
         match self {
             ProgressMessage::HotStuffMessage(msg) => Some(msg.view()),
@@ -74,6 +83,7 @@ impl ProgressMessage {
         }
     }
 
+    /// Get the size of the inner message.
     pub fn size(&self) -> u64 {
         match self {
             ProgressMessage::HotStuffMessage(msg) => msg.size(),
@@ -82,6 +92,7 @@ impl ProgressMessage {
         }
     }
 
+    /// Check whether the inner message is a [`BlockSyncAdvertiseMessage`].
     pub fn is_block_sync_trigger_msg(&self) -> bool {
         match self {
             ProgressMessage::BlockSyncAdvertiseMessage(_) => true,

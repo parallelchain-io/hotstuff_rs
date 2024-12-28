@@ -1,9 +1,14 @@
+//! Trait for pluggable peer-to-peer (P2P) networking.
+//!
+//! Main trait: [`Network`].
+
 use ed25519_dalek::VerifyingKey;
 
 use crate::types::{update_sets::ValidatorSetUpdates, validator_set::ValidatorSet};
 
 use super::messages::Message;
 
+/// Trait for pluggable peer-to-peer (P2P) networking.
 pub trait Network: Clone + Send {
     /// Inform the network provider the validator set on wake-up.
     fn init_validator_set(&mut self, validator_set: ValidatorSet);
@@ -21,7 +26,7 @@ pub trait Network: Clone + Send {
     fn recv(&mut self) -> Option<(VerifyingKey, Message)>;
 }
 
-/// Handle for informing the Network Provider about validator set updates.
+/// Handle for informing the [`Network`] implementation about validator set updates.
 ///
 /// It is important for the network provider to know about validator set updates because, for example,
 /// if a validator set update adds new validators into the validator set, the network provider may want
