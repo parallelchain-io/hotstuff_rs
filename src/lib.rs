@@ -3,10 +3,14 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/parallelchain-io/hotstuff_rs/refs/heads/final_touches/readme_assets/HotStuff-rs%20logo.png",
+    html_favicon_url = "https://raw.githubusercontent.com/parallelchain-io/hotstuff_rs/refs/heads/final_touches/readme_assets/HotStuff-rs%20logo.png"
+)]
 #![allow(rustdoc::private_intra_doc_links)]
 
-//! A Rust Programming Language library for Byzantine Fault Tolerant (BFT) State Machine Replication
-//! (SMR), intended for production systems.
+//! A Rust Programming Language library for performant Byzantine Fault Tolerant State Machine
+//! Replication (BFT SMR).
 //!
 //! # Features
 //!
