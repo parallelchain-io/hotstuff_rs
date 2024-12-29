@@ -6,12 +6,16 @@
 
 <div align="center">Performant Byzantine Fault Tolerant State Machine Replication (BFT SMR) in Rust</div>
 <div align="center">
- <a href="https://parallelchain-io.github.io/hotstuff_rs_docs/branch/dev_0.4/hotstuff_rs/index.html">Complete Docs</a>
+ <a href="https://parallelchain-io.github.io/hotstuff_rs_docs/branch/dev_0.4/hotstuff_rs/index.html">Comprehensive Docs</a>
     |
     <a href="https://github.com/parallelchain-io/hotstuff_rs/tree/dev/0.4/tests">Examples</a>
     |
     <a href="https://github.com/parallelchain-io/hotstuff_rs/releases">Changelog</a>
 </div>
+
+[![crates.io](https://img.shields.io/crates/v/hotstuff_rs)](https://crates.io/crates/hotstuff_rs)
+![License](https://img.shields.io/crates/l/hotstuff_rs)
+[![dependency status](https://deps.rs/crate/hotstuff_rs/0.3.0/status.svg)](https://deps.rs/crate/hotstuff_rs/0.3.0)
 
 ## Introduction
 
