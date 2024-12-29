@@ -1,21 +1,28 @@
-<p align="center">
-  <img src="./readme_assets/HotStuff-rs%20logo.png" alt="Description" width="200" />
-</p>
-
-<h1 align="center">HotStuff-rs</h1>
-
-<div align="center">Performant Byzantine Fault Tolerant State Machine Replication (BFT SMR) in Rust</div>
 <div align="center">
- <a href="https://parallelchain-io.github.io/hotstuff_rs_docs/branch/dev_0.4/hotstuff_rs/index.html">Comprehensive Docs</a>
-    |
-    <a href="https://github.com/parallelchain-io/hotstuff_rs/tree/dev/0.4/tests">Examples</a>
-    |
-    <a href="https://github.com/parallelchain-io/hotstuff_rs/releases">Changelog</a>
-</div>
+  <img src="./readme_assets/HotStuff-rs%20logo.png" alt="Description" width="200" />
+  <h1>HotStuff-rs</h1>
+  
+  <p>
+    <b>Performant Byzantine Fault Tolerant State Machine Replication (BFT SMR) in Rust</b>
+  </p>
+  
+  <a href="https://parallelchain-io.github.io/hotstuff_rs_docs/branch/dev_0.4/hotstuff_rs/index.html">Comprehensive Docs</a>
+  | 
+  <a href="https://github.com/parallelchain-io/hotstuff_rs/tree/dev/0.4/tests">Examples</a>
+  |
+  <a href="https://github.com/parallelchain-io/hotstuff_rs/releases">Changelog</a>
+
+  <p>
+<!-- prettier-ignore-start -->
 
 [![crates.io](https://img.shields.io/crates/v/hotstuff_rs)](https://crates.io/crates/hotstuff_rs)
 ![License](https://img.shields.io/crates/l/hotstuff_rs)
 [![dependency status](https://deps.rs/crate/hotstuff_rs/0.3.0/status.svg)](https://deps.rs/crate/hotstuff_rs/0.3.0)
+
+<!-- prettier-ignore-end -->
+  </p>
+
+</div>
 
 ## Introduction
 
