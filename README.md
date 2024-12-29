@@ -26,8 +26,7 @@
 
 ## Introduction
 
-A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
-systems. 
+HotStuff-rs is a Rust Programming Language library for performant Byzantine Fault Tolerant State Machine Replication (BFT SMR).
   
 HotStuff-rs implements a variant of the HotStuff consensus protocol, but with extensions like block-sync and dynamic
 validator sets that makes this library suited for real-world use-cases (and not just research systems). Some desirable
