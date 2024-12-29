@@ -1,6 +1,19 @@
-![alt text](./readme_assets/HotStuff-rs%20v0.4%20logo.png)
+<p align="center">
+  <img src="./readme_assets/HotStuff-rs%20logo.png" alt="Description" width="200" />
+</p>
 
-# HotStuff-rs 
+<h1 align="center">HotStuff-rs</h1>
+
+<div align="center">Performant Byzantine Fault Tolerant State Machine Replication (BFT SMR) in Rust</div>
+<div align="center">
+ <a href="https://parallelchain-io.github.io/hotstuff_rs_docs/branch/dev_0.4/hotstuff_rs/index.html">Complete Docs</a>
+    |
+    <a href="https://github.com/parallelchain-io/hotstuff_rs/tree/dev/0.4/tests">Examples</a>
+    |
+    <a href="https://github.com/parallelchain-io/hotstuff_rs/releases">Changelog</a>
+</div>
+
+## Introduction
 
 A Rust Programming Language library for Byzantine Fault Tolerant state machine replication, intended for production 
 systems. 
